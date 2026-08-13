@@ -1,0 +1,27 @@
+{
+  "id": "voxel_run_bridge",
+  "name": "Voxel Run Bridge",
+  "version": "0.1.1",
+  "github": "ScottExplores/gen1recomp-voxel-run-bridge",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "game_version": "0.0.0-dev || >=0.1.37 <2.0.0",
+  "category": "GAMEPLAY",
+  "priority": 200,
+  "dependencies": [],
+  "optional_dependencies": [
+    "running_shoes",
+    "RUN_MODE",
+    "DRAMATIC_SHAPE",
+    "BATTLE_ART_VOXEL_FORK",
+    "DRAMALESS_SHAPE",
+    "potato_voxel"
+  ],
+  "conflicts": [],
+  "incompatible": [],
+  "games": ["gen1"],
+  "experimental": false,
+  "permissions": ["engine_internals"],
+  "description": "Carries movement.speed mods, including Running Shoes, into voxel first- and third-person free movement."
+}

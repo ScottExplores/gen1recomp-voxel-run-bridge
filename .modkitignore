@@ -1,0 +1,5 @@
+tests/main.lua
+tests/README.md
+docs/MODDING_GUIDE.md
+dist/*.zip
+.luarc.json
