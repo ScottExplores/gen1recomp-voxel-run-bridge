@@ -10,7 +10,11 @@ option through the real `fieldmove.eligibility` and `ui.party.submenu` hook
 signatures. Those checks require a party member to know the HM, preserve and
 de-duplicate other menu rows, keep FLY outdoors-only and FLASH dark-only,
 leave battle menus untouched, and prove that HM support stays active without
-a voxel provider.
+a voxel provider. The suite also feature-detects Dramatic Sky Ride's exported
+flight rules, exercises the same live `badge_checks` value its private
+`startFlight` gate reads, proves takeoff no longer returns the THUNDERBADGE
+error, and verifies REQUIRE FLY, story rules, inventory and saved DSR
+preference behavior remain isolated.
 
 Run it from the repository root with LuaJIT (`luajit tests/main.lua`) or point
 the LOVE console executable at the test directory (`lovec tests`). The

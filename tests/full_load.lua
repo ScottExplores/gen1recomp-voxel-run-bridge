@@ -24,11 +24,56 @@ local function read(relative)
 end
 
 local prefix = "mods/voxel_run_bridge/"
+local skyPrefix = "mods/DRAMATIC_SKY_RIDE/"
+local skyManifest = [[{
+  "id": "DRAMATIC_SKY_RIDE",
+  "name": "Dramatic Sky Ride Test Double",
+  "version": "0.1.6",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "priority": 900,
+  "dependencies": [],
+  "optional_dependencies": [],
+  "conflicts": [],
+  "games": ["gen1"],
+  "permissions": []
+}]]
+local skyEntry = [[return function(mod)
+  mod.options:define({
+    { key = "require_fly_move", type = "toggle", default = true },
+    { key = "badge_checks", type = "toggle", default = true },
+    { key = "story_gates", type = "toggle", default = true }
+  })
+  local function option(key, default)
+    local value = mod.options:get(key)
+    if value == nil then return default end
+    return value
+  end
+  local function badgeChecksEnabled() return option("badge_checks", true) == true end
+  local function startFlight(save)
+    if option("require_fly_move", true) == true and not save.knowsFly then
+      return false, "FLY REQUIRED"
+    end
+    if badgeChecksEnabled() and not (save.inventory or {}).THUNDERBADGE then
+      return false, "THUNDERBADGE REQUIRED"
+    end
+    return true, "TAKEOFF"
+  end
+  mod.exports.flightRules = {
+    badgeChecks = badgeChecksEnabled,
+    requireFlyMove = function() return option("require_fly_move", true) == true end,
+    storyGates = function() return option("story_gates", true) == true end
+  }
+  mod.exports.testStartFlight = startFlight
+end]]
 local run = T.sdk.loadMod("mods/voxel_run_bridge", {
   data = require("tests.modkit.fixtures").fresh(),
   fs = T.sdk.memfs({
     [prefix .. "manifest.json"] = read("manifest.json"),
     [prefix .. "main.lua"] = read("main.lua"),
+    [skyPrefix .. "manifest.json"] = skyManifest,
+    [skyPrefix .. "main.lua"] = skyEntry,
   }),
   generation = 1,
 })
@@ -39,8 +84,8 @@ T.eq(run.mod and run.mod.manifest.id, "voxel_run_bridge",
   "stable updater identity is retained")
 T.eq(run.mod and run.mod.manifest.name, "Scott's Tweaks",
   "new display name is loaded")
-T.eq(run.mod and run.mod.manifest.version, "0.2.0",
-  "loader selected version 0.2.0")
+T.eq(run.mod and run.mod.manifest.version, "0.2.1",
+  "loader selected version 0.2.1")
 
 local schema = run.loader.optionSchemas.voxel_run_bridge or {}
 local hmOption
@@ -49,6 +94,27 @@ for _, row in ipairs(schema) do
 end
 T.check(type(hmOption) == "table", "HM option is registered")
 T.eq(hmOption and hmOption.default, true, "HM bypass defaults on")
+
+local skyOption
+for _, row in ipairs(schema) do
+  if row.key == "sky_ride_without_badges" then skyOption = row break end
+end
+T.check(type(skyOption) == "table", "Sky Ride option is registered")
+T.eq(skyOption and skyOption.default, true, "Sky Ride bypass defaults on")
+
+local skyOptions = run.loader.modOptions.DRAMATIC_SKY_RIDE
+T.check(type(skyOptions) == "table", "Sky Ride live option bucket exists")
+T.eq(skyOptions and skyOptions.badge_checks, false,
+  "production loader applies DSR's own badge_checks override")
+local skyExports = run.loader.exports.DRAMATIC_SKY_RIDE
+T.check(type(skyExports) == "table", "Sky Ride exports are feature-detected")
+T.eq(skyExports.flightRules.requireFlyMove(), true, "REQUIRE FLY remains on")
+T.eq(skyExports.flightRules.storyGates(), true, "STORY GATES remain on")
+local flightSave = { inventory = {}, knowsFly = true }
+local flew, reason = skyExports.testStartFlight(flightSave)
+T.eq(flew, true, "DSR private-style startFlight passes without badge")
+T.eq(reason, "TAKEOFF", "DSR does not return THUNDERBADGE error")
+T.eq(next(flightSave.inventory), nil, "DSR adapter never grants a badge")
 
 local hooks = run.loader.hooks
 local pidgeot = { species = "PIDGEOT", moves = { { id = "FLY" } } }

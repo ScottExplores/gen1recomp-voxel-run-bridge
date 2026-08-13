@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.1 - 2026-08-13
+
+- Added the default-on **SKY RIDE NOW** option. It feature-detects Dramatic
+  Sky Ride 0.1.6+'s flight-rules interface and disables that mod's own
+  Thunder Badge takeoff check at runtime.
+- Kept Dramatic Sky Ride's **REQUIRE FLY**, **STORY GATES**, and
+  **DISCOVERY GATES** rules intact. No badge or story flag is written.
+- Preserved and restored the player's exact Dramatic Sky Ride **BADGE CHECKS**
+  preference when Scott's override is disabled.
+- Added unit and production-loader coverage for badge-less takeoff, option
+  isolation, save integrity, missing/incompatible Sky Ride versions, and
+  preference restoration.
+
 ## 0.2.0 - 2026-08-13
 
 - Renamed the visible mod from Voxel Run Bridge to Scott's Tweaks while

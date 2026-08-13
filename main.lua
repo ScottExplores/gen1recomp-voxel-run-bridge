@@ -26,6 +26,9 @@ local HM_ACTIONS = {
   FLASH = "flash",
 }
 
+local SKY_RIDE_ID = "DRAMATIC_SKY_RIDE"
+local SKY_RIDE_OPTION = "sky_ride_without_badges"
+
 local function pack(...)
   return { n = select("#", ...), ... }
 end
@@ -80,17 +83,26 @@ local function optionEnabled(mod, key, fallback)
   return value == true
 end
 
-local function installBadgeFreeFieldMoves(mod)
+local function defineOptions(mod)
   mod.options:define({
     {
       key = "hm_without_badges",
       type = "toggle",
       label = "BADGE-FREE HMS",
       default = true,
-      help = "Use CUT, FLY, SURF, STRENGTH and FLASH without badges. A party Pokemon must still know the move. Flying mods may also have their own BADGE CHECKS option.",
+      help = "Use CUT, FLY, SURF, STRENGTH and FLASH without badges. A party Pokemon must still know the move.",
+    },
+    {
+      key = SKY_RIDE_OPTION,
+      type = "toggle",
+      label = "SKY RIDE NOW",
+      default = true,
+      help = "Let Dramatic Sky Ride take off without THUNDERBADGE. REQUIRE FLY and STORY GATES stay under Sky Ride's control.",
     },
   })
+end
 
+local function installBadgeFreeFieldMoves(mod)
   -- Cut and Surf ask this hook again when the move is used. Calling next
   -- first preserves every vanilla or earlier-mod success; we only widen a
   -- rejected answer for one of the five badge-gated Gen 1 HMs.
@@ -156,6 +168,132 @@ local function installBadgeFreeFieldMoves(mod)
   end
 end
 
+-- Dramatic Sky Ride 0.1.6+ deliberately performs its badge test outside the
+-- engine's fieldmove.eligibility hook. Its public flightRules.badgeChecks
+-- export lets us feature-detect that implementation, while the value it and
+-- the private startFlight wrapper actually read lives in the loader's
+-- per-mod option table. Override only that one runtime value: no badge, move,
+-- story flag or persisted DSR preference is edited.
+local function installDramaticSkyRideImmediateFlight(mod)
+  local state = {
+    active = false,
+    reason = "dramatic_sky_ride_not_active",
+  }
+  local activeLoader
+  local priorSet = false
+  local priorValue
+  local priorBucketExisted = false
+
+  local function findSkyRide()
+    if type(mod.find) ~= "function" then return nil end
+    local ok, handle = pcall(mod.find, SKY_RIDE_ID)
+    if not ok then ok, handle = pcall(mod.find, mod, SKY_RIDE_ID) end
+    if ok then return handle end
+    return nil
+  end
+
+  local function compatible(handle)
+    local rules = handle and handle.exports and handle.exports.flightRules
+    if type(rules) ~= "table" or type(rules.badgeChecks) ~= "function" then
+      return false
+    end
+    return pcall(rules.badgeChecks)
+  end
+
+  local function restore()
+    local loader = activeLoader
+    local buckets = loader and loader.modOptions
+    local bucket = buckets and buckets[SKY_RIDE_ID]
+    if bucket then
+      if priorSet then
+        bucket.badge_checks = priorValue
+      else
+        bucket.badge_checks = nil
+      end
+      if not priorBucketExisted and next(bucket) == nil then
+        buckets[SKY_RIDE_ID] = nil
+      end
+    end
+    activeLoader = nil
+    priorSet, priorValue, priorBucketExisted = false, nil, false
+    state.active = false
+    state.reason = "disabled"
+  end
+
+  local function apply(loader)
+    if not optionEnabled(mod, SKY_RIDE_OPTION, true) then
+      if activeLoader then restore() end
+      state.reason = "disabled"
+      return false
+    end
+
+    local handle = findSkyRide()
+    if not handle then
+      state.active = false
+      state.reason = "dramatic_sky_ride_not_active"
+      return false
+    end
+    if not compatible(handle) then
+      state.active = false
+      state.reason = "unsupported_dramatic_sky_ride"
+      mod.log:warn("Dramatic Sky Ride does not expose the supported badge-check adapter")
+      return false
+    end
+    if type(loader) ~= "table" then
+      state.active = false
+      state.reason = "loader_unavailable"
+      return false
+    end
+
+    loader.modOptions = loader.modOptions or {}
+    local bucket = loader.modOptions[SKY_RIDE_ID]
+    if activeLoader ~= loader then
+      priorBucketExisted = bucket ~= nil
+      bucket = bucket or {}
+      loader.modOptions[SKY_RIDE_ID] = bucket
+      priorSet = bucket.badge_checks ~= nil
+      priorValue = bucket.badge_checks
+      activeLoader = loader
+    else
+      bucket = bucket or {}
+      loader.modOptions[SKY_RIDE_ID] = bucket
+    end
+    bucket.badge_checks = false
+    state.active = true
+    state.reason = "badge_checks_runtime_override"
+    state.version = handle.version
+    return true
+  end
+
+  if mod.events and type(mod.events.on) == "function" then
+    mod.events:on("mods.loaded", function(payload)
+      apply(payload and payload.loader or Game.mods)
+    end)
+    mod.events:on("mod.options_changed", function(payload)
+      if not payload then return end
+      if payload.mod == mod.id and payload.key == SKY_RIDE_OPTION then
+        if payload.value == true then apply(Game.mods) else restore() end
+      elseif state.active and payload.mod == SKY_RIDE_ID
+          and payload.key == "badge_checks" then
+        -- Keep the player's latest DSR preference ready for restoration if
+        -- Scott's override is later switched off, but hold the live answer
+        -- false while the override remains enabled.
+        priorSet = payload.value ~= nil
+        priorValue = payload.value
+        local buckets = activeLoader and activeLoader.modOptions
+        local bucket = buckets and buckets[SKY_RIDE_ID]
+        if bucket then bucket.badge_checks = false end
+      end
+    end)
+  end
+
+  apply(Game.mods)
+
+  mod.exports.skyRideBadgeBypass = function()
+    return state.active, state.reason, state.version
+  end
+end
+
 local function resolvedFrames(player, onBike)
   local base = (onBike and player.bikeStepFrames) or player.stepFrames or 16
   base = math.max(1, math.floor(finiteNumber(base, 16)))
@@ -180,7 +318,9 @@ local function resolvedFrames(player, onBike)
 end
 
 return function(mod)
+  defineOptions(mod)
   installBadgeFreeFieldMoves(mod)
+  installDramaticSkyRideImmediateFlight(mod)
 
   mod.exports.status = {
     active = false,
@@ -300,7 +440,7 @@ return function(mod)
   rawset(FreeMove, "tick", bridgedTick)
   rawset(lib, "_voxelRunBridgeHook", {
     owner = mod.id,
-    version = "0.2.0",
+    version = "0.2.1",
     original = innerTick,
   })
 end

@@ -71,6 +71,7 @@ local function fixture(opts)
   opts = opts or {}
   local seen = {}
   local hooks = {}
+  local eventListeners = {}
   local optionSchema
   local FreeMove = { WALK = 1, BIKE = 2 }
   local originalTick
@@ -103,10 +104,47 @@ local function fixture(opts)
     if key == "hm_without_badges" and opts.hmWithoutBadges ~= nil then
       return opts.hmWithoutBadges
     end
+    if key == "sky_ride_without_badges"
+        and opts.skyRideWithoutBadges ~= nil then
+      return opts.skyRideWithoutBadges
+    end
     for _, row in ipairs(optionSchema or {}) do
       if row.key == key then return row.default end
     end
   end
+
+  local events = {}
+  function events:on(name, callback)
+    eventListeners[name] = eventListeners[name] or {}
+    table.insert(eventListeners[name], callback)
+  end
+  function events:emit(name, payload)
+    for _, callback in ipairs(eventListeners[name] or {}) do callback(payload) end
+  end
+
+  local loader = { modOptions = {} }
+  if opts.skyRideStoredBadgeChecks ~= nil then
+    loader.modOptions.DRAMATIC_SKY_RIDE = {
+      badge_checks = opts.skyRideStoredBadgeChecks,
+    }
+  end
+  Game.mods = loader
+
+  local skyRules = {
+    badgeChecks = function()
+      local bucket = loader.modOptions.DRAMATIC_SKY_RIDE
+      if bucket and bucket.badge_checks ~= nil then
+        return bucket.badge_checks
+      end
+      return true
+    end,
+    requireFlyMove = function() return true end,
+    storyGates = function() return true end,
+  }
+  local skyRide = {
+    version = opts.skyRideVersion or "0.1.6",
+    exports = opts.skyRideMalformed and {} or { flightRules = skyRules },
+  }
 
   local hookApi = {}
   function hookApi:wrap(name, callback)
@@ -120,12 +158,14 @@ local function fixture(opts)
     id = "voxel_run_bridge",
     exports = {},
     hooks = hookApi,
+    events = events,
     options = options,
     log = {
       info = function(_, message) logs[#logs + 1] = message end,
       warn = function(_, message) logs[#logs + 1] = message end,
     },
     find = function(id)
+      if opts.skyRide and id == "DRAMATIC_SKY_RIDE" then return skyRide end
       if not opts.noVoxel and id == (opts.voxelId or "DRAMATIC_SHAPE") then
         return voxel
       end
@@ -142,6 +182,9 @@ local function fixture(opts)
     logs = logs,
     hooks = hooks,
     optionSchema = function() return optionSchema end,
+    events = events,
+    loader = loader,
+    skyRules = skyRules,
   }
 end
 
@@ -286,6 +329,8 @@ eq(manifest:match('"id"%s*:%s*"([^"]+)"'), "voxel_run_bridge",
   "stable manifest id")
 eq(manifest:match('"name"%s*:%s*"([^"]+)"'), "Scott's Tweaks",
   "player-facing manifest name")
+eq(manifest:match('"version"%s*:%s*"([^"]+)"'), "0.2.1",
+  "manifest patch version")
 
 -- Scott's Tweaks exposes the badge bypass as an ordinary, default-on option.
 local schema = absent.optionSchema()
@@ -297,6 +342,83 @@ end
 eq(type(hmOption), "table", "HM option row exists")
 eq(hmOption and hmOption.type, "toggle", "HM option type")
 eq(hmOption and hmOption.default, true, "HM option default")
+
+local skyOption
+for _, row in ipairs(schema or {}) do
+  if row.key == "sky_ride_without_badges" then skyOption = row end
+end
+eq(type(skyOption), "table", "Sky Ride option row exists")
+eq(skyOption and skyOption.type, "toggle", "Sky Ride option type")
+eq(skyOption and skyOption.default, true, "Sky Ride option default")
+
+-- Dramatic Sky Ride's private startFlight gate reads badge_checks directly
+-- from its own mod.options API. Scott's runtime overlay changes that exact
+-- answer without manufacturing the badge or changing other DSR rules.
+local sky = fixture({
+  noVoxel = true,
+  skyRide = true,
+  skyRideStoredBadgeChecks = true,
+})
+eq(sky.skyRules.badgeChecks(), false, "Sky Ride badge answer is overridden")
+eq(sky.skyRules.requireFlyMove(), true, "REQUIRE FLY remains enabled")
+eq(sky.skyRules.storyGates(), true, "STORY GATES remain enabled")
+local flightSave = { inventory = {} }
+local function privateStartFlightGate(save)
+  if sky.skyRules.badgeChecks()
+      and not save.inventory.THUNDERBADGE then
+    return false, "THUNDERBADGE REQUIRED"
+  end
+  return true, "TAKEOFF"
+end
+local tookOff, takeoffReason = privateStartFlightGate(flightSave)
+eq(tookOff, true, "private-style startFlight gate permits takeoff")
+eq(takeoffReason, "TAKEOFF", "takeoff does not show badge error")
+eq(next(flightSave.inventory), nil, "Sky Ride bypass does not grant a badge")
+local skyActive, skyReason, skyVersion = sky.mod.exports.skyRideBadgeBypass()
+eq(skyActive, true, "Sky Ride adapter reports active")
+eq(skyReason, "badge_checks_runtime_override", "Sky Ride adapter reason")
+eq(skyVersion, "0.1.6", "Sky Ride adapter reports detected version")
+
+-- A DSR settings change remains the player's stored preference. It is held
+-- false only while Scott's override is on, then restored exactly when off.
+sky.loader.modOptions.DRAMATIC_SKY_RIDE.badge_checks = true
+sky.events:emit("mod.options_changed", {
+  mod = "DRAMATIC_SKY_RIDE", key = "badge_checks", value = true,
+})
+eq(sky.loader.modOptions.DRAMATIC_SKY_RIDE.badge_checks, false,
+  "DSR badge setting stays overridden live")
+sky.events:emit("mod.options_changed", {
+  mod = "voxel_run_bridge", key = "sky_ride_without_badges", value = false,
+})
+eq(sky.loader.modOptions.DRAMATIC_SKY_RIDE.badge_checks, true,
+  "turning Scott override off restores DSR preference")
+
+local skyDisabled = fixture({
+  noVoxel = true,
+  skyRide = true,
+  skyRideStoredBadgeChecks = true,
+  skyRideWithoutBadges = false,
+})
+eq(skyDisabled.skyRules.badgeChecks(), true,
+  "disabled Scott option leaves DSR badge check intact")
+
+local noSky = fixture({ noVoxel = true })
+eq(noSky.loader.modOptions.DRAMATIC_SKY_RIDE, nil,
+  "missing DSR leaves its option namespace untouched")
+
+local unsupportedSky = fixture({
+  noVoxel = true,
+  skyRide = true,
+  skyRideMalformed = true,
+  skyRideStoredBadgeChecks = true,
+})
+eq(unsupportedSky.loader.modOptions.DRAMATIC_SKY_RIDE.badge_checks, true,
+  "unsupported DSR leaves its badge setting untouched")
+local unsupportedActive, unsupportedReason =
+  unsupportedSky.mod.exports.skyRideBadgeBypass()
+eq(unsupportedActive, false, "unsupported DSR adapter stays inactive")
+eq(unsupportedReason, "unsupported_dramatic_sky_ride",
+  "unsupported DSR reports its reason")
 
 -- HM support is installed even when there is no voxel provider to bridge.
 local eligibility = absent.hooks["fieldmove.eligibility"]
