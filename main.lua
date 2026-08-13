@@ -1,13 +1,13 @@
--- Voxel Run Bridge
+-- Scott's Tweaks
 --
--- Gen1Recomp's public movement.speed hook is evaluated by the grid walker.
--- Voxel first/third-person modes replace that walker with FreeMove.tick, so
--- speed mods never reach those camera modes. This adapter asks the existing
--- movement.speed chain for the same effective step duration the grid walker
--- would use, then applies that ratio to FreeMove for one tick only.
+-- This keeps the original Voxel Run Bridge identity so existing installs and
+-- GitHub updates continue in place, while giving Scott one small home for
+-- related quality-of-life rules.
 
 local Runtime = require("src.mods.Runtime")
 local Game = require("src.core.Game")
+local FieldDefaults = require("src.world.FieldDefaults")
+local Map = require("src.world.Map")
 
 local unpackValues = table.unpack or unpack
 
@@ -16,6 +16,14 @@ local VOXEL_IDS = {
   "BATTLE_ART_VOXEL_FORK",
   "DRAMALESS_SHAPE",
   "potato_voxel",
+}
+
+local HM_ACTIONS = {
+  CUT = "cut",
+  FLY = "fly",
+  SURF = "surf",
+  STRENGTH = "strength",
+  FLASH = "flash",
 }
 
 local function pack(...)
@@ -46,6 +54,108 @@ local function findVoxelMod(mod)
   return nil
 end
 
+local function moveId(move)
+  if type(move) == "table" then return move.id end
+  if type(move) == "string" then return move end
+  return nil
+end
+
+local function knowsMove(mon, wanted)
+  for _, move in ipairs((mon and mon.moves) or {}) do
+    if moveId(move) == wanted then return true end
+  end
+  return false
+end
+
+local function partyMemberKnowing(save, wanted)
+  for _, mon in ipairs((save and save.party) or {}) do
+    if knowsMove(mon, wanted) then return mon end
+  end
+  return nil
+end
+
+local function optionEnabled(mod, key, fallback)
+  local ok, value = pcall(mod.options.get, mod.options, key)
+  if not ok or value == nil then return fallback end
+  return value == true
+end
+
+local function installBadgeFreeFieldMoves(mod)
+  mod.options:define({
+    {
+      key = "hm_without_badges",
+      type = "toggle",
+      label = "BADGE-FREE HMS",
+      default = true,
+      help = "Use CUT, FLY, SURF, STRENGTH and FLASH without badges. A party Pokemon must still know the move. Flying mods may also have their own BADGE CHECKS option.",
+    },
+  })
+
+  -- Cut and Surf ask this hook again when the move is used. Calling next
+  -- first preserves every vanilla or earlier-mod success; we only widen a
+  -- rejected answer for one of the five badge-gated Gen 1 HMs.
+  mod.hooks:wrap("fieldmove.eligibility",
+    function(nextFn, wanted, ctx)
+      local vanilla = nextFn(wanted, ctx)
+      if vanilla ~= nil then return vanilla end
+      if not optionEnabled(mod, "hm_without_badges", true)
+          or HM_ACTIONS[wanted] == nil then
+        return nil
+      end
+      local save = (ctx and ctx.save) or Game.save
+      return partyMemberKnowing(save, wanted)
+    end, 1000)
+
+  -- Vanilla hides HM actions from the party submenu when the badge is
+  -- missing. Add only those hidden rows, in the Pokemon's actual move order,
+  -- while preserving terrain/context rules and entries supplied by other
+  -- mods. Nothing is taught and no badge/save flag is changed.
+  mod.hooks:wrap("ui.party.submenu",
+    function(nextFn, game, items, mon, ctx)
+      local downstream = nextFn(game, items, mon, ctx)
+      if type(downstream) == "table" then items = downstream end
+      if type(items) ~= "table"
+          or not optionEnabled(mod, "hm_without_badges", true)
+          or (ctx and ctx.battle)
+          or not (ctx and ctx.overworld) then
+        return items
+      end
+
+      local ow = ctx.overworld
+      local outside = ow.map and ow.map.def and Map.isOutside(
+        ow.map.def, FieldDefaults.field(game.data, "outsideTilesets")) or false
+      local existing = {}
+      local insertAt = #items + 1
+      for index, item in ipairs(items) do
+        if type(item) == "table" then
+          if item.action then existing[item.action] = true end
+          if insertAt == #items + 1
+              and (item.action == "stats" or item.action == "switch") then
+            insertAt = index
+          end
+        end
+      end
+
+      for _, move in ipairs((mon and mon.moves) or {}) do
+        local id = moveId(move)
+        local action = HM_ACTIONS[id]
+        local contextAllows = action ~= nil
+          and (id ~= "FLY" or outside)
+          and (id ~= "FLASH" or ow.dark == true)
+        if contextAllows and not existing[action] then
+          table.insert(items, insertAt, { label = id, action = action })
+          existing[action] = true
+          insertAt = insertAt + 1
+        end
+      end
+      return items
+    end, 1000)
+
+  mod.exports.hmWithoutBadges = function()
+    return optionEnabled(mod, "hm_without_badges", true)
+  end
+end
+
 local function resolvedFrames(player, onBike)
   local base = (onBike and player.bikeStepFrames) or player.stepFrames or 16
   base = math.max(1, math.floor(finiteNumber(base, 16)))
@@ -70,6 +180,8 @@ local function resolvedFrames(player, onBike)
 end
 
 return function(mod)
+  installBadgeFreeFieldMoves(mod)
+
   mod.exports.status = {
     active = false,
     reason = "no_supported_voxel_mod",
@@ -188,7 +300,7 @@ return function(mod)
   rawset(FreeMove, "tick", bridgedTick)
   rawset(lib, "_voxelRunBridgeHook", {
     owner = mod.id,
-    version = "0.1.1",
+    version = "0.2.0",
     original = innerTick,
   })
 end

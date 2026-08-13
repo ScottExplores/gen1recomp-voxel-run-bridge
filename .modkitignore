@@ -1,4 +1,5 @@
 tests/main.lua
+tests/full_load.lua
 tests/README.md
 docs/MODDING_GUIDE.md
 dist/*.zip

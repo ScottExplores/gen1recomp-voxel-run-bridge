@@ -1,8 +1,44 @@
-# Voxel Run Bridge
+# Scott's Tweaks
 
-Voxel Run Bridge makes Gen1Recomp movement-speed mods work while a supported
-voxel mod is driving the player in **1ST** or **3RD** person. That includes
-Running Shoes mods that use the engine's public `movement.speed` hook.
+Scott's Tweaks is the next version of **Voxel Run Bridge**. The display name
+is broader, but its internal mod ID remains `voxel_run_bridge`. Existing
+installations therefore update in place, keep their settings, and do not
+become a duplicate mod.
+
+Version 0.2.0 contains two independent tweaks:
+
+- **Badge-free HMs:** use Cut, Fly, Surf, Strength, and Flash without their
+  badge. A party Pokemon must still actually know the move. Normal map,
+  terrain, and story restrictions remain in effect.
+- **Voxel Run Bridge:** movement-speed mods work while a supported voxel mod
+  is driving the player in **1ST** or **3RD** person.
+
+Neither feature grants badges, teaches moves, changes story flags, or edits a
+save's badge inventory.
+
+## Dramatic Sky Ride / Free Fly
+
+Flying mods perform their own badge check outside Gen1Recomp's normal HM
+hook. Both **Dramatic Sky Ride** and **Free Fly** already provide a supported
+setting for this:
+
+1. Open the flying mod's options.
+2. Set **BADGE CHECKS** to **OFF**.
+3. Leave **STORY GATES** on unless you deliberately want to bypass those too.
+4. If the mount does not know Fly and you want that requirement removed, set
+   **REQUIRE FLY** to **OFF** as well.
+
+In current Dramatic Sky Ride releases, first set **SETTINGS VIEW** to
+**ADVANCED** to reveal those rows. Scott's Tweaks does not secretly rewrite
+another mod's private settings; the one-time change above is the mod author's
+intended path. Dramatic Sky Ride's settings persist after you change them.
+
+## Voxel running
+
+The original bridge makes Gen1Recomp movement-speed mods work while a
+supported voxel mod is driving the player in **1ST** or **3RD** person. That
+includes Running Shoes mods that use the engine's public `movement.speed`
+hook.
 
 It does not grant shoes, add a quest, or choose a speed. It carries the speed
 already selected by another mod from the normal grid walker into the voxel
@@ -15,7 +51,7 @@ or [Run Mode](https://github.com/masterwebx/gen1recomp-run-mode). Those two
 are the main reason this adapter exists: their normal run hook does not enter
 voxel free movement on its own.
 
-## Do you need this?
+### Do you need the run bridge?
 
 - **[thorkdev Running Shoes v0.2.2 or newer](https://github.com/thorkdev/gen1recomp-running-shoes/releases/tag/0.2.2)
   + Dramatic Shape/Battle Art Voxel Fork:** probably not. That Running Shoes
@@ -43,26 +79,41 @@ one another in their own manifests. PotatoVoxel's default low-power profile
 currently hides the 1ST/3RD rungs, so its bridge support matters only when its
 full camera ladder is enabled.
 
-## Install
+## Install or update
 
-1. Install and enable your voxel mod.
-2. Install and enable a movement-speed mod such as Running Shoes.
-3. In Gen1Recomp, open **MODS -> Import mod .zip** and choose
-   `voxel_run_bridge-0.1.1.zip`.
-4. Enable **Voxel Run Bridge**, then restart the game if the manager asks.
-5. Enter the voxel mod's first- or third-person mode and use the run control
-   provided by your movement mod (normally hold **B**).
+If `voxel_run_bridge` 0.1.1 is already installed, open Gen1Recomp's puzzle
+piece / **MODS** panel and install the offered 0.2.0 update. It will appear as
+**Scott's Tweaks** afterward, without creating a second entry.
 
-The manager will ask for the `engine_internals` permission. The bridge needs
-it to call the engine's movement hook bus and read the live game context. It
-reaches the voxel provider through the normal companion export and requests
-no network or filesystem permission.
+For a first installation:
+
+1. Open **MODS -> Import mod .zip** and choose
+   `voxel_run_bridge-0.2.0.zip`.
+2. Enable **Scott's Tweaks**, then restart the game if the manager asks.
+3. Its **BADGE-FREE HMS** option defaults to **ON**.
+4. For voxel running, also enable one supported voxel provider and a
+   movement-speed mod such as Running Shoes.
+
+The manager will ask for the `engine_internals` permission. Scott's Tweaks
+uses Gen1Recomp's official field-move and party-menu hooks, plus the existing
+voxel companion export. It requests no network or filesystem permission.
 
 Restart after enabling, disabling, or updating this bridge. Its small
 inter-mod wrapper is installed into the voxel provider's exported table and
 cannot be safely swapped by the developer F5 hot-reload path.
 
-## How it works
+## How badge-free HMs work
+
+Gen1Recomp exposes `fieldmove.eligibility` for field-move eligibility and
+`ui.party.submenu` for party actions. Scott's Tweaks calls the rest of each
+hook chain first, then supplies only a missing action for a party Pokemon that
+already knows the corresponding HM. Fly remains outdoor-only, Flash remains
+dark-map-only, and Cut/Surf keep their normal facing-tile checks.
+
+The implementation never sets a badge flag, so gym progression, obedience,
+story gates, and other mods continue to see the real journey state.
+
+## How voxel running works
 
 The regular grid walker measures movement as frames per 16-pixel step and
 calls `movement.speed` before each step. Voxel first/third person replaces
@@ -97,13 +148,13 @@ Use the `dev` branch of
 ```powershell
 python tools/modkit.py validate C:\path\to\voxel_run_bridge --strict --base fixture
 python tools/modkit.py lint C:\path\to\voxel_run_bridge
-python tools/modkit.py pack C:\path\to\voxel_run_bridge -o C:\path\to\dist\voxel_run_bridge-0.1.1.zip --base fixture
+python tools/modkit.py pack C:\path\to\voxel_run_bridge -o C:\path\to\dist\voxel_run_bridge-0.2.0.zip --base fixture
 ```
 
 The archive is intentionally flat: `manifest.json` and `main.lua` are at its
 root, which Gen1Recomp's importer accepts directly.
 
-Version 0.1.1 is configured for Gen1Recomp's built-in GitHub update checks via
+Version 0.2.0 is configured for Gen1Recomp's built-in GitHub update checks via
 `ScottExplores/gen1recomp-voxel-run-bridge`.
 
 ## Provenance
