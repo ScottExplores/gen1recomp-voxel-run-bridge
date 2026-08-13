@@ -12,6 +12,20 @@ local function eq(actual, expected, label)
   end
 end
 
+local function countAction(items, action)
+  local count = 0
+  for _, item in ipairs(items) do
+    if item.action == action then count = count + 1 end
+  end
+  return count
+end
+
+local function indexOfAction(items, action)
+  for index, item in ipairs(items) do
+    if item.action == action then return index end
+  end
+end
+
 local speedResponder
 local speedCalls = 0
 
@@ -31,14 +45,33 @@ local Game = {
   input = { isDown = function() return true end },
 }
 
+local Map = {}
+function Map.isOutside(def, outsideTilesets)
+  eq(outsideTilesets, "fixture-outside-tilesets", "outside tileset data")
+  return def and def.fixtureOutside == true or false
+end
+
+local FieldDefaults = {}
+function FieldDefaults.field(data, key)
+  eq(key, "outsideTilesets", "outside field key")
+  return data and data.fields and data.fields.outsideTilesets
+end
+
 package.preload["src.mods.Runtime"] = function() return Runtime end
 package.preload["src.core.Game"] = function() return Game end
+package.preload["src.world.Map"] = function() return Map end
+package.preload["src.world.FieldDefaults"] = function() return FieldDefaults end
+package.preload["src.core.Strings"] = function()
+  return function(value) return value end
+end
 
 local entry = assert(loadfile("main.lua"))()
 
 local function fixture(opts)
   opts = opts or {}
   local seen = {}
+  local hooks = {}
+  local optionSchema
   local FreeMove = { WALK = 1, BIKE = 2 }
   local originalTick
   originalTick = function(state)
@@ -60,9 +93,34 @@ local function fixture(opts)
   local exportedLib = opts.malformedLib and 42 or lib
   local voxel = { exports = { lib = exportedLib } }
   local logs = {}
+  local options = {}
+  function options:define(schema)
+    eq(type(schema), "table", "options schema type")
+    optionSchema = schema
+    return schema
+  end
+  function options:get(key)
+    if key == "hm_without_badges" and opts.hmWithoutBadges ~= nil then
+      return opts.hmWithoutBadges
+    end
+    for _, row in ipairs(optionSchema or {}) do
+      if row.key == key then return row.default end
+    end
+  end
+
+  local hookApi = {}
+  function hookApi:wrap(name, callback)
+    hooks[name] = callback
+    return function()
+      if hooks[name] == callback then hooks[name] = nil end
+    end
+  end
+
   local mod = {
     id = "voxel_run_bridge",
     exports = {},
+    hooks = hookApi,
+    options = options,
     log = {
       info = function(_, message) logs[#logs + 1] = message end,
       warn = function(_, message) logs[#logs + 1] = message end,
@@ -82,6 +140,8 @@ local function fixture(opts)
     originalTick = originalTick,
     seen = seen,
     logs = logs,
+    hooks = hooks,
+    optionSchema = function() return optionSchema end,
   }
 end
 
@@ -217,6 +277,193 @@ local absent = fixture({ noVoxel = true })
 eq(absent.mod.exports.status.active, false, "no-voxel status")
 eq(absent.mod.exports.status.reason, "no_supported_voxel_mod",
   "no-voxel reason")
+
+-- The player-facing rename must not change the installed mod's stable id.
+local manifestFile = assert(io.open("manifest.json", "rb"))
+local manifest = manifestFile:read("*a")
+manifestFile:close()
+eq(manifest:match('"id"%s*:%s*"([^"]+)"'), "voxel_run_bridge",
+  "stable manifest id")
+eq(manifest:match('"name"%s*:%s*"([^"]+)"'), "Scott's Tweaks",
+  "player-facing manifest name")
+
+-- Scott's Tweaks exposes the badge bypass as an ordinary, default-on option.
+local schema = absent.optionSchema()
+eq(type(schema), "table", "HM option schema exists")
+local hmOption
+for _, row in ipairs(schema or {}) do
+  if row.key == "hm_without_badges" then hmOption = row end
+end
+eq(type(hmOption), "table", "HM option row exists")
+eq(hmOption and hmOption.type, "toggle", "HM option type")
+eq(hmOption and hmOption.default, true, "HM option default")
+
+-- HM support is installed even when there is no voxel provider to bridge.
+local eligibility = absent.hooks["fieldmove.eligibility"]
+local submenu = absent.hooks["ui.party.submenu"]
+eq(type(eligibility), "function", "no-voxel field-move hook")
+eq(type(submenu), "function", "no-voxel party-menu hook")
+
+-- Vanilla answers win and are returned before the fallback scans the party.
+local vanillaUser = { species = "BLASTOISE" }
+local vanillaCalls = 0
+local vanillaResult = eligibility(function(moveId, ctx)
+  vanillaCalls = vanillaCalls + 1
+  eq(moveId, "SURF", "vanilla eligibility move")
+  eq(type(ctx), "table", "vanilla eligibility context")
+  return vanillaUser
+end, "SURF", {
+  -- This malformed fallback data would throw if the wrapper scanned after a
+  -- successful vanilla answer instead of returning it immediately.
+  save = { inventory = {}, party = { { moves = false } } },
+})
+eq(vanillaResult, vanillaUser, "vanilla field-move user wins")
+eq(vanillaCalls, 1, "vanilla eligibility called once")
+
+-- With no badge, the fallback returns only a party member that really knows
+-- the requested HM. It never grants the badge or teaches a move.
+local pidgeot = {
+  species = "PIDGEOT",
+  moves = { { id = "WING_ATTACK" }, { id = "FLY" } },
+}
+local lapras = {
+  species = "LAPRAS",
+  moves = { { id = "SURF" }, { id = "ICE_BEAM" } },
+}
+local noBadgeSave = {
+  inventory = {},
+  party = { pidgeot, lapras },
+}
+local fallbackCalls = 0
+local flyUser = eligibility(function(moveId, ctx)
+  fallbackCalls = fallbackCalls + 1
+  eq(moveId, "FLY", "fallback eligibility move")
+  eq(ctx.save, noBadgeSave, "fallback eligibility save")
+  return nil
+end, "FLY", { save = noBadgeSave, data = {} })
+eq(flyUser, pidgeot, "badge-free FLY still needs a move user")
+eq(fallbackCalls, 1, "fallback eligibility called once")
+eq(next(noBadgeSave.inventory), nil, "badge inventory remains untouched")
+
+local unknownUser = eligibility(function() return nil end, "CUT", {
+  save = noBadgeSave,
+})
+eq(unknownUser, nil, "unknown HM is not invented")
+
+-- The party hook composes with earlier hooks, keeps their table and entries,
+-- and inserts the known HMs in move-slot order before STATS/SWITCH.
+local custom = { label = "QUESTS", action = "quests" }
+local stats = { label = "STATS", action = "stats" }
+local switch = { label = "SWITCH", action = "switch" }
+local inputItems = { { label = "IGNORED", action = "ignored" } }
+local chainedItems = { custom, stats, switch }
+local hmMon = {
+  moves = {
+    { id = "CUT" },
+    { id = "FLY" },
+    { id = "SURF" },
+    { id = "FLASH" },
+    { id = "STRENGTH" },
+  },
+}
+local fieldGame = {
+  data = { fields = { outsideTilesets = "fixture-outside-tilesets" } },
+  save = { inventory = {} },
+}
+local fieldCtx = {
+  battle = false,
+  overworld = {
+    dark = true,
+    map = { def = { fixtureOutside = true } },
+  },
+}
+local submenuCalls = 0
+local fieldItems = submenu(function(game, items, mon, ctx)
+  submenuCalls = submenuCalls + 1
+  eq(game, fieldGame, "submenu chained game")
+  eq(items, inputItems, "submenu chained input")
+  eq(mon, hmMon, "submenu chained mon")
+  eq(ctx, fieldCtx, "submenu chained context")
+  return chainedItems
+end, fieldGame, inputItems, hmMon, fieldCtx)
+eq(submenuCalls, 1, "submenu chain called once")
+eq(fieldItems, chainedItems, "submenu keeps chained table")
+eq(fieldItems[indexOfAction(fieldItems, "quests")], custom,
+  "custom submenu row preserved")
+eq(fieldItems[indexOfAction(fieldItems, "stats")], stats,
+  "STATS submenu row preserved")
+eq(fieldItems[indexOfAction(fieldItems, "switch")], switch,
+  "SWITCH submenu row preserved")
+
+local orderedActions = { "cut", "fly", "surf", "flash", "strength" }
+local previousIndex = 0
+for _, action in ipairs(orderedActions) do
+  eq(countAction(fieldItems, action), 1, action .. " appears once")
+  local actionIndex = indexOfAction(fieldItems, action)
+  eq(type(actionIndex), "number", action .. " has a menu index")
+  eq(actionIndex > previousIndex, true, action .. " keeps move-slot order")
+  eq(actionIndex < indexOfAction(fieldItems, "stats"), true,
+    action .. " appears before STATS")
+  previousIndex = actionIndex
+end
+
+-- A vanilla/other-mod row is not duplicated when the same HM is known.
+local existingFly = { label = "FLY", action = "fly" }
+local existingCut = { label = "CUT", action = "cut" }
+local duplicateItems = { existingFly, existingCut, stats, switch }
+local deduped = submenu(function() return duplicateItems end, fieldGame, {}, {
+  moves = { { id = "FLY" }, { id = "CUT" } },
+}, fieldCtx)
+eq(deduped, duplicateItems, "de-dup keeps submenu table")
+eq(countAction(deduped, "fly"), 1, "FLY is not duplicated")
+eq(countAction(deduped, "cut"), 1, "CUT is not duplicated")
+eq(deduped[indexOfAction(deduped, "fly")], existingFly,
+  "existing FLY row is preserved")
+eq(deduped[indexOfAction(deduped, "cut")], existingCut,
+  "existing CUT row is preserved")
+
+-- FLY remains outdoors-only and FLASH remains useful only while the map is
+-- dark; badge bypassing does not erase their normal environment rules.
+local indoorItems = { stats, switch }
+local indoorCtx = {
+  battle = false,
+  overworld = {
+    dark = false,
+    map = { def = { fixtureOutside = false } },
+  },
+}
+local indoors = submenu(function() return indoorItems end, fieldGame, {}, {
+  moves = { { id = "FLY" }, { id = "FLASH" }, { id = "CUT" } },
+}, indoorCtx)
+eq(countAction(indoors, "fly"), 0, "FLY stays hidden indoors")
+eq(countAction(indoors, "flash"), 0, "FLASH stays hidden on a lit map")
+eq(countAction(indoors, "cut"), 1, "CUT remains available indoors")
+
+-- Battle party menus pass through byte-for-byte, even for an HM-heavy mon.
+local battleItems = {
+  { label = "SWITCH", action = "battle_switch" },
+  { label = "STATS", action = "stats" },
+  { label = "CANCEL", action = "cancel" },
+}
+local battleResult = submenu(function() return battleItems end, fieldGame, {},
+  hmMon, { battle = true, overworld = false })
+eq(battleResult, battleItems, "battle submenu table untouched")
+eq(#battleResult, 3, "battle submenu row count untouched")
+eq(countAction(battleResult, "fly"), 0, "battle submenu gets no FLY")
+
+-- Turning the option off is a strict pass-through for both hook surfaces.
+local disabled = fixture({ noVoxel = true, hmWithoutBadges = false })
+local disabledEligibility = disabled.hooks["fieldmove.eligibility"]
+local disabledSubmenu = disabled.hooks["ui.party.submenu"]
+local denied = { reason = "vanilla_denied" }
+local disabledResult = disabledEligibility(function() return denied end,
+  "FLY", { save = { party = { pidgeot } } })
+eq(disabledResult, denied, "disabled eligibility uses vanilla result")
+local disabledItems = { stats, switch }
+local disabledMenuResult = disabledSubmenu(function() return disabledItems end,
+  fieldGame, {}, hmMon, fieldCtx)
+eq(disabledMenuResult, disabledItems, "disabled submenu table untouched")
+eq(#disabledMenuResult, 2, "disabled submenu rows untouched")
 
 print(("voxel_run_bridge: %d checks passed"):format(checks))
 if love and love.event then love.event.quit(0) end

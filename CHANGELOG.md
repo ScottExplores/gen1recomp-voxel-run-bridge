@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.0 - 2026-08-13
+
+- Renamed the visible mod from Voxel Run Bridge to Scott's Tweaks while
+  retaining the internal `voxel_run_bridge` ID for seamless updates.
+- Added the default-on **BADGE-FREE HMS** option for Cut, Fly, Surf, Strength,
+  and Flash. Pokemon must still know the move, and normal context checks stay
+  intact.
+- Added party-menu actions for known HMs hidden only by a missing badge,
+  without writing badge flags or teaching moves.
+- Documented the supported **BADGE CHECKS = OFF** setting required by
+  Dramatic Sky Ride and Free Fly, which perform an additional private check.
+- Raised the tested Gen1Recomp floor to 0.1.75 for the field-move and party UI
+  hook contracts.
+
 ## 0.1.1 - 2026-08-13
 
 - Added the public GitHub repository metadata used by Gen1Recomp's built-in
