@@ -5,33 +5,35 @@ is broader, but its internal mod ID remains `voxel_run_bridge`. Existing
 installations therefore update in place, keep their settings, and do not
 become a duplicate mod.
 
-Version 0.2.0 contains two independent tweaks:
+Version 0.2.1 contains three independent tweaks:
 
+- **Sky Ride Now:** Dramatic Sky Ride can take off immediately without the
+  Thunder Badge. This compatibility option is on by default.
 - **Badge-free HMs:** use Cut, Fly, Surf, Strength, and Flash without their
   badge. A party Pokemon must still actually know the move. Normal map,
   terrain, and story restrictions remain in effect.
 - **Voxel Run Bridge:** movement-speed mods work while a supported voxel mod
   is driving the player in **1ST** or **3RD** person.
 
-Neither feature grants badges, teaches moves, changes story flags, or edits a
-save's badge inventory.
+None of these features grants badges, teaches moves, changes story flags, or
+edits a save's badge inventory.
 
-## Dramatic Sky Ride / Free Fly
+## Dramatic Sky Ride
 
-Flying mods perform their own badge check outside Gen1Recomp's normal HM
-hook. Both **Dramatic Sky Ride** and **Free Fly** already provide a supported
-setting for this:
+Dramatic Sky Ride performs its own badge check outside Gen1Recomp's normal HM
+hook. Scott's Tweaks now detects its public flight-rules interface and holds
+Sky Ride's live **BADGE CHECKS** answer off while **SKY RIDE NOW** is enabled.
+It defaults to enabled, so there is no second setting you have to find.
 
-1. Open the flying mod's options.
-2. Set **BADGE CHECKS** to **OFF**.
-3. Leave **STORY GATES** on unless you deliberately want to bypass those too.
-4. If the mount does not know Fly and you want that requirement removed, set
-   **REQUIRE FLY** to **OFF** as well.
+This does not add the Thunder Badge or alter the save. Dramatic Sky Ride's
+**REQUIRE FLY**, **STORY GATES**, and **DISCOVERY GATES** settings remain in
+control. Because Dramatic Sky Ride groups its Thunder Badge takeoff rule and
+Soul Badge water-landing rule under the same **BADGE CHECKS** option, both
+badge checks are relaxed while **SKY RIDE NOW** is on.
 
-In current Dramatic Sky Ride releases, first set **SETTINGS VIEW** to
-**ADVANCED** to reveal those rows. Scott's Tweaks does not secretly rewrite
-another mod's private settings; the one-time change above is the mod author's
-intended path. Dramatic Sky Ride's settings persist after you change them.
+Turn **SKY RIDE NOW** off in Scott's Tweaks to return control to Dramatic Sky
+Ride's own saved **BADGE CHECKS** preference. The exact previous value is
+restored. **Free Fly** is a separate mod and still uses its own options.
 
 ## Voxel running
 
@@ -81,16 +83,17 @@ full camera ladder is enabled.
 
 ## Install or update
 
-If `voxel_run_bridge` 0.1.1 is already installed, open Gen1Recomp's puzzle
-piece / **MODS** panel and install the offered 0.2.0 update. It will appear as
+If `voxel_run_bridge` 0.1.1 or Scott's Tweaks 0.2.0 is already installed, open
+Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.2.1
+update. It will appear as
 **Scott's Tweaks** afterward, without creating a second entry.
 
 For a first installation:
 
 1. Open **MODS -> Import mod .zip** and choose
-   `voxel_run_bridge-0.2.0.zip`.
+   `voxel_run_bridge-0.2.1.zip`.
 2. Enable **Scott's Tweaks**, then restart the game if the manager asks.
-3. Its **BADGE-FREE HMS** option defaults to **ON**.
+3. Its **BADGE-FREE HMS** and **SKY RIDE NOW** options default to **ON**.
 4. For voxel running, also enable one supported voxel provider and a
    movement-speed mod such as Running Shoes.
 
@@ -148,13 +151,13 @@ Use the `dev` branch of
 ```powershell
 python tools/modkit.py validate C:\path\to\voxel_run_bridge --strict --base fixture
 python tools/modkit.py lint C:\path\to\voxel_run_bridge
-python tools/modkit.py pack C:\path\to\voxel_run_bridge -o C:\path\to\dist\voxel_run_bridge-0.2.0.zip --base fixture
+python tools/modkit.py pack C:\path\to\voxel_run_bridge -o C:\path\to\dist\voxel_run_bridge-0.2.1.zip --base fixture
 ```
 
 The archive is intentionally flat: `manifest.json` and `main.lua` are at its
 root, which Gen1Recomp's importer accepts directly.
 
-Version 0.2.0 is configured for Gen1Recomp's built-in GitHub update checks via
+Version 0.2.1 is configured for Gen1Recomp's built-in GitHub update checks via
 `ScottExplores/gen1recomp-voxel-run-bridge`.
 
 ## Provenance
