@@ -1,7 +1,7 @@
 {
   "id": "voxel_run_bridge",
   "name": "Scott's Tweaks",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "github": "ScottExplores/gen1recomp-voxel-run-bridge",
   "api": 2,
   "entry": "main.lua",
@@ -25,5 +25,5 @@
   "games": ["gen1"],
   "experimental": false,
   "permissions": ["engine_internals"],
-  "description": "Scott's small gameplay tweaks: immediate badge-free Free Fly, badge-free HM field moves and voxel running support."
+  "description": "Scott's small gameplay tweaks: badge-free Free Fly and HMs, voxel running, and Pokemon Final cache-result compatibility."
 }

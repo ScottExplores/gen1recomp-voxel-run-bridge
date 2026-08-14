@@ -14,7 +14,9 @@ a voxel provider. The suite also feature-detects Free Fly's public flight
 state and real `badges` option, exercises the same live value its private
 takeoff gate reads, proves takeoff no longer returns the THUNDERBADGE error,
 and verifies FLY eligibility, story rules, inventory, and the player's saved
-Free Fly preference remain isolated.
+Free Fly preference remain isolated. Pokemon Final cache-screen fixtures also
+lock the behavior probe, successful-state check, return/error preservation,
+ownership marker, idempotence, foreign-owner refusal, and exact restoration.
 
 Run it from the repository root with LuaJIT (`luajit tests/main.lua`) or point
 the LOVE console executable at the test directory (`lovec tests`). The
@@ -41,3 +43,18 @@ luajit tests\voxel_full_load.lua <mod-root> <engine-root> [extracted-free-fly-ro
 
 The baseline fixture has 22 checks; supplying the real Free Fly directory
 enables six more compatibility checks for a 28-check run.
+
+`cache_compat_full_load.lua` reads `ScottPrecacheScreen.lua` directly from an
+extracted local Pokemon Final package at test time; no private source is kept
+in this repository. Run it once with the buggy `1.8.1-scott.2` directory and
+once with the corrected `1.8.1-scott.3` directory against each supported
+engine loader:
+
+```powershell
+luajit tests\cache_compat_full_load.lua <mod-root> <engine-root> <pokemon-final-.2-root> patched
+luajit tests\cache_compat_full_load.lua <mod-root> <engine-root> <pokemon-final-.3-root> safe
+```
+
+The first run proves the wrapper is installed and clears only a confirmed
+successful start. The second proves the corrected private function and module
+table remain untouched.

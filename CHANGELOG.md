@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.3 - 2026-08-13
+
+- Added a behavior-probed compatibility fix for the false **COULD NOT START**
+  result in early Pokemon Final disk-cache screens. A confirmed running build
+  now clears only that fallback; real cache errors remain visible.
+- Kept the fix ownership-marked, idempotent, and reversible. It declines an
+  unknown module shape or a wrapper owned by another mod.
+- Verified that Pokemon Final `1.8.1-scott.2` receives the fix while the exact
+  corrected `1.8.1-scott.3` package is detected as already safe and remains
+  untouched under Gen1Recomp 0.1.75 and 0.1.80.
+- Kept all Pokemon Final source and assets out of this public package; the
+  adapter uses only the private mod's deliberately exported module seam.
+
 ## 0.2.2 - 2026-08-13
 
 - Added `POKEMON_FINAL` as a supported voxel provider, so Running Shoes speed
