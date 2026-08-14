@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.4.0 - 2026-08-13
+
+- Added the default-on **BAG POCKETS** view. Left/Right switches between
+  ITEMS, BALLS, TM/HM, and KEY ITEMS while the original inventory, capacity,
+  quantities, item-use flows, and global SELECT order remain authoritative.
+- Added a live **BAG:N** quantity indicator to the mart BUY screen without
+  replacing prices, money, purchase rules, or another mod's existing stock.
+- Added **EXP. MODE** with VANILLA, LEAD ONLY, PARTY ALL, and EXP.SHARE.
+  VANILLA remains the update-safe default. Custom modes reuse the engine's
+  award path, preserve event/stat/move/evolution hooks, and restore the real
+  EXP.ALL inventory value after every award, including on errors.
+- Added the passive **EXP.SHARE** key item. It is granted once when that mode
+  is first selected, stays unlocked when another mode is chosen, and retries
+  safely when the bag is full or the item was restored to the PC.
+- Added the ₽500 **TRADE STONE** to Gen 1 shops. It evolves Kadabra, Machoke,
+  Graveler, and Haunter through the normal item-evolution sequence while
+  leaving native link-trade evolution definitions unchanged.
+- Added a narrowly namespaced compatibility adapter for Gen1Recomp 0.1.75,
+  whose content registry predates custom-item effect dispatch. Every other
+  item delegates to the engine unchanged; newer engines receive the same
+  registered effect result.
+- Declared `affects_link: false`: the added inventory/UI content does not
+  alter battle or trade rules, and the evolved results are native species.
+
 ## 0.3.0 - 2026-08-13
 
 - Added the default-on **GAPPED LAND** presentation option for Pokemon Final

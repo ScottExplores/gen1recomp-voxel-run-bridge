@@ -28,11 +28,32 @@ function Map.isOutdoor(def) return def and def.outdoor == true or false end
 function Map.isOutside() return false end
 local FieldDefaults = {}
 function FieldDefaults.field() return {} end
+local ItemEffects = {
+  isBall = function() return false end,
+  needsTarget = function() return false end,
+  use = function() return "failed", { "No effect." } end,
+}
+local Bag = {
+  order = function(save)
+    save.bagOrder = save.bagOrder or {}
+    return save.bagOrder
+  end,
+  add = function() return true end,
+  remove = function() end,
+}
 
 package.preload["src.mods.Runtime"] = function() return Runtime end
 package.preload["src.core.Game"] = function() return Game end
 package.preload["src.world.Map"] = function() return Map end
 package.preload["src.world.FieldDefaults"] = function() return FieldDefaults end
+package.preload["src.inventory.ItemEffects"] = function() return ItemEffects end
+package.preload["src.inventory.Bag"] = function() return Bag end
+package.preload["src.ui.BagMenu"] = function()
+  return { new = function() return {} end }
+end
+package.preload["src.ui.ShopMenu"] = function()
+  return { new = function() return {} end }
+end
 
 local entry = assert(loadfile("main.lua"))()
 
@@ -133,6 +154,14 @@ local function fixture(config)
   local mod = {
     id = "voxel_run_bridge", exports = {}, options = options, hooks = hooks,
     events = events, log = log,
+    content = {
+      items = { register = function() end },
+      item_effects = { register = function() end },
+      screens = {
+        get = function() return nil end,
+        override = function() end,
+      },
+    },
   }
   function mod.find(id)
     if not config.noProvider and id == (config.providerId or "POKEMON_FINAL") then

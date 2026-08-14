@@ -3,6 +3,8 @@ tests/gapped_land.lua
 tests/full_load.lua
 tests/voxel_full_load.lua
 tests/cache_compat_full_load.lua
+tests/inventory_ui.lua
+tests/experience_trade.lua
 tests/README.md
 docs/MODDING_GUIDE.md
 dist/voxel_run_bridge-0.2.0.zip
@@ -10,4 +12,5 @@ dist/voxel_run_bridge-0.2.1.zip
 dist/voxel_run_bridge-0.2.2.zip
 dist/voxel_run_bridge-0.2.3.zip
 dist/voxel_run_bridge-0.3.0.zip
+dist/voxel_run_bridge-0.4.0.zip
 .luarc.json

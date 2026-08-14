@@ -22,12 +22,28 @@ capability checks, outdoor first-/third-person gates, interior/canopy/sea-map
 exclusions, live disable path, generated-geometry cleanup, gameplay-state
 isolation, and the safe no-provider fallback.
 
+`inventory_ui.lua` is the focused 376-check bag/shop suite. Its v0.1.75 and
+v0.1.83 doubles verify four-pocket classification, Left/Right navigation,
+per-pocket cursor memory, ID-based global reordering, option-off passthrough,
+lower screen-factory composition, copied/idempotent Trade Stone stock, and a
+live BUY BAG count without mutating stock or inventory.
+
+`experience_trade.lua` is the focused 144-check EXP/item suite. It covers the
+four-mode schema, idempotent EXP.SHARE unlock and PC/full-bag recovery,
+vanilla/lead/party/share allocation, error-safe EXP.ALL restoration, all four
+Trade Stone evolutions, invalid and battle use, standard ITEM evolution, and
+the namespaced v0.1.75 effect bridge with bag pockets both on and off.
+
 `gapped_land.lua` is the focused, ROM-free 61-check suite for that visual
 layer. Run it from the repository root with either supported Lua runtime:
 
 ```powershell
 lua tests\gapped_land.lua
 luajit tests\gapped_land.lua
+lua tests\inventory_ui.lua
+luajit tests\inventory_ui.lua
+lua tests\experience_trade.lua
+luajit tests\experience_trade.lua
 ```
 
 Run the broad suite from the repository root with LuaJIT
@@ -36,13 +52,16 @@ directory (`lovec tests`). The `.modkitignore` file keeps this directory out
 of the player-facing ZIP.
 
 `full_load.lua` additionally installs the package through Gen1Recomp's real
-API-2 loader, verifies the stable ID/new display name and all three settings
-rows, checks the gapped-land compatibility status, and invokes both HM hooks
-alongside Free Fly and a Pokemon Final provider. Run it from an engine
+API-2 loader, verifies the stable ID/new display name, the new content and
+settings rows, checks the gapped-land compatibility status, and invokes both
+HM hooks alongside Free Fly and a Pokemon Final provider. Its current matrix
+contains 74 checks per supported engine fixture. Pass `compat` for the
+v0.1.75 fixture and `native` for v0.1.83+ to assert the exact Trade Stone
+dispatcher. Run it from an engine
 checkout with:
 
 ```powershell
-luajit C:\path\to\mod\tests\full_load.lua C:\path\to\mod C:\path\to\engine
+luajit C:\path\to\mod\tests\full_load.lua C:\path\to\mod C:\path\to\engine native
 ```
 
 `voxel_full_load.lua` loads Scott's Tweaks with Pokemon Final and a real

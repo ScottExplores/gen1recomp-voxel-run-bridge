@@ -57,12 +57,39 @@ function FieldDefaults.field(data, key)
   return data and data.fields and data.fields.outsideTilesets
 end
 
+local ItemEffects = {
+  isBall = function() return false end,
+  needsTarget = function() return false end,
+  use = function() return "failed", { "No effect." } end,
+}
+local Bag = {}
+function Bag.order(save)
+  save.bagOrder = save.bagOrder or {}
+  return save.bagOrder
+end
+function Bag.add(save, id, qty)
+  save.inventory[id] = (save.inventory[id] or 0) + (qty or 1)
+  return true
+end
+function Bag.remove(save, id, qty)
+  save.inventory[id] = (save.inventory[id] or 0) - (qty or 1)
+  if save.inventory[id] <= 0 then save.inventory[id] = nil end
+end
+
 package.preload["src.mods.Runtime"] = function() return Runtime end
 package.preload["src.core.Game"] = function() return Game end
 package.preload["src.world.Map"] = function() return Map end
 package.preload["src.world.FieldDefaults"] = function() return FieldDefaults end
 package.preload["src.core.Strings"] = function()
   return function(value) return value end
+end
+package.preload["src.inventory.ItemEffects"] = function() return ItemEffects end
+package.preload["src.inventory.Bag"] = function() return Bag end
+package.preload["src.ui.BagMenu"] = function()
+  return { new = function() return {} end }
+end
+package.preload["src.ui.ShopMenu"] = function()
+  return { new = function() return {} end }
 end
 
 local entry = assert(loadfile("main.lua"))()
@@ -194,6 +221,14 @@ local function fixture(opts)
     hooks = hookApi,
     events = events,
     options = options,
+    content = {
+      items = { register = function() end },
+      item_effects = { register = function() end },
+      screens = {
+        get = function() return nil end,
+        override = function() end,
+      },
+    },
     log = {
       info = function(_, message) logs[#logs + 1] = message end,
       warn = function(_, message) logs[#logs + 1] = message end,
@@ -287,7 +322,7 @@ eq(pokemonFinal.seen.walk, 2,
 eq(pokemonFinal.FreeMove.WALK, 1,
   "Pokemon Final walk speed is restored after tick")
 eq(speedCalls, 1, "Pokemon Final hook call count")
-eq(pokemonFinal.lib._voxelRunBridgeHook.version, "0.3.0",
+eq(pokemonFinal.lib._voxelRunBridgeHook.version, "0.4.0",
   "Pokemon Final bridge marker reports release version")
 
 -- Early Pokemon Final packages could start the disk-cache job successfully
@@ -320,7 +355,7 @@ eq(type(buggyCacheScreen._scottsTweaksCacheStartHook), "table",
   "cache screen receives an ownership marker")
 eq(buggyCacheScreen._scottsTweaksCacheStartHook.owner, "voxel_run_bridge",
   "cache screen marker identifies its owner")
-eq(buggyCacheScreen._scottsTweaksCacheStartHook.version, "0.3.0",
+eq(buggyCacheScreen._scottsTweaksCacheStartHook.version, "0.4.0",
   "cache screen marker identifies its release")
 eq(buggyCacheScreen._scottsTweaksCacheStartHook.original, buggyCacheStart,
   "cache screen marker retains the exact original")
@@ -581,7 +616,7 @@ eq(manifest:match('"id"%s*:%s*"([^"]+)"'), "voxel_run_bridge",
   "stable manifest id")
 eq(manifest:match('"name"%s*:%s*"([^"]+)"'), "Scott's Tweaks",
   "player-facing manifest name")
-eq(manifest:match('"version"%s*:%s*"([^"]+)"'), "0.3.0",
+eq(manifest:match('"version"%s*:%s*"([^"]+)"'), "0.4.0",
   "manifest patch version")
 
 -- Scott's Tweaks exposes the badge bypass as an ordinary, default-on option.
@@ -855,6 +890,21 @@ local disabledMenuResult = disabledSubmenu(function() return disabledItems end,
   fieldGame, {}, hmMon, fieldCtx)
 eq(disabledMenuResult, disabledItems, "disabled submenu table untouched")
 eq(#disabledMenuResult, 2, "disabled submenu rows untouched")
+
+-- Developer hot reload rebuilds the mod without reloading required engine
+-- modules. The owned v0.1.75 item adapter must therefore restore and replace
+-- its exact wrapper instead of freezing the first closure forever.
+local beforeReload = rawget(ItemEffects, "_scottsTweaksTradeStoneHook")
+fixture({ noVoxel = true })
+local afterReload = rawget(ItemEffects, "_scottsTweaksTradeStoneHook")
+eq(type(beforeReload), "table", "Trade Stone compatibility marker exists")
+eq(type(afterReload), "table", "Trade Stone marker survives hot reload")
+eq(afterReload ~= beforeReload, true,
+  "hot reload replaces the owned compatibility controller")
+eq(ItemEffects.needsTarget, afterReload.wrapperNeedsTarget,
+  "hot reload publishes the refreshed target wrapper")
+eq(ItemEffects.use, afterReload.wrapperUse,
+  "hot reload publishes the refreshed use wrapper")
 
 print(("voxel_run_bridge: %d checks passed"):format(checks))
 if love and love.event then love.event.quit(0) end

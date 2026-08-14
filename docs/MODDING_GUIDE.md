@@ -74,7 +74,7 @@ Verified providers using this seam:
 
 Gen1Recomp's built-in **VOID FILL** and Kanto in First Person's **WORLD
 APRON** are useful precedents, but they are separate from Scott's Tweaks
-0.3.0. The engine fill chooses a border block around an overworld map, while
+0.4.0. The engine fill chooses a border block around an overworld map, while
 the Kanto apron extends a provider-owned mesh. Neither turns the space into
 walkable map cells.
 
@@ -94,13 +94,13 @@ does not start, delete, or rebuild Pokemon Final's voxel disk cache.
 The public Kanto in First Person and Dramatic Shape mirror repositories do
 not currently declare software licenses. Their world-apron implementation is
 therefore a compatibility precedent, not source for this MIT package. The
-0.3.0 plane is independently implemented and carries no third-party code,
+0.4.0 plane is independently implemented and carries no third-party code,
 textures, panoramas, ROM content, or other assets.
 
 ### Narrow Pokemon Final cache-screen compatibility
 
 Pokemon Final also deliberately exports its cached module loader as
-`mod.exports.lib`. Scott's Tweaks 0.3.0 retains a narrow use of that seam for
+`mod.exports.lib`. Scott's Tweaks 0.4.0 retains a narrow use of that seam for
 a UI-result compatibility check on the locally verified `1.8.1-scott.2` and
 `.3` package contracts. It calls `ScottPrecacheScreen._start` on an inert fake
 instance whose cache service cannot touch storage. A wrapper is installed
@@ -138,6 +138,36 @@ treats them as alternate versions of one mod, so they cannot coexist.
 Voxel Run Bridge is deliberately only an adapter. It leaves thorkdev's native
 wrapper alone and carries other `movement.speed` producers into compatible
 FreeMove providers. It does not grant shoes or choose a run multiplier.
+
+## Inventory and experience composition
+
+Scott's Tweaks 0.4.0 uses the API-2 `screens` registry as a decorator seam.
+It captures the previously registered `BagMenu` and `ShopMenu` factories,
+constructs them unchanged, then decorates the returned list/menu instances.
+A later total-conversion screen override can still replace Scott's layer.
+The pocket view filters `Bag.order(save)` locally and writes SELECT swaps back
+by item ID; it never replaces `Bag.order`, inventory tables, or capacity.
+
+Gen 1 extracted items do not carry Gen 2 pocket metadata, even on newer
+Gen1Recomp builds. A compatible classifier therefore uses the registered
+machine definition for TM/HM, the engine's ball detector for Balls, explicit
+key-item/tossability metadata for Key Items, and sends unknown mod items to
+Items so nothing can disappear from the UI.
+
+Experience allocation composes through `battle.exp_award`. VANILLA calls the
+next hook with the exact original context. The explicit custom modes provide
+a copied `alive` list and reuse the engine's `applyShare` path, rather than
+writing EXP or levels directly. EXP.SHARE temporarily exposes EXP.ALL only
+for the duration of one protected award and restores the prior nil/zero/count
+afterward, so the Route 15 reward and event flag remain separate.
+
+TRADE STONE is a registered string-ID item and registered field-only item
+effect. Gen1Recomp 0.1.75 already exposed those registries but did not yet
+dispatch them, so Scott's Tweaks contains a namespaced adapter for only that
+exact item/effect pair and delegates all other calls with their return values
+unchanged. The effect returns `evolveTo`; BagMenu owns consumption and invokes
+the standard `via = "ITEM"` evolution path. Native TRADE evolution rows are
+never patched, which preserves ordinary link evolutions and link fingerprints.
 
 ## Community observations
 
