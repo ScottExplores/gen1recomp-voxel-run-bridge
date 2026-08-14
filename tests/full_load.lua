@@ -24,56 +24,82 @@ local function read(relative)
 end
 
 local prefix = "mods/voxel_run_bridge/"
-local skyPrefix = "mods/DRAMATIC_SKY_RIDE/"
-local skyManifest = [[{
-  "id": "DRAMATIC_SKY_RIDE",
-  "name": "Dramatic Sky Ride Test Double",
-  "version": "0.1.6",
+local freeFlyPrefix = "mods/free_fly/"
+local pokemonFinalPrefix = "mods/POKEMON_FINAL/"
+local freeFlyManifest = [[{
+  "id": "free_fly",
+  "name": "Free Fly Test Double",
+  "version": "1.5.0",
   "api": 2,
   "entry": "main.lua",
   "profile": "content",
-  "priority": 900,
+  "priority": 100,
   "dependencies": [],
   "optional_dependencies": [],
   "conflicts": [],
   "games": ["gen1"],
   "permissions": []
 }]]
-local skyEntry = [[return function(mod)
+local freeFlyEntry = [[return function(mod)
   mod.options:define({
-    { key = "require_fly_move", type = "toggle", default = true },
-    { key = "badge_checks", type = "toggle", default = true },
-    { key = "story_gates", type = "toggle", default = true }
+    { key = "badges", type = "toggle", default = true },
+    { key = "gates", type = "toggle", default = true }
   })
   local function option(key, default)
     local value = mod.options:get(key)
     if value == nil then return default end
     return value
   end
-  local function badgeChecksEnabled() return option("badge_checks", true) == true end
+  local function badgeChecksEnabled() return option("badges", true) == true end
   local function startFlight(save)
-    if option("require_fly_move", true) == true and not save.knowsFly then
+    if not save.knowsFly then
       return false, "FLY REQUIRED"
+    end
+    if option("gates", true) == true and save.storyBlocked then
+      return false, "STORY BLOCKED"
     end
     if badgeChecksEnabled() and not (save.inventory or {}).THUNDERBADGE then
       return false, "THUNDERBADGE REQUIRED"
     end
     return true, "TAKEOFF"
   end
-  mod.exports.flightRules = {
-    badgeChecks = badgeChecksEnabled,
-    requireFlyMove = function() return option("require_fly_move", true) == true end,
-    storyGates = function() return option("story_gates", true) == true end
-  }
+  mod.exports.isFlying = function() return false end
+  mod.exports.testBadgeChecks = badgeChecksEnabled
   mod.exports.testStartFlight = startFlight
+end]]
+local pokemonFinalManifest = [[{
+  "id": "POKEMON_FINAL",
+  "name": "Pokemon Final Test Double",
+  "version": "1.8.1-scott.3",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "priority": 100,
+  "dependencies": [],
+  "optional_dependencies": [],
+  "conflicts": [],
+  "games": ["gen1"],
+  "permissions": []
+}]]
+local pokemonFinalEntry = [[return function(mod)
+  local FreeMove = { WALK = 1, BIKE = 2 }
+  FreeMove.tick = function(state) return state end
+  mod.exports.lib = {
+    require = function(name)
+      if name == "FreeMove" then return FreeMove end
+    end
+  }
+  mod.exports.testFreeMove = FreeMove
 end]]
 local run = T.sdk.loadMod("mods/voxel_run_bridge", {
   data = require("tests.modkit.fixtures").fresh(),
   fs = T.sdk.memfs({
     [prefix .. "manifest.json"] = read("manifest.json"),
     [prefix .. "main.lua"] = read("main.lua"),
-    [skyPrefix .. "manifest.json"] = skyManifest,
-    [skyPrefix .. "main.lua"] = skyEntry,
+    [freeFlyPrefix .. "manifest.json"] = freeFlyManifest,
+    [freeFlyPrefix .. "main.lua"] = freeFlyEntry,
+    [pokemonFinalPrefix .. "manifest.json"] = pokemonFinalManifest,
+    [pokemonFinalPrefix .. "main.lua"] = pokemonFinalEntry,
   }),
   generation = 1,
 })
@@ -84,8 +110,8 @@ T.eq(run.mod and run.mod.manifest.id, "voxel_run_bridge",
   "stable updater identity is retained")
 T.eq(run.mod and run.mod.manifest.name, "Scott's Tweaks",
   "new display name is loaded")
-T.eq(run.mod and run.mod.manifest.version, "0.2.1",
-  "loader selected version 0.2.1")
+T.eq(run.mod and run.mod.manifest.version, "0.2.2",
+  "loader selected version 0.2.2")
 
 local schema = run.loader.optionSchemas.voxel_run_bridge or {}
 local hmOption
@@ -95,26 +121,37 @@ end
 T.check(type(hmOption) == "table", "HM option is registered")
 T.eq(hmOption and hmOption.default, true, "HM bypass defaults on")
 
-local skyOption
+local freeFlyOption
 for _, row in ipairs(schema) do
-  if row.key == "sky_ride_without_badges" then skyOption = row break end
+  if row.key == "free_fly_without_badges" then freeFlyOption = row break end
 end
-T.check(type(skyOption) == "table", "Sky Ride option is registered")
-T.eq(skyOption and skyOption.default, true, "Sky Ride bypass defaults on")
+T.check(type(freeFlyOption) == "table", "Free Fly option is registered")
+T.eq(freeFlyOption and freeFlyOption.default, true,
+  "Free Fly bypass defaults on")
 
-local skyOptions = run.loader.modOptions.DRAMATIC_SKY_RIDE
-T.check(type(skyOptions) == "table", "Sky Ride live option bucket exists")
-T.eq(skyOptions and skyOptions.badge_checks, false,
-  "production loader applies DSR's own badge_checks override")
-local skyExports = run.loader.exports.DRAMATIC_SKY_RIDE
-T.check(type(skyExports) == "table", "Sky Ride exports are feature-detected")
-T.eq(skyExports.flightRules.requireFlyMove(), true, "REQUIRE FLY remains on")
-T.eq(skyExports.flightRules.storyGates(), true, "STORY GATES remain on")
+local freeFlyOptions = run.loader.modOptions.free_fly
+T.check(type(freeFlyOptions) == "table", "Free Fly live option bucket exists")
+T.eq(freeFlyOptions and freeFlyOptions.badges, false,
+  "production loader applies Free Fly's own badge override")
+local freeFlyExports = run.loader.exports.free_fly
+T.check(type(freeFlyExports) == "table", "Free Fly exports are feature-detected")
+T.eq(freeFlyExports.testBadgeChecks(), false,
+  "Free Fly reads the live badge override")
 local flightSave = { inventory = {}, knowsFly = true }
-local flew, reason = skyExports.testStartFlight(flightSave)
-T.eq(flew, true, "DSR private-style startFlight passes without badge")
-T.eq(reason, "TAKEOFF", "DSR does not return THUNDERBADGE error")
-T.eq(next(flightSave.inventory), nil, "DSR adapter never grants a badge")
+local flew, reason = freeFlyExports.testStartFlight(flightSave)
+T.eq(flew, true, "Free Fly private gate passes without badge")
+T.eq(reason, "TAKEOFF", "Free Fly does not return THUNDERBADGE error")
+T.eq(next(flightSave.inventory), nil, "Free Fly adapter never grants a badge")
+local noMove, moveReason = freeFlyExports.testStartFlight({
+  inventory = {}, knowsFly = false,
+})
+T.eq(noMove, false, "Free Fly still requires an eligible FLY user")
+T.eq(moveReason, "FLY REQUIRED", "Free Fly move rule remains on")
+local crossedGate, gateReason = freeFlyExports.testStartFlight({
+  inventory = {}, knowsFly = true, storyBlocked = true,
+})
+T.eq(crossedGate, false, "Free Fly story gate remains on")
+T.eq(gateReason, "STORY BLOCKED", "Free Fly story rule is unchanged")
 
 local hooks = run.loader.hooks
 local pidgeot = { species = "PIDGEOT", moves = { { id = "FLY" } } }
@@ -138,8 +175,17 @@ T.eq(menu[2] and menu[2].action, "stats", "STATS remains after field moves")
 
 local exported = run.loader.exports.voxel_run_bridge
 T.check(type(exported) == "table", "exports are published")
-T.eq(exported.status and exported.status.reason, "no_supported_voxel_mod",
-  "HM feature loads even when the voxel bridge is idle")
+T.eq(exported.status and exported.status.active, true,
+  "voxel bridge activates through the production loader")
+T.eq(exported.status and exported.status.voxel, "POKEMON_FINAL",
+  "production loader selects Pokemon Final by manifest id")
+local pokemonFinalExports = run.loader.exports.POKEMON_FINAL
+T.check(type(pokemonFinalExports) == "table",
+  "Pokemon Final test-double exports are published")
+T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.owner, "voxel_run_bridge",
+  "Pokemon Final FreeMove receives Scott's bridge marker")
+T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.2.2",
+  "Pokemon Final bridge marker carries the update version")
 T.eq(type(exported.hmWithoutBadges), "function",
   "live HM option accessor is published")
 T.eq(exported.hmWithoutBadges(), true, "live HM option reports enabled")

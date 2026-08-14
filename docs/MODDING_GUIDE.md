@@ -64,12 +64,13 @@ Verified providers using this seam:
 
 | Manifest ID | Project | Notes |
 | --- | --- | --- |
+| `POKEMON_FINAL` | Pokemon Final private build | Uses the same exported `lib.require("FreeMove")` seam under its own manifest ID. |
 | `DRAMATIC_SHAPE` | [current 1.8.2 mirror](https://github.com/scottcandy34/DramaticShapeVoxelMod-latest) | Original upstream URL is currently deleted/404. |
 | `BATTLE_ART_VOXEL_FORK` | [Battle Art fork](https://github.com/absol89/DramaticShapeVoxelMod) | Current active fork line. |
 | `DRAMALESS_SHAPE` | [Dramaless Shape](https://github.com/artyrambles/DRAMALESS_SHAPE) | Used by current Kanto in First Person. |
 | `potato_voxel` | [PotatoVoxel](https://github.com/ShaneMcGovernIE/potato_voxel) | Free camera is normally removed by its default low-power profile. |
 
-The four copies have the same constants, tick entry, active-speed selection,
+These providers have the same constants, tick entry, active-speed selection,
 and cell-crossing behavior. Feature-detect the export rather than trusting a
 version number because the forks' displayed, manifest, and internal versions
 can drift.
@@ -81,8 +82,9 @@ can drift.
   `BATTLE_ART_VOXEL_FORK`. Its repository currently has no software license,
   so it is a compatibility precedent, not source to copy.
 - [MadeinTaly Running Shoes](https://github.com/MadeinTaly/gen1recomp-running-shoes)
-  uses the public hook and has an MIT license, but its open first-person issue
-  confirms that ordinary hooks do not reach FreeMove.
+  is MIT licensed. Version 1.7.0 added a native FreeMove wrapper for
+  `DRAMATIC_SHAPE`; Scott's Tweaks detects its ownership markers to avoid a
+  double boost and still supplies the bridge for `POKEMON_FINAL`.
 - [Run Mode](https://github.com/masterwebx/gen1recomp-run-mode) is another
   MIT-licensed public-hook implementation with the same free-roam gap.
 

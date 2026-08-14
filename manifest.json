@@ -1,7 +1,7 @@
 {
   "id": "voxel_run_bridge",
   "name": "Scott's Tweaks",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "github": "ScottExplores/gen1recomp-voxel-run-bridge",
   "api": 2,
   "entry": "main.lua",
@@ -13,7 +13,8 @@
   "optional_dependencies": [
     "running_shoes",
     "RUN_MODE",
-    "DRAMATIC_SKY_RIDE",
+    "free_fly",
+    "POKEMON_FINAL",
     "DRAMATIC_SHAPE",
     "BATTLE_ART_VOXEL_FORK",
     "DRAMALESS_SHAPE",
@@ -24,5 +25,5 @@
   "games": ["gen1"],
   "experimental": false,
   "permissions": ["engine_internals"],
-  "description": "Scott's small gameplay tweaks: immediate Dramatic Sky Ride flight, badge-free HM field moves and voxel running support."
+  "description": "Scott's small gameplay tweaks: immediate badge-free Free Fly, badge-free HM field moves and voxel running support."
 }

@@ -82,6 +82,17 @@ local function fixture(opts)
   end
   FreeMove.tick = originalTick
 
+  local runningShoesTick
+  if opts.runningShoesTick then
+    local runningShoesInner = FreeMove.tick
+    runningShoesTick = function(state)
+      return runningShoesInner(state)
+    end
+    FreeMove.tick = runningShoesTick
+    FreeMove.runningShoesTick = runningShoesTick
+    FreeMove.runningShoesInner = runningShoesInner
+  end
+
   local lib = {
     _runningShoesHook = opts.runningShoesHook,
     _voxelRunBridgeHook = opts.bridgeHook,
@@ -104,9 +115,9 @@ local function fixture(opts)
     if key == "hm_without_badges" and opts.hmWithoutBadges ~= nil then
       return opts.hmWithoutBadges
     end
-    if key == "sky_ride_without_badges"
-        and opts.skyRideWithoutBadges ~= nil then
-      return opts.skyRideWithoutBadges
+    if key == "free_fly_without_badges"
+        and opts.freeFlyWithoutBadges ~= nil then
+      return opts.freeFlyWithoutBadges
     end
     for _, row in ipairs(optionSchema or {}) do
       if row.key == key then return row.default end
@@ -122,28 +133,45 @@ local function fixture(opts)
     for _, callback in ipairs(eventListeners[name] or {}) do callback(payload) end
   end
 
-  local loader = { modOptions = {} }
-  if opts.skyRideStoredBadgeChecks ~= nil then
-    loader.modOptions.DRAMATIC_SKY_RIDE = {
-      badge_checks = opts.skyRideStoredBadgeChecks,
+  local loader = { modOptions = {}, optionSchemas = {} }
+  if opts.freeFlyStoredBadges ~= nil then
+    loader.modOptions.free_fly = {
+      badges = opts.freeFlyStoredBadges,
+    }
+  end
+  if opts.freeFly and not opts.freeFlySchemaMissing then
+    loader.optionSchemas.free_fly = {
+      {
+        key = "badges",
+        type = opts.freeFlySchemaWrong and "choice" or "toggle",
+        default = true,
+      },
+      { key = "gates", type = "toggle", default = true },
     }
   end
   Game.mods = loader
 
-  local skyRules = {
-    badgeChecks = function()
-      local bucket = loader.modOptions.DRAMATIC_SKY_RIDE
-      if bucket and bucket.badge_checks ~= nil then
-        return bucket.badge_checks
+  local function freeFlyBadgeChecks()
+      local bucket = loader.modOptions.free_fly
+      if bucket and bucket.badges ~= nil then
+        return bucket.badges
       end
       return true
-    end,
-    requireFlyMove = function() return true end,
-    storyGates = function() return true end,
-  }
-  local skyRide = {
-    version = opts.skyRideVersion or "0.1.6",
-    exports = opts.skyRideMalformed and {} or { flightRules = skyRules },
+  end
+  local function freeFlyStartFlight(save)
+    if not save.knowsFly then return false, "FLY REQUIRED" end
+    if save.storyBlocked then return false, "STORY BLOCKED" end
+    if freeFlyBadgeChecks()
+        and not (save.inventory or {}).THUNDERBADGE then
+      return false, "THUNDERBADGE REQUIRED"
+    end
+    return true, "TAKEOFF"
+  end
+  local freeFly = {
+    version = opts.freeFlyVersion or "1.5.0",
+    exports = opts.freeFlyMalformed and {} or {
+      isFlying = function() return false end,
+    },
   }
 
   local hookApi = {}
@@ -165,7 +193,7 @@ local function fixture(opts)
       warn = function(_, message) logs[#logs + 1] = message end,
     },
     find = function(id)
-      if opts.skyRide and id == "DRAMATIC_SKY_RIDE" then return skyRide end
+      if opts.freeFly and id == "free_fly" then return freeFly end
       if not opts.noVoxel and id == (opts.voxelId or "DRAMATIC_SHAPE") then
         return voxel
       end
@@ -173,18 +201,35 @@ local function fixture(opts)
   }
 
   entry(mod)
+
+  if opts.lateRunningShoesTick then
+    local runningShoesInner = FreeMove.tick
+    runningShoesTick = function(state)
+      local baseWalk, baseBike = FreeMove.WALK, FreeMove.BIKE
+      FreeMove.WALK = baseWalk * 2
+      local first, second = runningShoesInner(state)
+      FreeMove.WALK, FreeMove.BIKE = baseWalk, baseBike
+      return first, second
+    end
+    FreeMove.tick = runningShoesTick
+    FreeMove.runningShoesTick = runningShoesTick
+    FreeMove.runningShoesInner = runningShoesInner
+  end
+
   return {
     mod = mod,
     lib = lib,
     FreeMove = FreeMove,
     originalTick = originalTick,
+    runningShoesTick = runningShoesTick,
     seen = seen,
     logs = logs,
     hooks = hooks,
     optionSchema = function() return optionSchema end,
     events = events,
     loader = loader,
-    skyRules = skyRules,
+    freeFlyBadgeChecks = freeFlyBadgeChecks,
+    freeFlyStartFlight = freeFlyStartFlight,
   }
 end
 
@@ -219,6 +264,24 @@ eq(foot.seen.bike, 2, "bike speed untouched on foot")
 eq(foot.FreeMove.WALK, 1, "walk speed restored")
 eq(foot.FreeMove.BIKE, 2, "bike speed restored after foot tick")
 eq(speedCalls, 1, "foot hook call count")
+
+-- Pokemon Final is Scott's fused Dramatic Shape/Kanto package. It keeps the
+-- same exported FreeMove seam under its own stable manifest id, so running in
+-- its 1ST/3RD camera modes must be bridged exactly like Dramatic Shape.
+speedCalls = 0
+local pokemonFinal = fixture({ voxelId = "POKEMON_FINAL" })
+eq(pokemonFinal.mod.exports.status.active, true,
+  "Pokemon Final bridge is active")
+eq(pokemonFinal.mod.exports.status.voxel, "POKEMON_FINAL",
+  "Pokemon Final provider is reported")
+pokemonFinal.FreeMove.tick({ player = player() })
+eq(pokemonFinal.seen.walk, 2,
+  "Pokemon Final first-person walk receives running multiplier")
+eq(pokemonFinal.FreeMove.WALK, 1,
+  "Pokemon Final walk speed is restored after tick")
+eq(speedCalls, 1, "Pokemon Final hook call count")
+eq(pokemonFinal.lib._voxelRunBridgeHook.version, "0.2.2",
+  "Pokemon Final bridge marker reports release version")
 
 -- Bike speed uses the bike frame baseline and scales only BIKE.
 speedResponder = function(frames, ctx)
@@ -299,6 +362,44 @@ eq(delegated.FreeMove.tick, delegated.originalTick, "native integration not wrap
 eq(delegated.mod.exports.status.reason,
   "running_shoes_has_native_voxel_support", "delegation reason")
 
+-- Running Shoes 1.7 publishes ownership on the FreeMove table rather than
+-- the voxel library. Scott's bridge must feature-detect that live wrapper
+-- after loading the module or both adapters multiply the same run.
+speedCalls = 0
+local delegatedTick = fixture({
+  voxelId = "DRAMATIC_SHAPE",
+  runningShoesTick = true,
+})
+eq(delegatedTick.FreeMove.tick, delegatedTick.runningShoesTick,
+  "Running Shoes FreeMove wrapper remains the single owner")
+eq(delegatedTick.mod.exports.status.reason,
+  "running_shoes_has_native_voxel_support",
+  "FreeMove ownership delegation reason")
+delegatedTick.FreeMove.tick({ player = player() })
+eq(speedCalls, 0, "bridge does not double-sample native Running Shoes")
+
+-- MadeinTaly 1.7 discovers Dramatic Shape from input.step, after all mods
+-- have loaded. Its native wrapper can therefore appear outside an already
+-- installed Scott bridge. The call-time ownership check must pass through
+-- the native 2x speed instead of multiplying it a second time.
+speedCalls = 0
+local lateDelegated = fixture({
+  voxelId = "DRAMATIC_SHAPE",
+  lateRunningShoesTick = true,
+})
+lateDelegated.FreeMove.tick({ player = player() })
+eq(lateDelegated.seen.walk, 2,
+  "late native Running Shoes wrapper applies exactly one multiplier")
+eq(lateDelegated.FreeMove.WALK, 1,
+  "late native Running Shoes restores the walk constant")
+eq(speedCalls, 0,
+  "late native wrapper prevents Scott from sampling movement.speed again")
+eq(lateDelegated.mod.exports.status.active, false,
+  "late native wrapper switches Scott's bridge status to idle")
+eq(lateDelegated.mod.exports.status.reason,
+  "running_shoes_has_native_voxel_support",
+  "late native wrapper reports delegation reason")
+
 -- A previous bridge marker prevents nested wrappers on a reload.
 local already = fixture({ bridgeHook = { owner = "previous" } })
 eq(already.FreeMove.tick, already.originalTick, "bridge is not installed twice")
@@ -329,7 +430,7 @@ eq(manifest:match('"id"%s*:%s*"([^"]+)"'), "voxel_run_bridge",
   "stable manifest id")
 eq(manifest:match('"name"%s*:%s*"([^"]+)"'), "Scott's Tweaks",
   "player-facing manifest name")
-eq(manifest:match('"version"%s*:%s*"([^"]+)"'), "0.2.1",
+eq(manifest:match('"version"%s*:%s*"([^"]+)"'), "0.2.2",
   "manifest patch version")
 
 -- Scott's Tweaks exposes the badge bypass as an ordinary, default-on option.
@@ -343,82 +444,99 @@ eq(type(hmOption), "table", "HM option row exists")
 eq(hmOption and hmOption.type, "toggle", "HM option type")
 eq(hmOption and hmOption.default, true, "HM option default")
 
-local skyOption
+local freeFlyOption
 for _, row in ipairs(schema or {}) do
-  if row.key == "sky_ride_without_badges" then skyOption = row end
+  if row.key == "free_fly_without_badges" then freeFlyOption = row end
 end
-eq(type(skyOption), "table", "Sky Ride option row exists")
-eq(skyOption and skyOption.type, "toggle", "Sky Ride option type")
-eq(skyOption and skyOption.default, true, "Sky Ride option default")
+eq(type(freeFlyOption), "table", "Free Fly option row exists")
+eq(freeFlyOption and freeFlyOption.type, "toggle", "Free Fly option type")
+eq(freeFlyOption and freeFlyOption.default, true, "Free Fly option default")
 
--- Dramatic Sky Ride's private startFlight gate reads badge_checks directly
--- from its own mod.options API. Scott's runtime overlay changes that exact
--- answer without manufacturing the badge or changing other DSR rules.
-local sky = fixture({
+-- Free Fly's private takeoff gate reads `badges` directly from its own
+-- mod.options API. Scott's runtime overlay changes that exact answer without
+-- manufacturing a badge or changing Free Fly's FLY and story rules.
+local freeFly = fixture({
   noVoxel = true,
-  skyRide = true,
-  skyRideStoredBadgeChecks = true,
+  freeFly = true,
+  freeFlyStoredBadges = true,
 })
-eq(sky.skyRules.badgeChecks(), false, "Sky Ride badge answer is overridden")
-eq(sky.skyRules.requireFlyMove(), true, "REQUIRE FLY remains enabled")
-eq(sky.skyRules.storyGates(), true, "STORY GATES remain enabled")
-local flightSave = { inventory = {} }
-local function privateStartFlightGate(save)
-  if sky.skyRules.badgeChecks()
-      and not save.inventory.THUNDERBADGE then
-    return false, "THUNDERBADGE REQUIRED"
-  end
-  return true, "TAKEOFF"
-end
-local tookOff, takeoffReason = privateStartFlightGate(flightSave)
+eq(freeFly.freeFlyBadgeChecks(), false,
+  "Free Fly badge answer is overridden")
+local flightSave = { inventory = {}, knowsFly = true }
+local tookOff, takeoffReason = freeFly.freeFlyStartFlight(flightSave)
 eq(tookOff, true, "private-style startFlight gate permits takeoff")
 eq(takeoffReason, "TAKEOFF", "takeoff does not show badge error")
-eq(next(flightSave.inventory), nil, "Sky Ride bypass does not grant a badge")
-local skyActive, skyReason, skyVersion = sky.mod.exports.skyRideBadgeBypass()
-eq(skyActive, true, "Sky Ride adapter reports active")
-eq(skyReason, "badge_checks_runtime_override", "Sky Ride adapter reason")
-eq(skyVersion, "0.1.6", "Sky Ride adapter reports detected version")
-
--- A DSR settings change remains the player's stored preference. It is held
--- false only while Scott's override is on, then restored exactly when off.
-sky.loader.modOptions.DRAMATIC_SKY_RIDE.badge_checks = true
-sky.events:emit("mod.options_changed", {
-  mod = "DRAMATIC_SKY_RIDE", key = "badge_checks", value = true,
+eq(next(flightSave.inventory), nil, "Free Fly bypass does not grant a badge")
+local hasNoMove, noMoveReason = freeFly.freeFlyStartFlight({
+  inventory = {}, knowsFly = false,
 })
-eq(sky.loader.modOptions.DRAMATIC_SKY_RIDE.badge_checks, false,
-  "DSR badge setting stays overridden live")
-sky.events:emit("mod.options_changed", {
-  mod = "voxel_run_bridge", key = "sky_ride_without_badges", value = false,
+eq(hasNoMove, false, "Free Fly still requires an eligible FLY user")
+eq(noMoveReason, "FLY REQUIRED", "Free Fly move rule stays enabled")
+local crossesStory, storyReason = freeFly.freeFlyStartFlight({
+  inventory = {}, knowsFly = true, storyBlocked = true,
 })
-eq(sky.loader.modOptions.DRAMATIC_SKY_RIDE.badge_checks, true,
-  "turning Scott override off restores DSR preference")
+eq(crossesStory, false, "Free Fly story gate remains enabled")
+eq(storyReason, "STORY BLOCKED", "Free Fly story rule stays unchanged")
+local freeFlyActive, freeFlyReason, freeFlyVersion =
+  freeFly.mod.exports.freeFlyBadgeBypass()
+eq(freeFlyActive, true, "Free Fly adapter reports active")
+eq(freeFlyReason, "badges_runtime_override", "Free Fly adapter reason")
+eq(freeFlyVersion, "1.5.0", "Free Fly adapter reports detected version")
 
-local skyDisabled = fixture({
+-- A Free Fly settings change remains the player's stored preference. It is
+-- held false only while Scott's override is on, then restored exactly.
+freeFly.loader.modOptions.free_fly.badges = true
+freeFly.events:emit("mod.options_changed", {
+  mod = "free_fly", key = "badges", value = true,
+})
+eq(freeFly.loader.modOptions.free_fly.badges, false,
+  "Free Fly badge setting stays overridden live")
+freeFly.events:emit("mod.options_changed", {
+  mod = "voxel_run_bridge", key = "free_fly_without_badges", value = false,
+})
+eq(freeFly.loader.modOptions.free_fly.badges, true,
+  "turning Scott override off restores Free Fly preference")
+
+local freeFlyDisabled = fixture({
   noVoxel = true,
-  skyRide = true,
-  skyRideStoredBadgeChecks = true,
-  skyRideWithoutBadges = false,
+  freeFly = true,
+  freeFlyStoredBadges = true,
+  freeFlyWithoutBadges = false,
 })
-eq(skyDisabled.skyRules.badgeChecks(), true,
-  "disabled Scott option leaves DSR badge check intact")
+eq(freeFlyDisabled.freeFlyBadgeChecks(), true,
+  "disabled Scott option leaves Free Fly badge check intact")
 
-local noSky = fixture({ noVoxel = true })
-eq(noSky.loader.modOptions.DRAMATIC_SKY_RIDE, nil,
-  "missing DSR leaves its option namespace untouched")
+local noFreeFly = fixture({ noVoxel = true })
+eq(noFreeFly.loader.modOptions.free_fly, nil,
+  "missing Free Fly leaves its option namespace untouched")
 
-local unsupportedSky = fixture({
+local unsupportedFreeFly = fixture({
   noVoxel = true,
-  skyRide = true,
-  skyRideMalformed = true,
-  skyRideStoredBadgeChecks = true,
+  freeFly = true,
+  freeFlyMalformed = true,
+  freeFlyStoredBadges = true,
 })
-eq(unsupportedSky.loader.modOptions.DRAMATIC_SKY_RIDE.badge_checks, true,
-  "unsupported DSR leaves its badge setting untouched")
+eq(unsupportedFreeFly.loader.modOptions.free_fly.badges, true,
+  "unsupported Free Fly leaves its badge setting untouched")
 local unsupportedActive, unsupportedReason =
-  unsupportedSky.mod.exports.skyRideBadgeBypass()
-eq(unsupportedActive, false, "unsupported DSR adapter stays inactive")
-eq(unsupportedReason, "unsupported_dramatic_sky_ride",
-  "unsupported DSR reports its reason")
+  unsupportedFreeFly.mod.exports.freeFlyBadgeBypass()
+eq(unsupportedActive, false, "unsupported Free Fly adapter stays inactive")
+eq(unsupportedReason, "unsupported_free_fly_flight_state_export_missing",
+  "unsupported Free Fly reports its reason")
+
+local unsupportedSchema = fixture({
+  noVoxel = true,
+  freeFly = true,
+  freeFlySchemaWrong = true,
+  freeFlyStoredBadges = true,
+})
+eq(unsupportedSchema.loader.modOptions.free_fly.badges, true,
+  "wrong Free Fly option schema is not overridden")
+local schemaActive, schemaReason =
+  unsupportedSchema.mod.exports.freeFlyBadgeBypass()
+eq(schemaActive, false, "wrong Free Fly schema stays inactive")
+eq(schemaReason, "unsupported_free_fly_badges_toggle_missing",
+  "wrong Free Fly schema reports its reason")
 
 -- HM support is installed even when there is no voxel provider to bridge.
 local eligibility = absent.hooks["fieldmove.eligibility"]

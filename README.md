@@ -5,10 +5,10 @@ is broader, but its internal mod ID remains `voxel_run_bridge`. Existing
 installations therefore update in place, keep their settings, and do not
 become a duplicate mod.
 
-Version 0.2.1 contains three independent tweaks:
+Version 0.2.2 contains three independent tweaks:
 
-- **Sky Ride Now:** Dramatic Sky Ride can take off immediately without the
-  Thunder Badge. This compatibility option is on by default.
+- **Free Fly Now:** Free Fly can take off immediately without the Thunder
+  Badge. This compatibility option is on by default.
 - **Badge-free HMs:** use Cut, Fly, Surf, Strength, and Flash without their
   badge. A party Pokemon must still actually know the move. Normal map,
   terrain, and story restrictions remain in effect.
@@ -18,22 +18,29 @@ Version 0.2.1 contains three independent tweaks:
 None of these features grants badges, teaches moves, changes story flags, or
 edits a save's badge inventory.
 
-## Dramatic Sky Ride
+## Free Fly
 
-Dramatic Sky Ride performs its own badge check outside Gen1Recomp's normal HM
-hook. Scott's Tweaks now detects its public flight-rules interface and holds
-Sky Ride's live **BADGE CHECKS** answer off while **SKY RIDE NOW** is enabled.
-It defaults to enabled, so there is no second setting you have to find.
+Free Fly performs its own badge check outside Gen1Recomp's normal HM hook.
+Scott's Tweaks detects Free Fly's real option schema and public flight-state
+export, then holds its live **BADGE CHECKS** answer off while **FREE FLY NOW**
+is enabled. It defaults to enabled, so there is no second setting to find.
+This adapter is tested with Free Fly 1.5.0 and 1.6.1.
 
-This does not add the Thunder Badge or alter the save. Dramatic Sky Ride's
-**REQUIRE FLY**, **STORY GATES**, and **DISCOVERY GATES** settings remain in
-control. Because Dramatic Sky Ride groups its Thunder Badge takeoff rule and
-Soul Badge water-landing rule under the same **BADGE CHECKS** option, both
-badge checks are relaxed while **SKY RIDE NOW** is on.
+This does not add a badge, teach a move, or alter the save. Free Fly still
+decides which Pokemon can carry the player and keeps its FLY eligibility,
+story gates, map rules, and landing checks. Free Fly groups its Thunder Badge
+takeoff rule and Soul Badge water-landing rule under the same **BADGE CHECKS**
+option, so both badge checks are relaxed while **FREE FLY NOW** is on.
 
-Turn **SKY RIDE NOW** off in Scott's Tweaks to return control to Dramatic Sky
-Ride's own saved **BADGE CHECKS** preference. The exact previous value is
-restored. **Free Fly** is a separate mod and still uses its own options.
+Turn **FREE FLY NOW** off in Scott's Tweaks to return control to Free Fly's
+own saved **BADGE CHECKS** preference. Its exact previous value is restored.
+
+For Pokemon Final, update Free Fly itself to **1.6.1 or newer**. Free Fly
+1.6.1 changed its voxel-provider lookup from the original Dramatic Shape ID
+to capability detection, so its first- and third-person flight support also
+finds Pokemon Final. Scott's Tweaks supports the badge toggle in both the
+older 1.5.0 package and the current line, but it does not copy or replace Free
+Fly's flight renderer.
 
 ## Voxel running
 
@@ -55,6 +62,9 @@ voxel free movement on its own.
 
 ### Do you need the run bridge?
 
+- **Pokemon Final + Running Shoes:** yes. Scott's Tweaks 0.2.2 recognizes
+  Pokemon Final's own manifest ID and carries the run speed into its 1ST/3RD
+  camera movement.
 - **[thorkdev Running Shoes v0.2.2 or newer](https://github.com/thorkdev/gen1recomp-running-shoes/releases/tag/0.2.2)
   + Dramatic Shape/Battle Art Voxel Fork:** probably not. That Running Shoes
   release already contains a dedicated
@@ -71,6 +81,7 @@ do not install both at once.
 
 Supported voxel manifest IDs:
 
+- `POKEMON_FINAL`
 - `DRAMATIC_SHAPE`
 - `BATTLE_ART_VOXEL_FORK`
 - `DRAMALESS_SHAPE`
@@ -83,18 +94,19 @@ full camera ladder is enabled.
 
 ## Install or update
 
-If `voxel_run_bridge` 0.1.1 or Scott's Tweaks 0.2.0 is already installed, open
-Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.2.1
+If `voxel_run_bridge` 0.1.1 or Scott's Tweaks 0.2.x is already installed, open
+Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.2.2
 update. It will appear as
 **Scott's Tweaks** afterward, without creating a second entry.
 
 For a first installation:
 
 1. Open **MODS -> Import mod .zip** and choose
-   `voxel_run_bridge-0.2.1.zip`.
+   `voxel_run_bridge-0.2.2.zip`.
 2. Enable **Scott's Tweaks**, then restart the game if the manager asks.
-3. Its **BADGE-FREE HMS** and **SKY RIDE NOW** options default to **ON**.
-4. For voxel running, also enable one supported voxel provider and a
+3. Its **BADGE-FREE HMS** and **FREE FLY NOW** options default to **ON**.
+4. Update Free Fly to **1.6.1 or newer** and enable it for free-roaming flight.
+5. For voxel running, also enable one supported voxel provider and a
    movement-speed mod such as Running Shoes.
 
 The manager will ask for the `engine_internals` permission. Scott's Tweaks
@@ -151,13 +163,13 @@ Use the `dev` branch of
 ```powershell
 python tools/modkit.py validate C:\path\to\voxel_run_bridge --strict --base fixture
 python tools/modkit.py lint C:\path\to\voxel_run_bridge
-python tools/modkit.py pack C:\path\to\voxel_run_bridge -o C:\path\to\dist\voxel_run_bridge-0.2.1.zip --base fixture
+python tools/modkit.py pack C:\path\to\voxel_run_bridge -o C:\path\to\dist\voxel_run_bridge-0.2.2.zip --base fixture
 ```
 
 The archive is intentionally flat: `manifest.json` and `main.lua` are at its
 root, which Gen1Recomp's importer accepts directly.
 
-Version 0.2.1 is configured for Gen1Recomp's built-in GitHub update checks via
+Version 0.2.2 is configured for Gen1Recomp's built-in GitHub update checks via
 `ScottExplores/gen1recomp-voxel-run-bridge`.
 
 ## Provenance

@@ -10,11 +10,11 @@ option through the real `fieldmove.eligibility` and `ui.party.submenu` hook
 signatures. Those checks require a party member to know the HM, preserve and
 de-duplicate other menu rows, keep FLY outdoors-only and FLASH dark-only,
 leave battle menus untouched, and prove that HM support stays active without
-a voxel provider. The suite also feature-detects Dramatic Sky Ride's exported
-flight rules, exercises the same live `badge_checks` value its private
-`startFlight` gate reads, proves takeoff no longer returns the THUNDERBADGE
-error, and verifies REQUIRE FLY, story rules, inventory and saved DSR
-preference behavior remain isolated.
+a voxel provider. The suite also feature-detects Free Fly's public flight
+state and real `badges` option, exercises the same live value its private
+takeoff gate reads, proves takeoff no longer returns the THUNDERBADGE error,
+and verifies FLY eligibility, story rules, inventory, and the player's saved
+Free Fly preference remain isolated.
 
 Run it from the repository root with LuaJIT (`luajit tests/main.lua`) or point
 the LOVE console executable at the test directory (`lovec tests`). The
@@ -22,8 +22,22 @@ the LOVE console executable at the test directory (`lovec tests`). The
 
 `full_load.lua` additionally installs the package through Gen1Recomp's real
 API-2 loader, verifies the stable ID/new display name and schema, and invokes
-both HM hooks without a voxel provider. Run it from an engine checkout with:
+both HM hooks alongside Free Fly and a Pokemon Final provider. Run it from an
+engine checkout with:
 
 ```powershell
 luajit C:\path\to\mod\tests\full_load.lua C:\path\to\mod C:\path\to\engine
 ```
+
+`voxel_full_load.lua` loads Scott's Tweaks with Pokemon Final and a real
+`movement.speed` producer, then proves held-B speed reaches `FreeMove` exactly
+once and its constants are restored. An extracted Free Fly directory is an
+optional third argument (1.5.0 and 1.6.1 are covered); when supplied, the test
+also validates the real `isFlying` export, `badges` schema, and live override.
+
+```powershell
+luajit tests\voxel_full_load.lua <mod-root> <engine-root> [extracted-free-fly-root]
+```
+
+The baseline fixture has 22 checks; supplying the real Free Fly directory
+enables six more compatibility checks for a 28-check run.
