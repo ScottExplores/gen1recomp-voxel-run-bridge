@@ -97,13 +97,19 @@ local function fixture(opts)
     _runningShoesHook = opts.runningShoesHook,
     _voxelRunBridgeHook = opts.bridgeHook,
     require = function(name)
-      eq(name, "FreeMove", "requested voxel module")
       if opts.requireError then error("provider loader failed") end
-      return FreeMove
+      if name == "FreeMove" then return FreeMove end
+      if name == "ScottPrecacheScreen" and opts.cacheScreen then
+        return opts.cacheScreen
+      end
+      error("provider module unavailable: " .. tostring(name))
     end,
   }
   local exportedLib = opts.malformedLib and 42 or lib
-  local voxel = { exports = { lib = exportedLib } }
+  local voxel = {
+    version = opts.voxelVersion,
+    exports = { lib = exportedLib, version = opts.voxelExportVersion },
+  }
   local logs = {}
   local options = {}
   function options:define(schema)
@@ -230,6 +236,7 @@ local function fixture(opts)
     loader = loader,
     freeFlyBadgeChecks = freeFlyBadgeChecks,
     freeFlyStartFlight = freeFlyStartFlight,
+    cacheScreen = opts.cacheScreen,
   }
 end
 
@@ -280,8 +287,152 @@ eq(pokemonFinal.seen.walk, 2,
 eq(pokemonFinal.FreeMove.WALK, 1,
   "Pokemon Final walk speed is restored after tick")
 eq(speedCalls, 1, "Pokemon Final hook call count")
-eq(pokemonFinal.lib._voxelRunBridgeHook.version, "0.2.2",
+eq(pokemonFinal.lib._voxelRunBridgeHook.version, "0.2.3",
   "Pokemon Final bridge marker reports release version")
+
+-- Early Pokemon Final packages could start the disk-cache job successfully
+-- while leaving a false fallback message on the cache screen. The companion
+-- patch is selected by behavior, preserves the private module's implementation,
+-- and never needs its source in this public test fixture.
+local buggyCacheScreen = {}
+local buggyCacheStart = function(self, rebuild)
+  if self.throwStart then error("cache start exploded") end
+  local ok, err = self.precache.beginDisk(self.game, rebuild)
+  if ok then
+    self.message = "could not start"
+  else
+    self.message = tostring(err or "could not start")
+  end
+  return "cache-result", 17
+end
+buggyCacheScreen._start = buggyCacheStart
+
+local cachePatched = fixture({
+  voxelId = "POKEMON_FINAL",
+  voxelVersion = "1.8.1-scott.2",
+  cacheScreen = buggyCacheScreen,
+})
+local cacheCompat = cachePatched.mod.exports.pokemonFinalCacheCompat
+eq(cacheCompat.active, true, "buggy Pokemon Final cache screen is patched")
+eq(cacheCompat.reason, "patched", "cache compatibility patch reason")
+eq(cacheCompat.screen, "patched", "cache screen compatibility status")
+eq(type(buggyCacheScreen._scottsTweaksCacheStartHook), "table",
+  "cache screen receives an ownership marker")
+eq(buggyCacheScreen._scottsTweaksCacheStartHook.owner, "voxel_run_bridge",
+  "cache screen marker identifies its owner")
+eq(buggyCacheScreen._scottsTweaksCacheStartHook.version, "0.2.3",
+  "cache screen marker identifies its release")
+eq(buggyCacheScreen._scottsTweaksCacheStartHook.original, buggyCacheStart,
+  "cache screen marker retains the exact original")
+
+local beginCalls, statusCalls = 0, 0
+local cacheScreenInstance = {
+  game = {},
+  message = "old message",
+  precache = {
+    beginDisk = function(_, rebuild)
+      beginCalls = beginCalls + 1
+      eq(rebuild, false, "cache start forwards rebuild argument")
+      return true
+    end,
+    status = function()
+      statusCalls = statusCalls + 1
+      return { state = "building" }
+    end,
+  },
+}
+local cacheA, cacheB = buggyCacheScreen._start(cacheScreenInstance, false)
+eq(cacheA, "cache-result", "cache wrapper preserves first return")
+eq(cacheB, 17, "cache wrapper preserves second return")
+eq(beginCalls, 1, "cache wrapper calls the original exactly once")
+eq(statusCalls, 1, "cache wrapper verifies the successful build state")
+eq(cacheScreenInstance.message, nil,
+  "cache wrapper clears only the false successful-start fallback")
+
+local failedCacheScreen = {
+  game = {},
+  precache = {
+    beginDisk = function() return false, "storage denied" end,
+    status = function() return { state = "idle" } end,
+  },
+}
+buggyCacheScreen._start(failedCacheScreen, true)
+eq(failedCacheScreen.message, "storage denied",
+  "cache wrapper preserves a real start failure")
+
+local notBuildingScreen = {
+  game = {},
+  precache = {
+    beginDisk = function() return true end,
+    status = function() return { state = "idle" } end,
+  },
+}
+buggyCacheScreen._start(notBuildingScreen, false)
+eq(notBuildingScreen.message, "could not start",
+  "cache wrapper requires a confirmed building state")
+
+local throwingScreen = {
+  throwStart = true,
+  game = {},
+  precache = {
+    beginDisk = function() error("must not be reached") end,
+    status = function() return { state = "building" } end,
+  },
+}
+local okCacheError, cacheError = pcall(
+  buggyCacheScreen._start, throwingScreen, false)
+eq(okCacheError, false, "cache wrapper preserves original errors")
+eq(tostring(cacheError):find("cache start exploded", 1, true) ~= nil, true,
+  "cache wrapper preserves original error text")
+
+local firstCacheWrapper = buggyCacheScreen._start
+local cacheReloaded = fixture({
+  voxelId = "POKEMON_FINAL",
+  voxelVersion = "1.8.1-scott.2",
+  cacheScreen = buggyCacheScreen,
+})
+eq(buggyCacheScreen._start, firstCacheWrapper,
+  "cache compatibility install is idempotent")
+eq(cacheReloaded.mod.exports.pokemonFinalCacheCompat.reason,
+  "already_installed", "idempotent cache compatibility status")
+
+local foreignScreen = { _start = buggyCacheStart }
+foreignScreen._scottsTweaksCacheStartHook = { owner = "another_mod" }
+local foreignCache = fixture({
+  voxelId = "POKEMON_FINAL",
+  voxelVersion = "1.8.1-scott.2",
+  cacheScreen = foreignScreen,
+})
+eq(foreignScreen._start, buggyCacheStart,
+  "foreign-owned cache screen is not overwritten")
+eq(foreignCache.mod.exports.pokemonFinalCacheCompat.screen, "foreign_owner",
+  "foreign cache ownership is reported")
+
+local fixedCacheScreen = {}
+local fixedCacheStart = function(self, rebuild)
+  local ok, err = self.precache.beginDisk(self.game, rebuild)
+  if ok then self.message = nil
+  else self.message = tostring(err or "could not start") end
+end
+fixedCacheScreen._start = fixedCacheStart
+local cacheAlreadyFixed = fixture({
+  voxelId = "POKEMON_FINAL",
+  voxelVersion = "1.8.1-scott.3",
+  cacheScreen = fixedCacheScreen,
+})
+eq(fixedCacheScreen._start, fixedCacheStart,
+  "fixed Pokemon Final cache screen remains untouched")
+eq(fixedCacheScreen._scottsTweaksCacheStartHook, nil,
+  "fixed cache screen receives no ownership marker")
+eq(cacheAlreadyFixed.mod.exports.pokemonFinalCacheCompat.screen,
+  "already_safe", "fixed cache screen is recognized by behavior")
+
+eq(cacheReloaded.mod.exports.pokemonFinalCacheCompat.restore(), true,
+  "cache wrapper can restore its exact original")
+eq(buggyCacheScreen._start, buggyCacheStart,
+  "cache restore reinstates the original function")
+eq(buggyCacheScreen._scottsTweaksCacheStartHook, nil,
+  "cache restore removes only its own marker")
 
 -- Bike speed uses the bike frame baseline and scales only BIKE.
 speedResponder = function(frames, ctx)
@@ -430,7 +581,7 @@ eq(manifest:match('"id"%s*:%s*"([^"]+)"'), "voxel_run_bridge",
   "stable manifest id")
 eq(manifest:match('"name"%s*:%s*"([^"]+)"'), "Scott's Tweaks",
   "player-facing manifest name")
-eq(manifest:match('"version"%s*:%s*"([^"]+)"'), "0.2.2",
+eq(manifest:match('"version"%s*:%s*"([^"]+)"'), "0.2.3",
   "manifest patch version")
 
 -- Scott's Tweaks exposes the badge bypass as an ordinary, default-on option.

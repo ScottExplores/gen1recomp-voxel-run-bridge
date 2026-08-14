@@ -70,6 +70,23 @@ Verified providers using this seam:
 | `DRAMALESS_SHAPE` | [Dramaless Shape](https://github.com/artyrambles/DRAMALESS_SHAPE) | Used by current Kanto in First Person. |
 | `potato_voxel` | [PotatoVoxel](https://github.com/ShaneMcGovernIE/potato_voxel) | Free camera is normally removed by its default low-power profile. |
 
+### Narrow Pokemon Final cache-screen compatibility
+
+Pokemon Final also deliberately exports its cached module loader as
+`mod.exports.lib`. Scott's Tweaks 0.2.3 uses that seam only for a UI-result
+compatibility check on the locally verified `1.8.1-scott.2` and `.3` package
+contracts. It calls `ScottPrecacheScreen._start` on an inert fake instance
+whose cache service cannot touch storage. A wrapper is installed only when a
+successful fake start exhibits the known false fallback message.
+
+The wrapper delegates exactly once and preserves all return values and
+errors. It clears only `could not start`, only when the screen's own precache
+service reports `state == "building"`. An ownership marker prevents nested or
+foreign wrappers, and restoration checks both marker identity and the current
+function before changing the table. The corrected `.3` implementation passes
+the behavior probe and receives no wrapper. No Pokemon Final source, assets,
+or cache data belong in this public repository.
+
 These providers have the same constants, tick entry, active-speed selection,
 and cell-crossing behavior. Feature-detect the export rather than trusting a
 version number because the forks' displayed, manifest, and internal versions

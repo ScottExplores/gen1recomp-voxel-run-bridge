@@ -30,6 +30,9 @@ local HM_ACTIONS = {
 local FREE_FLY_ID = "free_fly"
 local FREE_FLY_OPTION = "free_fly_without_badges"
 local FREE_FLY_BADGES_KEY = "badges"
+local POKEMON_FINAL_ID = "POKEMON_FINAL"
+local CACHE_START_MARKER = "_scottsTweaksCacheStartHook"
+local RELEASE_VERSION = "0.2.3"
 
 local function pack(...)
   return { n = select("#", ...), ... }
@@ -54,6 +57,169 @@ local function runningShoesOwnsFreeMove(FreeMove)
   return type(FreeMove) == "table"
     and type(rawget(FreeMove, "runningShoesTick")) == "function"
     and type(rawget(FreeMove, "runningShoesInner")) == "function"
+end
+
+local function findMod(mod, id)
+  if type(mod.find) ~= "function" then return nil end
+  local ok, found = pcall(mod.find, id)
+  if not ok then ok, found = pcall(mod.find, mod, id) end
+  return ok and found or nil
+end
+
+-- Pokemon Final is private, but it deliberately publishes its cached module
+-- loader through mod.exports.lib for small companion adapters.  Some early
+-- packages started the disk-cache job successfully and then left the fallback
+-- "could not start" text on the screen.  Detect that behavior with a fake
+-- screen instance; do not key the patch merely to a version label, and do not
+-- carry any Pokemon Final source in this mod.
+local function hasCacheStartMessageBug(start)
+  local calls = 0
+  local fake = {
+    game = {},
+    message = "probe",
+    precache = {
+      beginDisk = function()
+        calls = calls + 1
+        return true
+      end,
+    },
+  }
+  local ok = pcall(start, fake, false)
+  return ok and calls == 1 and fake.message == "could not start"
+end
+
+local function installPokemonFinalCacheCompatibility(mod)
+  local status = {
+    active = false,
+    reason = "pokemon_final_not_active",
+    screen = "not_checked",
+  }
+  local restorers = {}
+
+  status.restore = function()
+    local changed = false
+    for index = #restorers, 1, -1 do
+      if restorers[index]() then changed = true end
+    end
+    if changed then
+      status.active = false
+      status.reason = "restored"
+    end
+    return changed
+  end
+  mod.exports.pokemonFinalCacheCompat = status
+
+  local handle = findMod(mod, POKEMON_FINAL_ID)
+  if not handle then return status end
+
+  local version = handle.version
+    or (handle.exports and handle.exports.version)
+  status.version = version
+  -- These are the only private package revisions whose module contract was
+  -- locally verified.  A later build must opt in by exhibiting a newly audited
+  -- contract rather than inheriting a raw-table patch forever.
+  if version ~= "1.8.1-scott.2" and version ~= "1.8.1-scott.3" then
+    status.reason = "unsupported_pokemon_final_version"
+    status.screen = "not_checked"
+    return status
+  end
+
+  local exports = handle.exports
+  local lib = exports and exports.lib
+  if type(lib) ~= "table" or type(lib.require) ~= "function" then
+    status.reason = "module_loader_unavailable"
+    status.screen = "unavailable"
+    return status
+  end
+
+  local okScreen, Screen = pcall(lib.require, "ScottPrecacheScreen")
+  if not okScreen or type(Screen) ~= "table" then
+    status.reason = "cache_screen_unavailable"
+    status.screen = "unavailable"
+    return status
+  end
+
+  local original = rawget(Screen, "_start")
+  if type(original) ~= "function" then
+    status.reason = "cache_start_unavailable"
+    status.screen = "unavailable"
+    return status
+  end
+
+  local existing = rawget(Screen, CACHE_START_MARKER)
+  if existing ~= nil then
+    if type(existing) == "table" and existing.owner == mod.id
+        and type(existing.original) == "function"
+        and type(existing.wrapper) == "function"
+        and rawget(Screen, "_start") == existing.wrapper then
+      status.active = true
+      status.reason = "already_installed"
+      status.screen = "patched"
+      restorers[#restorers + 1] = function()
+        if rawget(Screen, CACHE_START_MARKER) ~= existing
+            or rawget(Screen, "_start") ~= existing.wrapper then
+          return false
+        end
+        rawset(Screen, "_start", existing.original)
+        rawset(Screen, CACHE_START_MARKER, nil)
+        return true
+      end
+    else
+      status.reason = "cache_start_owned_by_another_mod"
+      status.screen = "foreign_owner"
+    end
+    return status
+  end
+
+  if not hasCacheStartMessageBug(original) then
+    status.reason = "already_safe"
+    status.screen = "already_safe"
+    return status
+  end
+
+  local function wrappedStart(self, ...)
+    local result = pack(original(self, ...))
+    -- Only the known false fallback is eligible, and only after the public
+    -- precache status confirms that a build actually started.  Real errors,
+    -- stale messages, and unfamiliar state shapes are left untouched.
+    if self and self.message == "could not start" then
+      local precache = self.precache
+      if type(precache) == "table" and type(precache.status) == "function" then
+        local okStatus, current = pcall(precache.status, self.game)
+        if okStatus and type(current) == "table"
+            and current.state == "building" then
+          self.message = nil
+        end
+      end
+    end
+    return unpackValues(result, 1, result.n)
+  end
+
+  local marker = {
+    owner = mod.id,
+    version = RELEASE_VERSION,
+    original = original,
+    wrapper = wrappedStart,
+  }
+  -- Installation is deliberately last: every feature/ownership check above
+  -- has completed before the shared exported table changes.
+  rawset(Screen, "_start", wrappedStart)
+  rawset(Screen, CACHE_START_MARKER, marker)
+  restorers[#restorers + 1] = function()
+    if rawget(Screen, CACHE_START_MARKER) ~= marker
+        or rawget(Screen, "_start") ~= wrappedStart then
+      return false
+    end
+    rawset(Screen, "_start", original)
+    rawset(Screen, CACHE_START_MARKER, nil)
+    return true
+  end
+
+  status.active = true
+  status.reason = "patched"
+  status.screen = "patched"
+  mod.log:info("patched Pokemon Final %s cache start result", tostring(version))
+  return status
 end
 
 local function findVoxelMod(mod)
@@ -341,6 +507,7 @@ return function(mod)
   defineOptions(mod)
   installBadgeFreeFieldMoves(mod)
   installFreeFlyImmediateFlight(mod)
+  installPokemonFinalCacheCompatibility(mod)
 
   mod.exports.status = {
     active = false,
@@ -504,7 +671,7 @@ return function(mod)
   rawset(FreeMove, "tick", bridgedTick)
   rawset(lib, "_voxelRunBridgeHook", {
     owner = mod.id,
-    version = "0.2.2",
+    version = RELEASE_VERSION,
     original = innerTick,
   })
 end
