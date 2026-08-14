@@ -32,7 +32,29 @@ local FREE_FLY_OPTION = "free_fly_without_badges"
 local FREE_FLY_BADGES_KEY = "badges"
 local POKEMON_FINAL_ID = "POKEMON_FINAL"
 local CACHE_START_MARKER = "_scottsTweaksCacheStartHook"
-local RELEASE_VERSION = "0.2.3"
+local GAPPED_LAND_OPTION = "gapped_land"
+local GAPPED_LAND_RENDER_MARKER = "_scottsTweaksGappedLandRenderHook"
+local GAPPED_LAND_INVALIDATE_MARKER = "_scottsTweaksGappedLandInvalidateHook"
+local GAPPED_LAND_RADIUS = 1024
+local GAPPED_LAND_CELL = 64
+-- Native terrain and Flora's detailed apron occupy roughly y=-2..-37.
+-- Keep the broad procedural ground below both so it only fills the void.
+local GAPPED_LAND_Y = -40
+local RELEASE_VERSION = "0.3.0"
+
+local GAPPED_LAND_VOXEL_IDS = {
+  "POKEMON_FINAL",
+  "DRAMATIC_SHAPE",
+}
+
+-- These maps deliberately read as open sea at the horizon. A green apron
+-- there would hide geography instead of filling an accidental visual void.
+local GAPPED_LAND_SEA_MAPS = {
+  CINNABAR_ISLAND = true,
+  ROUTE_19 = true,
+  ROUTE_20 = true,
+  ROUTE_21 = true,
+}
 
 local function pack(...)
   return { n = select("#", ...), ... }
@@ -273,7 +295,374 @@ local function defineOptions(mod)
       default = true,
       help = "Let Free Fly take off without THUNDERBADGE. FLY eligibility, STORY GATES and terrain rules stay under Free Fly's control.",
     },
+    {
+      key = GAPPED_LAND_OPTION,
+      type = "toggle",
+      label = "GAPPED LAND",
+      default = true,
+      help = "Fill the distant visual gap below the horizon in outdoor 1ST/3RD views. The added ground is not walkable.",
+    },
   })
+end
+
+-- POKEMON_FINAL and DRAMATIC_SHAPE deliberately publish a module loader for
+-- companion adapters. This layer uses only that public seam and supplies its
+-- own tiny procedural texture and mesh; no voxel source, map data, collision,
+-- connection, or disk-cache input is copied or changed.
+local function findGappedLandVoxel(mod)
+  local sawSupportedId = false
+  for _, id in ipairs(GAPPED_LAND_VOXEL_IDS) do
+    local handle = findMod(mod, id)
+    if handle then
+      sawSupportedId = true
+      local lib = handle.exports and handle.exports.lib
+      if type(lib) == "table" and type(lib.require) == "function" then
+        return id, handle, lib
+      end
+    end
+  end
+  if sawSupportedId then
+    return nil, nil, nil, "voxel_exports_missing_require"
+  end
+  return nil, nil, nil, "no_supported_voxel_mod"
+end
+
+local function releaseGpuObject(object)
+  if object and type(object.release) == "function" then
+    pcall(object.release, object)
+  end
+end
+
+local function installGappedLand(mod)
+  local status = {
+    active = false,
+    reason = "no_supported_voxel_mod",
+    mode = "visual_apron",
+  }
+  status.restore = function() return false end
+  mod.exports.gappedLand = status
+
+  local voxelId, handle, lib, findReason = findGappedLandVoxel(mod)
+  if not voxelId then
+    status.reason = findReason
+    return status
+  end
+  status.voxel = voxelId
+  status.providerVersion = handle.version
+    or (handle.exports and handle.exports.version)
+
+  local okModules, VoxelScene, Voxel3D, Voxel, DayNight, Mat4 =
+    pcall(function()
+      return lib.require("VoxelScene"), lib.require("Voxel3D"),
+        lib.require("VoxelState"), lib.require("DayNight"),
+        lib.require("Mat4")
+    end)
+  if not okModules
+      or type(VoxelScene) ~= "table"
+      or type(VoxelScene.render) ~= "function"
+      or type(Voxel3D) ~= "table"
+      or type(Voxel3D.beginScene) ~= "function"
+      or type(Voxel3D.newMesh) ~= "function"
+      or type(Voxel3D.draw) ~= "function"
+      or type(Voxel3D.invalidate) ~= "function"
+      or type(Voxel3D.seams) ~= "function"
+      or type(Voxel3D.glass) ~= "function"
+      or type(Voxel) ~= "table"
+      or type(Voxel.isFreeCam) ~= "function"
+      or type(DayNight) ~= "table"
+      or type(DayNight.isCanopy) ~= "function"
+      or type(Mat4) ~= "table"
+      or type(Mat4.translate) ~= "function" then
+    status.reason = "exported_scene_modules_unavailable"
+    return status
+  end
+
+  local existingScene = rawget(VoxelScene, GAPPED_LAND_RENDER_MARKER)
+  local existingInvalidate = rawget(Voxel3D, GAPPED_LAND_INVALIDATE_MARKER)
+  if existingScene ~= nil or existingInvalidate ~= nil then
+    local sameOwner = type(existingScene) == "table"
+      and type(existingInvalidate) == "table"
+      and existingScene.owner == mod.id
+      and existingInvalidate.owner == mod.id
+      and existingScene.controller ~= nil
+      and existingScene.controller == existingInvalidate.controller
+      and type(existingScene.controller.restore) == "function"
+      and type(existingScene.wrapper) == "function"
+      and type(existingInvalidate.wrapper) == "function"
+    if not sameOwner then
+      status.reason = "renderer_hook_owned_by_another_mod"
+      return status
+    end
+
+    -- A hot reload may construct a fresh mod facade while exported voxel
+    -- modules persist. Keep one wrapper and point its live option lookup and
+    -- logging at the fresh facade instead of multiplying the draw.
+    existingScene.controller.mod = mod
+    status.active = true
+    status.reason = "already_installed"
+    status.restore = function()
+      local changed = existingScene.controller.restore()
+      if changed then
+        status.active = false
+        status.reason = "restored"
+      end
+      return changed
+    end
+    return status
+  end
+
+  local controller = {
+    mod = mod,
+    mesh = nil,
+    texture = nil,
+    warnedDraw = false,
+    warnedBuild = false,
+  }
+
+  local function clearGpuObjects()
+    local mesh, texture = controller.mesh, controller.texture
+    controller.mesh, controller.texture = nil, nil
+    if mesh ~= false then releaseGpuObject(mesh) end
+    if texture ~= false then releaseGpuObject(texture) end
+  end
+
+  local function buildMesh()
+    if controller.mesh ~= nil then return controller.mesh or nil end
+    local verts, indices = {}, {}
+    local radius, cell = GAPPED_LAND_RADIUS, GAPPED_LAND_CELL
+    for x = -radius, radius - cell, cell do
+      for z = -radius, radius - cell, cell do
+        local base = #verts
+        local u0, v0 = (x + radius) / cell, (z + radius) / cell
+        local u1, v1 = u0 + 1, v0 + 1
+        -- Four vertices per cell keep the quadratic world curve smooth all
+        -- the way to the backdrop instead of bending one enormous quad.
+        verts[#verts + 1] = { x, 0, z, u0, v0, 1 }
+        verts[#verts + 1] = { x + cell, 0, z, u1, v0, 1 }
+        verts[#verts + 1] = { x + cell, 0, z + cell, u1, v1, 1 }
+        verts[#verts + 1] = { x, 0, z + cell, u0, v1, 1 }
+        indices[#indices + 1] = base + 1
+        indices[#indices + 1] = base + 2
+        indices[#indices + 1] = base + 3
+        indices[#indices + 1] = base + 1
+        indices[#indices + 1] = base + 3
+        indices[#indices + 1] = base + 4
+      end
+    end
+    controller.mesh = Voxel3D.newMesh(verts, indices) or false
+    return controller.mesh or nil
+  end
+
+  local function buildTexture()
+    if controller.texture ~= nil then return controller.texture or nil end
+    local imageApi = love and love.image
+    local graphics = love and love.graphics
+    if not (imageApi and type(imageApi.newImageData) == "function"
+        and graphics and type(graphics.newImage) == "function") then
+      controller.texture = false
+      return nil
+    end
+
+    local data
+    local ok, texture = pcall(function()
+      data = imageApi.newImageData(8, 8)
+      for y = 0, 7 do
+        for x = 0, 7 do
+          local light = (math.floor(x / 4) + math.floor(y / 4)) % 2 == 0
+          local r, g, b = 0.30, 0.48, 0.18
+          if light then r, g, b = 0.35, 0.55, 0.21 end
+          -- A sparse third green keeps the procedural floor from reading as
+          -- a flat debug colour while remaining quiet behind real terrain.
+          if (x * 7 + y * 11) % 17 == 0 then
+            r, g, b = 0.39, 0.59, 0.24
+          end
+          data:setPixel(x, y, r, g, b, 1)
+        end
+      end
+      local image = graphics.newImage(data)
+      if type(image.setFilter) == "function" then
+        image:setFilter("nearest", "nearest")
+      end
+      if type(image.setWrap) == "function" then
+        image:setWrap("repeat", "repeat")
+      end
+      return image
+    end)
+    releaseGpuObject(data)
+    controller.texture = (ok and texture) or false
+    return controller.texture or nil
+  end
+
+  local function eligible(state)
+    local liveMod = controller.mod
+    if not optionEnabled(liveMod, GAPPED_LAND_OPTION, true) then return false end
+    local map = state and state.map
+    local def = map and map.def
+    if not def or GAPPED_LAND_SEA_MAPS[map.id] then return false end
+
+    local tileset = def.tileset
+    if not tileset and type(map.tileset) == "table" then
+      tileset = map.tileset.id
+    end
+    if tileset == "SHIP_PORT" then return false end
+
+    local okOutdoor, outdoor = pcall(Map.isOutdoor, def)
+    if not okOutdoor or not outdoor then return false end
+    local okCanopy, canopy = pcall(DayNight.isCanopy, map)
+    if not okCanopy or canopy then return false end
+    local okCamera, freeCamera = pcall(Voxel.isFreeCam)
+    return okCamera and freeCamera == true
+  end
+
+  local function focusPoint(state)
+    local focus = Voxel3D.focus
+    local fx = type(focus) == "table" and finiteNumber(focus[1]) or nil
+    local fz = type(focus) == "table" and finiteNumber(focus[3]) or nil
+    if fx and fz then return fx, fz end
+
+    local player = state and state.player
+    local px = player and finiteNumber(player.px) or nil
+    local pz = player and finiteNumber(player.py) or nil
+    if px and pz then return px + 8, pz + 8 end
+
+    local def = state and state.map and state.map.def
+    return finiteNumber(def and def.width, 1) * 16,
+      finiteNumber(def and def.height, 1) * 16
+  end
+
+  local function draw(state)
+    if not eligible(state) then return end
+    local mesh, texture = buildMesh(), buildTexture()
+    if not (mesh and texture) then
+      if not controller.warnedBuild then
+        controller.warnedBuild = true
+        controller.mod.log:warn("GAPPED LAND GPU objects are unavailable; leaving the native horizon unchanged")
+      end
+      return
+    end
+
+    local fx, fz = focusPoint(state)
+    local cell = GAPPED_LAND_CELL
+    local cx = math.floor(fx / cell) * cell
+    local cz = math.floor(fz / cell) * cell
+
+    -- This draw is deliberately before Backdrop/terrain. It writes ordinary
+    -- depth at y=-40; the native y=-2..-37 apron, terrain and water rendered
+    -- later therefore remain authoritative everywhere they exist.
+    local okDraw, drawErr = xpcall(function()
+      Voxel3D.seams(false)
+      Voxel3D.glass(false)
+      Voxel3D.draw(mesh, texture, Mat4.translate(cx, GAPPED_LAND_Y, cz))
+    end, traceback)
+    -- beginScene establishes seams/glass=true before this first draw. These
+    -- setters normally cannot fail, but a provider/driver error must
+    -- not leave later terrain sampling this procedural texture as glass or
+    -- carrying its non-voxel wireframe state.
+    pcall(Voxel3D.glass, true)
+    pcall(Voxel3D.seams, true)
+    if not okDraw then error(drawErr, 0) end
+  end
+
+  local originalRender = VoxelScene.render
+  local originalInvalidate = Voxel3D.invalidate
+
+  local function wrappedRender(state, ...)
+    local renderArgs = pack(...)
+    local innerBegin = Voxel3D.beginScene
+    local wrappedBegin
+    wrappedBegin = function(...)
+      local beginArgs = pack(...)
+      local began = pack(innerBegin(unpackValues(beginArgs, 1, beginArgs.n)))
+      if began[1] then
+        local okDraw, drawErr = xpcall(function() draw(state) end, traceback)
+        if not okDraw and not controller.warnedDraw then
+          controller.warnedDraw = true
+          controller.mod.log:warn("GAPPED LAND skipped after a draw error: %s",
+            tostring(drawErr))
+        end
+      end
+      return unpackValues(began, 1, began.n)
+    end
+
+    rawset(Voxel3D, "beginScene", wrappedBegin)
+    local rendered
+    local okRender, renderErr = xpcall(function()
+      rendered = pack(originalRender(state,
+        unpackValues(renderArgs, 1, renderArgs.n)))
+    end, traceback)
+    -- Never leave a frame-local interception in the provider, and never
+    -- overwrite a third party that deliberately replaced it during render.
+    if rawget(Voxel3D, "beginScene") == wrappedBegin then
+      rawset(Voxel3D, "beginScene", innerBegin)
+    end
+    if not okRender then error(renderErr, 0) end
+    return unpackValues(rendered, 1, rendered.n)
+  end
+
+  local function wrappedInvalidate(...)
+    local invalidateArgs = pack(...)
+    local result
+    local okInvalidate, invalidateErr = xpcall(function()
+      result = pack(originalInvalidate(
+        unpackValues(invalidateArgs, 1, invalidateArgs.n)))
+    end, traceback)
+    clearGpuObjects()
+    if not okInvalidate then error(invalidateErr, 0) end
+    return unpackValues(result, 1, result.n)
+  end
+
+  local sceneMarker = {
+    owner = mod.id,
+    version = RELEASE_VERSION,
+    original = originalRender,
+    wrapper = wrappedRender,
+    controller = controller,
+  }
+  local invalidateMarker = {
+    owner = mod.id,
+    version = RELEASE_VERSION,
+    original = originalInvalidate,
+    wrapper = wrappedInvalidate,
+    controller = controller,
+  }
+
+  controller.restore = function()
+    -- Refuse a partial unhook if another adapter currently wraps either
+    -- function outside ours. Its owner can restore first and this can be
+    -- retried without severing anyone's call chain.
+    if rawget(VoxelScene, GAPPED_LAND_RENDER_MARKER) ~= sceneMarker
+        or rawget(VoxelScene, "render") ~= wrappedRender
+        or rawget(Voxel3D, GAPPED_LAND_INVALIDATE_MARKER) ~= invalidateMarker
+        or rawget(Voxel3D, "invalidate") ~= wrappedInvalidate then
+      return false
+    end
+    rawset(VoxelScene, "render", originalRender)
+    rawset(VoxelScene, GAPPED_LAND_RENDER_MARKER, nil)
+    rawset(Voxel3D, "invalidate", originalInvalidate)
+    rawset(Voxel3D, GAPPED_LAND_INVALIDATE_MARKER, nil)
+    clearGpuObjects()
+    return true
+  end
+  status.restore = function()
+    local changed = controller.restore()
+    if changed then
+      status.active = false
+      status.reason = "restored"
+    end
+    return changed
+  end
+
+  -- Shared-table writes are the final installation actions after all public
+  -- capabilities and ownership markers have been checked.
+  rawset(Voxel3D, "invalidate", wrappedInvalidate)
+  rawset(Voxel3D, GAPPED_LAND_INVALIDATE_MARKER, invalidateMarker)
+  rawset(VoxelScene, "render", wrappedRender)
+  rawset(VoxelScene, GAPPED_LAND_RENDER_MARKER, sceneMarker)
+
+  status.active = true
+  status.reason = "attached"
+  mod.log:info("GAPPED LAND visual apron attached to %s", voxelId)
+  return status
 end
 
 local function installBadgeFreeFieldMoves(mod)
@@ -508,6 +897,7 @@ return function(mod)
   installBadgeFreeFieldMoves(mod)
   installFreeFlyImmediateFlight(mod)
   installPokemonFinalCacheCompatibility(mod)
+  installGappedLand(mod)
 
   mod.exports.status = {
     active = false,

@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.0 - 2026-08-13
+
+- Added the default-on **GAPPED LAND** presentation option for Pokemon Final
+  and compatible Dramatic Shape renderers. In outdoor/open-air **1ST** and
+  **3RD** views, an independently generated visual land plane covers otherwise
+  exposed space beneath the distant horizon while leaving the real maps,
+  collision, connections, warps, and player movement unchanged.
+- Feature-detected the provider's exported renderer capabilities and kept the
+  plane out of interiors, canopy scenes, and sea maps. Unsupported or
+  unfamiliar providers fail safely without changing their renderer. No
+  third-party renderer source or art is included in this public mod.
+- Kept the feature independent of Pokemon Final's voxel disk cache. Switching
+  it does not delete, start, or rebuild the disk cache or invalidate the
+  provider's cached terrain meshes.
+- Added unit and production-loader coverage for the new settings row,
+  capability detection, live enable/disable behavior, gameplay-state
+  isolation, and the no-compatible-renderer fallback.
+
 ## 0.2.3 - 2026-08-13
 
 - Added a behavior-probed compatibility fix for the false **COULD NOT START**

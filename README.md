@@ -5,8 +5,11 @@ is broader, but its internal mod ID remains `voxel_run_bridge`. Existing
 installations therefore update in place, keep their settings, and do not
 become a duplicate mod.
 
-Version 0.2.3 contains four independent tweaks:
+Version 0.3.0 contains five independent tweaks:
 
+- **Gapped Land:** compatible Pokemon Final and Dramatic Shape renderers can
+  cover the empty visual space beneath the horizon in outdoor first- and
+  third-person views. This presentation option is on by default.
 - **Free Fly Now:** Free Fly can take off immediately without the Thunder
   Badge. This compatibility option is on by default.
 - **Badge-free HMs:** use Cut, Fly, Surf, Strength, and Flash without their
@@ -20,6 +23,30 @@ Version 0.2.3 contains four independent tweaks:
 
 None of these features grants badges, teaches moves, changes story flags, or
 edits a save's badge inventory.
+
+## Gapped Land
+
+The default-on **GAPPED LAND** setting adds an independently generated land
+plane beneath compatible voxel scenery. It is intended for the empty-looking
+space between an outdoor map's edge and the painted horizon, such as the blue
+gap visible around an isolated town from a first- or third-person camera.
+
+The fill is purely visual. It does not add map cells, join cities or routes,
+change collision, create landing places, or let the player walk outside the
+real map. Sea maps remain sea, and the fill is skipped in interiors and under
+special canopy scenery so it does not flatten places that are supposed to be
+enclosed or water-covered.
+
+The renderer is selected by its stable mod ID and then checked for the required
+capabilities rather than trusted by display name alone. Version 0.3.0 targets
+Pokemon Final and the verified Dramatic Shape 1.8.0-1.8.2 renderer contract.
+If an active voxel provider does not expose the required renderer modules,
+Scott's Tweaks leaves it untouched and every other tweak continues to work.
+
+Switch **GAPPED LAND** off in Scott's Tweaks to remove only that extra visual
+plane. Toggling it does not delete, start, or rebuild Pokemon Final's voxel
+disk cache or invalidate its cached terrain. Only Scott's small runtime
+underlay changes, and the completed disk cache remains reusable.
 
 ## Free Fly
 
@@ -55,9 +82,9 @@ only after the cache reports that it is actually building. Real start errors
 are not hidden.
 
 This does not rebuild, clear, read, or change the disk cache. The exact
-`1.8.1-scott.3` private package already contains the correction, so Scott's
-Tweaks recognizes it as safe and makes no change. No Pokemon Final source or
-assets are included in this public mod.
+`1.8.1-scott.3` package contains the correction; later private packages are
+left untouched until their cache-screen contract is separately audited. No
+Pokemon Final source or assets are included in this public mod.
 
 ## Voxel running
 
@@ -79,7 +106,7 @@ voxel free movement on its own.
 
 ### Do you need the run bridge?
 
-- **Pokemon Final + Running Shoes:** yes. Scott's Tweaks 0.2.3 recognizes
+- **Pokemon Final + Running Shoes:** yes. Scott's Tweaks 0.3.0 recognizes
   Pokemon Final's own manifest ID and carries the run speed into its 1ST/3RD
   camera movement.
 - **[thorkdev Running Shoes v0.2.2 or newer](https://github.com/thorkdev/gen1recomp-running-shoes/releases/tag/0.2.2)
@@ -112,16 +139,17 @@ full camera ladder is enabled.
 ## Install or update
 
 If `voxel_run_bridge` 0.1.1 or Scott's Tweaks 0.2.x is already installed, open
-Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.2.3
+Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.3.0
 update. It will appear as
 **Scott's Tweaks** afterward, without creating a second entry.
 
 For a first installation:
 
 1. Open **MODS -> Import mod .zip** and choose
-   `voxel_run_bridge-0.2.3.zip`.
+   `voxel_run_bridge-0.3.0.zip`.
 2. Enable **Scott's Tweaks**, then restart the game if the manager asks.
-3. Its **BADGE-FREE HMS** and **FREE FLY NOW** options default to **ON**.
+3. Its **GAPPED LAND**, **BADGE-FREE HMS**, and **FREE FLY NOW** options
+   default to **ON**.
 4. Update Free Fly to **1.6.1 or newer** and enable it for free-roaming flight.
 5. For voxel running, also enable one supported voxel provider and a
    movement-speed mod such as Running Shoes.
@@ -180,20 +208,21 @@ Use the `dev` branch of
 ```powershell
 python tools/modkit.py validate C:\path\to\voxel_run_bridge --strict --base fixture
 python tools/modkit.py lint C:\path\to\voxel_run_bridge
-python tools/modkit.py pack C:\path\to\voxel_run_bridge -o C:\path\to\dist\voxel_run_bridge-0.2.3.zip --base fixture
+python tools/modkit.py pack C:\path\to\voxel_run_bridge -o C:\path\to\dist\voxel_run_bridge-0.3.0.zip --base fixture
 ```
 
 The archive is intentionally flat: `manifest.json` and `main.lua` are at its
 root, which Gen1Recomp's importer accepts directly.
 
-Version 0.2.3 is configured for Gen1Recomp's built-in GitHub update checks via
+Version 0.3.0 is configured for Gen1Recomp's built-in GitHub update checks via
 `ScottExplores/gen1recomp-voxel-run-bridge`.
 
 ## Provenance
 
 This implementation was written against Gen1Recomp's documented movement
-contract and the voxel mods' exported `FreeMove` interface. It does not copy
-the existing
+and rendering contracts and the voxel mods' exported module interfaces. The
+Gapped Land plane is generated by Scott's Tweaks and includes no copied
+renderer code, textures, or horizon art. It does not copy the existing
 `thorkdev/gen1recomp-running-shoes` implementation, whose repository currently
 does not declare a software license. That project is credited for publicly
 demonstrating and documenting the first-person movement gap.

@@ -70,7 +70,7 @@ end]]
 local pokemonFinalManifest = [[{
   "id": "POKEMON_FINAL",
   "name": "Pokemon Final Test Double",
-  "version": "1.8.1-scott.3",
+  "version": "1.8.1-scott.4",
   "api": 2,
   "entry": "main.lua",
   "profile": "content",
@@ -84,12 +84,32 @@ local pokemonFinalManifest = [[{
 local pokemonFinalEntry = [[return function(mod)
   local FreeMove = { WALK = 1, BIKE = 2 }
   FreeMove.tick = function(state) return state end
+  local VoxelScene = { render = function(state) return state end }
+  local Voxel3D = {
+    beginScene = function() return true end,
+    newMesh = function() return { release = function() end } end,
+    draw = function() end,
+    invalidate = function() end,
+    seams = function() end,
+    glass = function() end,
+  }
+  local VoxelState = { isFreeCam = function() return true end }
+  local DayNight = { isCanopy = function() return false end }
+  local Mat4 = { translate = function(x, y, z) return { x, y, z } end }
+  local modules = {
+    FreeMove = FreeMove,
+    VoxelScene = VoxelScene,
+    Voxel3D = Voxel3D,
+    VoxelState = VoxelState,
+    DayNight = DayNight,
+    Mat4 = Mat4,
+  }
   mod.exports.lib = {
-    require = function(name)
-      if name == "FreeMove" then return FreeMove end
-    end
+    require = function(name) return modules[name] end
   }
   mod.exports.testFreeMove = FreeMove
+  mod.exports.testVoxelScene = VoxelScene
+  mod.exports.testVoxel3D = Voxel3D
 end]]
 local run = T.sdk.loadMod("mods/voxel_run_bridge", {
   data = require("tests.modkit.fixtures").fresh(),
@@ -110,10 +130,22 @@ T.eq(run.mod and run.mod.manifest.id, "voxel_run_bridge",
   "stable updater identity is retained")
 T.eq(run.mod and run.mod.manifest.name, "Scott's Tweaks",
   "new display name is loaded")
-T.eq(run.mod and run.mod.manifest.version, "0.2.3",
-  "loader selected version 0.2.3")
+T.eq(run.mod and run.mod.manifest.version, "0.3.0",
+  "loader selected version 0.3.0")
 
 local schema = run.loader.optionSchemas.voxel_run_bridge or {}
+local gappedLandOption
+for _, row in ipairs(schema) do
+  if row.key == "gapped_land" then gappedLandOption = row break end
+end
+T.check(type(gappedLandOption) == "table", "Gapped Land option is registered")
+T.eq(gappedLandOption and gappedLandOption.type, "toggle",
+  "Gapped Land uses a toggle")
+T.eq(gappedLandOption and gappedLandOption.label, "GAPPED LAND",
+  "Gapped Land uses its player-facing label")
+T.eq(gappedLandOption and gappedLandOption.default, true,
+  "Gapped Land defaults on")
+
 local hmOption
 for _, row in ipairs(schema) do
   if row.key == "hm_without_badges" then hmOption = row break end
@@ -179,12 +211,26 @@ T.eq(exported.status and exported.status.active, true,
   "voxel bridge activates through the production loader")
 T.eq(exported.status and exported.status.voxel, "POKEMON_FINAL",
   "production loader selects Pokemon Final by manifest id")
+T.check(type(exported.gappedLand) == "table",
+  "Gapped Land compatibility status is published")
+T.eq(exported.gappedLand and exported.gappedLand.active, true,
+  "Gapped Land attaches through exported renderer capabilities")
+T.eq(exported.gappedLand and exported.gappedLand.reason, "attached",
+  "Gapped Land reports its active attachment state")
+T.eq(exported.gappedLand and exported.gappedLand.mode, "visual_apron",
+  "Gapped Land identifies its presentation-only mode")
+T.eq(exported.gappedLand and exported.gappedLand.voxel, "POKEMON_FINAL",
+  "Gapped Land reports the selected renderer provider")
+T.eq(exported.gappedLand and exported.gappedLand.providerVersion,
+  "1.8.1-scott.4", "Gapped Land exposes the provider version diagnostically")
+T.eq(type(exported.gappedLand and exported.gappedLand.restore), "function",
+  "Gapped Land publishes an ownership-safe restore function")
 local pokemonFinalExports = run.loader.exports.POKEMON_FINAL
 T.check(type(pokemonFinalExports) == "table",
   "Pokemon Final test-double exports are published")
 T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.owner, "voxel_run_bridge",
   "Pokemon Final FreeMove receives Scott's bridge marker")
-T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.2.3",
+T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.3.0",
   "Pokemon Final bridge marker carries the update version")
 T.eq(type(exported.hmWithoutBadges), "function",
   "live HM option accessor is published")

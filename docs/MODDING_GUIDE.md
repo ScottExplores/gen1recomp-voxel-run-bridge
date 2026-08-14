@@ -1,6 +1,6 @@
 # Gen1Recomp modding field guide
 
-Research snapshot: 2026-08-11
+Research snapshot: 2026-08-13
 
 This is the working map used to build Voxel Run Bridge. It records the parts
 of Gen1Recomp's mod system and current voxel ecosystem that matter for future
@@ -70,14 +70,41 @@ Verified providers using this seam:
 | `DRAMALESS_SHAPE` | [Dramaless Shape](https://github.com/artyrambles/DRAMALESS_SHAPE) | Used by current Kanto in First Person. |
 | `potato_voxel` | [PotatoVoxel](https://github.com/ShaneMcGovernIE/potato_voxel) | Free camera is normally removed by its default low-power profile. |
 
+### Gapped-land rendering is presentation, not map expansion
+
+Gen1Recomp's built-in **VOID FILL** and Kanto in First Person's **WORLD
+APRON** are useful precedents, but they are separate from Scott's Tweaks
+0.3.0. The engine fill chooses a border block around an overworld map, while
+the Kanto apron extends a provider-owned mesh. Neither turns the space into
+walkable map cells.
+
+Scott's Tweaks generates its own small land plane and installs it only after
+feature-detecting a compatible voxel provider's exported `VoxelScene`,
+`Voxel3D`, `VoxelState`, `DayNight`, and `Mat4` modules. The verified contracts
+are Pokemon Final and Dramatic Shape 1.8.0-1.8.2. Manifest or internal version
+strings are not enough by themselves: the required module tables and
+functions must be present before any shared table is wrapped.
+
+The plane is active only in outdoor/open-air **1ST** and **3RD** views. It
+stays out of interiors, canopy scenes, and sea maps, and it never changes map
+definitions, collision, connections, warps, encounters, or player position.
+It is runtime geometry rather than cached terrain, so toggling the option
+does not start, delete, or rebuild Pokemon Final's voxel disk cache.
+
+The public Kanto in First Person and Dramatic Shape mirror repositories do
+not currently declare software licenses. Their world-apron implementation is
+therefore a compatibility precedent, not source for this MIT package. The
+0.3.0 plane is independently implemented and carries no third-party code,
+textures, panoramas, ROM content, or other assets.
+
 ### Narrow Pokemon Final cache-screen compatibility
 
 Pokemon Final also deliberately exports its cached module loader as
-`mod.exports.lib`. Scott's Tweaks 0.2.3 uses that seam only for a UI-result
-compatibility check on the locally verified `1.8.1-scott.2` and `.3` package
-contracts. It calls `ScottPrecacheScreen._start` on an inert fake instance
-whose cache service cannot touch storage. A wrapper is installed only when a
-successful fake start exhibits the known false fallback message.
+`mod.exports.lib`. Scott's Tweaks 0.3.0 retains a narrow use of that seam for
+a UI-result compatibility check on the locally verified `1.8.1-scott.2` and
+`.3` package contracts. It calls `ScottPrecacheScreen._start` on an inert fake
+instance whose cache service cannot touch storage. A wrapper is installed
+only when a successful fake start exhibits the known false fallback message.
 
 The wrapper delegates exactly once and preserves all return values and
 errors. It clears only `could not start`, only when the screen's own precache
