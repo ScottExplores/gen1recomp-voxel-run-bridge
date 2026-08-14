@@ -5,6 +5,8 @@
 local argv = rawget(_G, "arg") or {}
 local sourceRoot = argv[1] or os.getenv("SCOTTS_TWEAKS_MOD_ROOT")
 local fixtureRoot = argv[2] or os.getenv("SCOTTS_TWEAKS_FIXTURE_ROOT") or "."
+local expectedTradeAdapter = argv[3]
+  or os.getenv("SCOTTS_TWEAKS_EXPECT_TRADE_ADAPTER")
 local engineRoot = os.getenv("SCOTTS_TWEAKS_ENGINE_ROOT") or fixtureRoot
 assert(sourceRoot, "pass the Scott's Tweaks source root")
 
@@ -130,8 +132,10 @@ T.eq(run.mod and run.mod.manifest.id, "voxel_run_bridge",
   "stable updater identity is retained")
 T.eq(run.mod and run.mod.manifest.name, "Scott's Tweaks",
   "new display name is loaded")
-T.eq(run.mod and run.mod.manifest.version, "0.3.0",
-  "loader selected version 0.3.0")
+T.eq(run.mod and run.mod.manifest.version, "0.4.0",
+  "loader selected version 0.4.0")
+T.eq(run.mod and run.mod.manifest.affects_link, false,
+  "inventory conveniences do not alter link rules")
 
 local schema = run.loader.optionSchemas.voxel_run_bridge or {}
 local gappedLandOption
@@ -145,6 +149,133 @@ T.eq(gappedLandOption and gappedLandOption.label, "GAPPED LAND",
   "Gapped Land uses its player-facing label")
 T.eq(gappedLandOption and gappedLandOption.default, true,
   "Gapped Land defaults on")
+
+local bagPocketsOption
+local experienceOption
+for _, row in ipairs(schema) do
+  if row.key == "bag_pockets" then bagPocketsOption = row end
+  if row.key == "experience_mode" then experienceOption = row end
+end
+T.eq(bagPocketsOption and bagPocketsOption.type, "toggle",
+  "Bag Pockets uses a toggle")
+T.eq(bagPocketsOption and bagPocketsOption.default, true,
+  "Bag Pockets defaults on")
+T.eq(experienceOption and experienceOption.type, "choice",
+  "EXP mode uses a choice")
+T.eq(experienceOption and experienceOption.default, "vanilla",
+  "EXP mode defaults to vanilla")
+T.eq(experienceOption and #(experienceOption.choices or {}), 4,
+  "EXP mode exposes all four choices")
+
+local shareItem = run.data.items.SCOTTS_EXP_SHARE
+local tradeStone = run.data.items.SCOTTS_TRADE_STONE
+local tradeEffect = run.data.item_effects.SCOTTS_TRADE_STONE_EFFECT
+T.eq(shareItem and shareItem.name, "EXP.SHARE",
+  "EXP.SHARE key item is registered")
+T.eq(shareItem and shareItem.keyItem, true,
+  "EXP.SHARE is protected as a key item")
+T.eq(tradeStone and tradeStone.price, 500,
+  "Trade Stone costs 500")
+T.eq(tradeStone and tradeStone.effect, "SCOTTS_TRADE_STONE_EFFECT",
+  "Trade Stone references its registered effect")
+T.eq(type(tradeEffect and tradeEffect.use), "function",
+  "Trade Stone effect is registered")
+T.eq(type(run.data.screens and run.data.screens.BagMenu), "table",
+  "BagMenu decorator is registered")
+T.eq(type(run.data.screens and run.data.screens.ShopMenu), "table",
+  "ShopMenu decorator is registered")
+
+run.data.pokemon.ALAKAZAM = run.data.pokemon.ALAKAZAM or { name = "ALAKAZAM" }
+local into = select(3, tradeEffect.use({
+  data = run.data,
+  target = { species = "KADABRA" },
+}))
+T.eq(into and into.evolveTo, "ALAKAZAM",
+  "Trade Stone maps Kadabra to Alakazam")
+
+local ItemEffects = require("src.inventory.ItemEffects")
+local tradeStatus = run.loader.exports.voxel_run_bridge.tradeStone
+if expectedTradeAdapter == "compat" then
+  T.eq(tradeStatus and tradeStatus.adapter, "v0.1.75_compatibility",
+    "v0.1.75 receives the narrow Trade Stone dispatcher")
+  T.eq(type(rawget(ItemEffects, "_scottsTweaksTradeStoneHook")), "table",
+    "v0.1.75 compatibility wrapper is ownership-marked")
+elseif expectedTradeAdapter == "native" then
+  T.eq(tradeStatus and tradeStatus.adapter, "native_item_effects",
+    "newer engine keeps native registered-item dispatch")
+  T.eq(rawget(ItemEffects, "_scottsTweaksTradeStoneHook"), nil,
+    "newer engine receives no process-global item wrapper")
+else
+  local mode = tradeStatus and tradeStatus.adapter
+  T.check(mode == "native_item_effects" or mode == "v0.1.75_compatibility",
+    "engine selects native or compatibility Trade Stone dispatch")
+  T.eq(rawget(ItemEffects, "_scottsTweaksTradeStoneHook") ~= nil,
+    mode == "v0.1.75_compatibility",
+    "Trade Stone wrapper presence matches the selected dispatcher")
+end
+T.eq(ItemEffects.needsTarget("SCOTTS_TRADE_STONE", tradeStone, run.data), true,
+  "live engine ItemEffects targets the Trade Stone")
+local effectSave = { inventory = {}, player = { name = "RED" } }
+local stoneResult, _, stoneExtra = ItemEffects.use(run.data,
+  effectSave, "SCOTTS_TRADE_STONE", { species = "KADABRA" })
+T.eq(stoneResult, "consumed",
+  "live engine ItemEffects accepts a valid Trade Stone target")
+T.eq(stoneExtra and stoneExtra.evolveTo, "ALAKAZAM",
+  "live engine ItemEffects returns the native evolution target")
+local battleResult = ItemEffects.use(run.data, effectSave,
+  "SCOTTS_TRADE_STONE", { species = "KADABRA" }, {})
+T.eq(battleResult, "failed", "Trade Stone is refused in battle")
+
+local Screens = require("src.ui.Screens")
+Screens.invalidate()
+local pressed
+local stack = { values = {} }
+function stack:push(value) self.values[#self.values + 1] = value end
+function stack:pop() return table.remove(self.values) end
+function stack:top() return self.values[#self.values] end
+local screenGame = {
+  data = run.data,
+  save = {
+    inventory = { SCOTTS_TRADE_STONE = 2, SCOTTS_EXP_SHARE = 1 },
+    bagOrder = { "SCOTTS_TRADE_STONE", "SCOTTS_EXP_SHARE" },
+    party = {}, money = 5000,
+  },
+  input = {
+    wasPressed = function(_, key) return key == pressed end,
+    isDown = function() return false end,
+  },
+  stack = stack,
+}
+local function buildScreen(id, ...)
+  if type(Screens.build) == "function" then
+    return Screens.build(screenGame, id, ...)
+  end
+  return Screens.get(screenGame, id).new(screenGame, ...)
+end
+local bagScreen = buildScreen("BagMenu", {})
+T.eq(bagScreen.title, "< ITEMS >",
+  "real BagMenu opens in the Items pocket")
+T.eq(bagScreen.items[1] and bagScreen.items[1].value,
+  "SCOTTS_TRADE_STONE", "real BagMenu shows Trade Stone in Items")
+pressed = "left"
+bagScreen:update(0)
+pressed = nil
+T.eq(bagScreen.title, "< KEY ITEMS >",
+  "real BagMenu Left wraps to Key Items")
+T.eq(bagScreen.items[1] and bagScreen.items[1].value,
+  "SCOTTS_EXP_SHARE", "real BagMenu shows EXP.SHARE in Key Items")
+
+local shopScreen = buildScreen("ShopMenu", {}, function() end)
+stack:push(shopScreen)
+pressed = "a"
+shopScreen:update(0)
+pressed = nil
+local buyScreen = stack:top()
+T.eq(buyScreen and buyScreen.title, "BUY", "real ShopMenu opens BUY")
+T.eq(buyScreen and buyScreen.items[1] and buyScreen.items[1].value,
+  "SCOTTS_TRADE_STONE", "real ShopMenu appends one Trade Stone")
+T.eq(type(buyScreen and buyScreen._scottsTweaksOwnedCount), "table",
+  "real BUY list receives the live bag-count decorator")
 
 local hmOption
 for _, row in ipairs(schema) do
@@ -230,11 +361,19 @@ T.check(type(pokemonFinalExports) == "table",
   "Pokemon Final test-double exports are published")
 T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.owner, "voxel_run_bridge",
   "Pokemon Final FreeMove receives Scott's bridge marker")
-T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.3.0",
+T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.4.0",
   "Pokemon Final bridge marker carries the update version")
 T.eq(type(exported.hmWithoutBadges), "function",
   "live HM option accessor is published")
 T.eq(exported.hmWithoutBadges(), true, "live HM option reports enabled")
+T.eq(exported.bagPockets and exported.bagPockets.active, true,
+  "Bag Pockets status is published")
+T.eq(exported.shopTweaks and exported.shopTweaks.price, 500,
+  "shop status publishes the Trade Stone price")
+T.eq(exported.tradeStone and exported.tradeStone.id, "SCOTTS_TRADE_STONE",
+  "Trade Stone status is published")
+T.eq(exported.experience and exported.experience.mode, "vanilla",
+  "EXP status starts in the safe vanilla mode")
 
 run.release()
 T.finish("Scott's Tweaks full load")

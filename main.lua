@@ -33,6 +33,11 @@ local FREE_FLY_BADGES_KEY = "badges"
 local POKEMON_FINAL_ID = "POKEMON_FINAL"
 local CACHE_START_MARKER = "_scottsTweaksCacheStartHook"
 local GAPPED_LAND_OPTION = "gapped_land"
+local BAG_POCKETS_OPTION = "bag_pockets"
+local EXPERIENCE_MODE_OPTION = "experience_mode"
+local EXP_SHARE_ID = "SCOTTS_EXP_SHARE"
+local TRADE_STONE_ID = "SCOTTS_TRADE_STONE"
+local TRADE_STONE_EFFECT = "SCOTTS_TRADE_STONE_EFFECT"
 local GAPPED_LAND_RENDER_MARKER = "_scottsTweaksGappedLandRenderHook"
 local GAPPED_LAND_INVALIDATE_MARKER = "_scottsTweaksGappedLandInvalidateHook"
 local GAPPED_LAND_RADIUS = 1024
@@ -40,7 +45,21 @@ local GAPPED_LAND_CELL = 64
 -- Native terrain and Flora's detailed apron occupy roughly y=-2..-37.
 -- Keep the broad procedural ground below both so it only fills the void.
 local GAPPED_LAND_Y = -40
-local RELEASE_VERSION = "0.3.0"
+local RELEASE_VERSION = "0.4.0"
+
+local TRADE_EVOLUTIONS = {
+  KADABRA = "ALAKAZAM",
+  MACHOKE = "MACHAMP",
+  GRAVELER = "GOLEM",
+  HAUNTER = "GENGAR",
+}
+
+local BAG_POCKETS = {
+  { id = "items", label = "ITEMS" },
+  { id = "balls", label = "BALLS" },
+  { id = "machines", label = "TM/HM" },
+  { id = "key", label = "KEY ITEMS" },
+}
 
 local GAPPED_LAND_VOXEL_IDS = {
   "POKEMON_FINAL",
@@ -279,6 +298,12 @@ local function optionEnabled(mod, key, fallback)
   return value == true
 end
 
+local function optionValue(mod, key, fallback)
+  local ok, value = pcall(mod.options.get, mod.options, key)
+  if not ok or value == nil then return fallback end
+  return value
+end
+
 local function defineOptions(mod)
   mod.options:define({
     {
@@ -302,7 +327,624 @@ local function defineOptions(mod)
       default = true,
       help = "Fill the distant visual gap below the horizon in outdoor 1ST/3RD views. The added ground is not walkable.",
     },
+    {
+      key = BAG_POCKETS_OPTION,
+      type = "toggle",
+      label = "BAG POCKETS",
+      default = true,
+      help = "Organize the Gen 1 bag into ITEMS, BALLS, TM/HM and KEY ITEMS. Press Left or Right in the bag to change pockets.",
+    },
+    {
+      key = EXPERIENCE_MODE_OPTION,
+      type = "choice",
+      label = "EXP. MODE",
+      default = "vanilla",
+      choices = {
+        { "VANILLA", "vanilla" },
+        { "LEAD ONLY", "lead" },
+        { "PARTY ALL", "party" },
+        { "EXP.SHARE", "share" },
+      },
+      help = "VANILLA keeps normal rules. LEAD ONLY rewards the active Pokemon. PARTY ALL gives full EXP to every healthy party member. EXP.SHARE permanently unlocks its bag item.",
+    },
   })
+end
+
+local function constructScreen(factory, builtin, ...)
+  if type(factory) == "function" then return factory(...) end
+  if type(factory) == "table" and type(factory.new) == "function" then
+    return factory.new(...)
+  end
+  return builtin.new(...)
+end
+
+local function playMenuSound(game, id)
+  pcall(function()
+    require("src.core.Sound").play(game.data, id or "Press_AB")
+  end)
+end
+
+local function showUiMessage(game, message, onDone)
+  game.stack:push(require("src.render.TextBox").new(game, message, onDone))
+end
+
+local function tradeEvolutionFor(data, mon)
+  if not (data and data.pokemon and mon and mon.species) then return nil end
+  local def = data.pokemon[mon.species]
+  for _, evolution in ipairs((def and def.evolutions) or {}) do
+    if evolution.method == "TRADE" then
+      local target = evolution.species or evolution.into
+      if target and data.pokemon[target] then return target end
+    end
+  end
+  local fallback = TRADE_EVOLUTIONS[mon.species]
+  if fallback and data.pokemon[fallback] then return fallback end
+  return nil
+end
+
+local function pocketForItem(id, def, ItemEffects)
+  if (def and def.machine) or id:match("^TM_") or id:match("^HM_") then
+    return "machines"
+  end
+  if (ItemEffects and ItemEffects.isBall and ItemEffects.isBall(id))
+      or (def and def.ball) then
+    return "balls"
+  end
+  if id == EXP_SHARE_ID or id == "EXP_ALL"
+      or (def and (def.keyItem or def.tossable == false)) then
+    return "key"
+  end
+  return "items"
+end
+
+local function installInventoryFeatures(mod)
+  local ItemEffects = require("src.inventory.ItemEffects")
+  local Bag = require("src.inventory.Bag")
+
+  -- v0.1.83 dispatches registered item effects directly.  The decorated bag
+  -- below also handles this exact item on v0.1.75, whose public registry
+  -- existed before the consumer-side dispatch was added.
+  mod.content.item_effects:register(TRADE_STONE_EFFECT, {
+    needsTarget = true,
+    battle = false,
+    field = true,
+    use = function(ctx)
+      local target = tradeEvolutionFor(ctx.data, ctx.target)
+      if not target then
+        return "failed", { "It won't have\nany effect." }
+      end
+      return "consumed", nil, { evolveTo = target }
+    end,
+  })
+  mod.content.items:register(TRADE_STONE_ID, {
+    id = TRADE_STONE_ID,
+    name = "TRADE STONE",
+    price = 500,
+    effect = TRADE_STONE_EFFECT,
+    needsTarget = true,
+    tossable = true,
+  })
+  mod.content.items:register(EXP_SHARE_ID, {
+    id = EXP_SHARE_ID,
+    name = "EXP.SHARE",
+    price = 0,
+    keyItem = true,
+    pocket = "KEY_ITEM",
+    tossable = false,
+    needsTarget = false,
+  })
+
+  -- Gen1Recomp v0.1.75 exposed item_effects content but its consumer did not
+  -- dispatch it. Probe that behavior with inert synthetic data: v0.1.83+
+  -- stays entirely native, while the older engine receives an exact-ID
+  -- adapter. An owned wrapper is first restored on developer hot reload so
+  -- a corrected implementation is never frozen in the process-global module.
+  local existingTradeHook = rawget(ItemEffects, "_scottsTweaksTradeStoneHook")
+  local restoredOwnedHook = false
+  if type(existingTradeHook) == "table"
+      and existingTradeHook.owner == mod.id
+      and ItemEffects.needsTarget == existingTradeHook.wrapperNeedsTarget
+      and ItemEffects.use == existingTradeHook.wrapperUse then
+    ItemEffects.needsTarget = existingTradeHook.originalNeedsTarget
+    ItemEffects.use = existingTradeHook.originalUse
+    rawset(ItemEffects, "_scottsTweaksTradeStoneHook", nil)
+    existingTradeHook = nil
+    restoredOwnedHook = true
+  end
+
+  local function nativeItemEffectDispatch()
+    local probeId = "__SCOTTS_ITEM_EFFECT_PROBE"
+    local probeEffectId = "__SCOTTS_ITEM_EFFECT_PROBE_EFFECT"
+    local called = false
+    local probeEffect = {
+      needsTarget = true,
+      battle = false,
+      field = true,
+      use = function(ctx)
+        called = ctx and ctx.itemId == probeId
+        return "scotts_probe"
+      end,
+    }
+    local probeData = {
+      items = {
+        [probeId] = {
+          id = probeId,
+          name = "PROBE",
+          price = 0,
+          effect = probeEffectId,
+          needsTarget = true,
+        },
+      },
+      item_effects = { [probeEffectId] = probeEffect },
+      pokemon = {}, text = {}, field = {}, constants = {},
+    }
+    local okTarget, needsTarget = pcall(ItemEffects.needsTarget,
+      probeId, probeData.items[probeId], probeData)
+    local okUse, result = pcall(ItemEffects.use, probeData,
+      { inventory = {} }, probeId, { species = "PROBE" })
+    return okTarget and needsTarget == true
+      and okUse and result == "scotts_probe" and called
+  end
+
+  local tradeAdapterMode = "native_item_effects"
+  if not nativeItemEffectDispatch() and not existingTradeHook then
+    local baseNeedsTarget = ItemEffects.needsTarget
+    local baseUse = ItemEffects.use
+    local function isLiveTradeStone(data, id, itemDef)
+      itemDef = itemDef or (data and data.items and data.items[id])
+      return id == TRADE_STONE_ID and type(itemDef) == "table"
+        and itemDef.effect == TRADE_STONE_EFFECT
+    end
+    local wrappedNeedsTarget = function(id, itemDef, data, ...)
+      if isLiveTradeStone(data, id, itemDef) then return true end
+      return baseNeedsTarget(id, itemDef, data, ...)
+    end
+    local wrappedUse = function(data, save, id, target, battle, moveIndex, ow, ...)
+      local itemDef = data and data.items and data.items[id]
+      local effect = data and data.item_effects
+        and data.item_effects[TRADE_STONE_EFFECT]
+      if isLiveTradeStone(data, id, itemDef)
+          and type(effect) == "table" and type(effect.use) == "function" then
+        if (battle and effect.battle == false)
+            or (not battle and effect.field == false) then
+          local text = data.text and data.text._ItemUseNotTimeText
+            or "It can't be used\nright now."
+          return "failed", { text }
+        end
+        return effect.use({
+          data = data,
+          save = save,
+          itemId = id,
+          item = itemDef,
+          target = target,
+          battle = battle,
+          moveIndex = moveIndex,
+          overworld = ow,
+        })
+      end
+      return baseUse(data, save, id, target, battle, moveIndex, ow, ...)
+    end
+    ItemEffects.needsTarget = wrappedNeedsTarget
+    ItemEffects.use = wrappedUse
+    rawset(ItemEffects, "_scottsTweaksTradeStoneHook", {
+      owner = mod.id,
+      version = RELEASE_VERSION,
+      originalNeedsTarget = baseNeedsTarget,
+      originalUse = baseUse,
+      wrapperNeedsTarget = wrappedNeedsTarget,
+      wrapperUse = wrappedUse,
+    })
+    tradeAdapterMode = "v0.1.75_compatibility"
+  elseif existingTradeHook then
+    tradeAdapterMode = "existing_compatibility_chain"
+  elseif restoredOwnedHook then
+    tradeAdapterMode = "native_after_hot_reload_cleanup"
+  end
+
+  local pocketStatus = {
+    active = true,
+    mode = "screen_pockets",
+    pockets = { "items", "balls", "machines", "key" },
+  }
+  local shopStatus = {
+    active = true,
+    tradeStone = TRADE_STONE_ID,
+    price = 500,
+    ownedCount = true,
+  }
+  mod.exports.bagPockets = pocketStatus
+  mod.exports.shopTweaks = shopStatus
+  mod.exports.tradeStone = {
+    id = TRADE_STONE_ID,
+    price = 500,
+    evolutions = TRADE_EVOLUTIONS,
+    adapter = tradeAdapterMode,
+  }
+
+  local priorBag = mod.content.screens:get("BagMenu")
+  local builtinBag = require("src.ui.BagMenu")
+
+  local function decorateBag(game, opts, list)
+    if type(list) ~= "table" or type(list.update) ~= "function"
+        or type(list.draw) ~= "function" or type(list.onChoose) ~= "function"
+        or not optionEnabled(mod, BAG_POCKETS_OPTION, true) then
+      return list
+    end
+    if rawget(list, "_scottsTweaksPocketLayer") then return list end
+    -- A lower-priority modern bag that deliberately publishes its own pocket
+    -- controller remains the single owner rather than receiving a second set
+    -- of Left/Right tabs.
+    if type(rawget(list, "switchPocket")) == "function"
+        or type(rawget(list, "__pocketIds")) == "table" then
+      pocketStatus.reason = "existing_pocket_ui"
+      return list
+    end
+
+    local state = {
+      pocket = 1,
+      cursor = {},
+      swapId = nil,
+    }
+    local baseUpdate = list.update
+    local baseDraw = list.draw
+    local baseChoose = list.onChoose
+
+    local function currentId()
+      local item = list.items and list.items[list.index]
+      return item and item.value or nil
+    end
+
+    local function buildRows(pocketId)
+      local rows = {}
+      for _, id in ipairs(Bag.order(game.save)) do
+        local count = game.save.inventory[id]
+        local def = game.data.items[id]
+        if count and pocketForItem(id, def, ItemEffects) == pocketId then
+          rows[#rows + 1] = {
+            value = id,
+            label = def and def.name or id,
+            right = "x" .. tostring(count),
+          }
+        end
+      end
+      return rows
+    end
+
+    local function rebuild(preferredId)
+      local pocket = BAG_POCKETS[state.pocket]
+      local oldId = preferredId or currentId()
+      list.items = buildRows(pocket.id)
+      list.title = "< " .. pocket.label .. " >"
+      local nextIndex = 1
+      if oldId then
+        for index, item in ipairs(list.items) do
+          if item.value == oldId then nextIndex = index break end
+        end
+      elseif state.cursor[pocket.id] then
+        nextIndex = state.cursor[pocket.id]
+      end
+      list.index = math.max(1, math.min(nextIndex, math.max(1, #list.items)))
+      local rows = list.rows or 7
+      list.scroll = math.max(0, math.min(list.scroll or 0,
+        math.max(0, #list.items - rows)))
+      if list.index - list.scroll > rows then
+        list.scroll = list.index - rows
+      elseif list.index - list.scroll < 1 then
+        list.scroll = list.index - 1
+      end
+    end
+
+    local function finishSwap(secondId)
+      local firstId = state.swapId
+      state.swapId = nil
+      list.swapIndex = nil
+      if not firstId or not secondId then return false end
+      local order = Bag.order(game.save)
+      local firstIndex, secondIndex
+      for index, id in ipairs(order) do
+        if id == firstId then firstIndex = index end
+        if id == secondId then secondIndex = index end
+      end
+      if firstIndex and secondIndex then
+        order[firstIndex], order[secondIndex] = order[secondIndex], order[firstIndex]
+        playMenuSound(game, "Swap")
+        rebuild(secondId)
+        return true
+      end
+      rebuild(secondId)
+      return false
+    end
+
+    list.onSelectKey = function(item, current)
+      if not item then return end
+      if not state.swapId then
+        state.swapId = item.value
+        current.swapIndex = current.index
+      else
+        finishSwap(item.value)
+      end
+    end
+
+    list.onChoose = function(item, ...)
+      if state.swapId then
+        finishSwap(item and item.value)
+        return
+      end
+      if item and item.value == EXP_SHARE_ID then
+        showUiMessage(game,
+          "EXP.SHARE works when\nEXP. MODE is set to\nEXP.SHARE.")
+        return
+      end
+      return baseChoose(item, ...)
+    end
+
+    list.update = function(self, dt)
+      rebuild(currentId())
+      local input = game.input
+      local left = input and input.wasPressed and input:wasPressed("left")
+      local right = input and input.wasPressed and input:wasPressed("right")
+      if left or right then
+        local pocket = BAG_POCKETS[state.pocket]
+        state.cursor[pocket.id] = self.index
+        state.swapId = nil
+        self.swapIndex = nil
+        state.pocket = ((state.pocket - 1 + (right and 1 or -1))
+          % #BAG_POCKETS) + 1
+        -- Do not carry the selected id from the old pocket into the new
+        -- pocket.  Clearing the rendered rows lets rebuild restore that
+        -- pocket's own remembered cursor instead.
+        self.items = {}
+        rebuild()
+        playMenuSound(game)
+        return
+      end
+      local result = pack(baseUpdate(self, dt))
+      local active = BAG_POCKETS[state.pocket]
+      state.cursor[active.id] = self.index
+      return unpackValues(result, 1, result.n)
+    end
+
+    list.draw = function(self)
+      rebuild(currentId())
+      return baseDraw(self)
+    end
+
+    rawset(list, "_scottsTweaksPocketLayer", {
+      owner = mod.id,
+      version = RELEASE_VERSION,
+      state = state,
+    })
+    rebuild()
+    return list
+  end
+
+  mod.content.screens:override("BagMenu", {
+    new = function(game, opts)
+      return decorateBag(game, opts,
+        constructScreen(priorBag, builtinBag, game, opts))
+    end,
+  })
+
+  local priorShop = mod.content.screens:get("ShopMenu")
+  local builtinShop = require("src.ui.ShopMenu")
+
+  local function decorateBuyList(game, list)
+    if type(list) ~= "table" or type(list.draw) ~= "function"
+        or rawget(list, "_scottsTweaksOwnedCount") then return list end
+    if list.title ~= "BUY" and list.kind ~= "BUY" then return list end
+    local baseDraw = list.draw
+    list.draw = function(self)
+      local item = self.items and self.items[self.index]
+      local count = item and game.save.inventory[item.value] or 0
+      local oldTitle = self.title
+      self.title = ("BUY BAG:%d"):format(tonumber(count) or 0)
+      local result
+      local ok, err = xpcall(function()
+        result = pack(baseDraw(self))
+      end, traceback)
+      self.title = oldTitle
+      if not ok then error(err, 0) end
+      return unpackValues(result, 1, result.n)
+    end
+    rawset(list, "_scottsTweaksOwnedCount", {
+      owner = mod.id,
+      version = RELEASE_VERSION,
+    })
+    return list
+  end
+
+  local function decorateShop(game, menu)
+    if type(menu) ~= "table" or type(menu.update) ~= "function"
+        or rawget(menu, "_scottsTweaksShopLayer") then return menu end
+    local baseUpdate = menu.update
+    menu.update = function(self, dt)
+      local before = game.stack and game.stack:top()
+      local result
+      local ok, err = xpcall(function()
+        result = pack(baseUpdate(self, dt))
+      end, traceback)
+      if not ok then error(err, 0) end
+      local after = game.stack and game.stack:top()
+      if after and after ~= before then decorateBuyList(game, after) end
+      return unpackValues(result, 1, result.n)
+    end
+    rawset(menu, "_scottsTweaksShopLayer", {
+      owner = mod.id,
+      version = RELEASE_VERSION,
+    })
+    return menu
+  end
+
+  mod.content.screens:override("ShopMenu", {
+    new = function(game, stock, onQuit)
+      local copied, seen = {}, false
+      for _, id in ipairs(stock or {}) do
+        copied[#copied + 1] = id
+        if id == TRADE_STONE_ID then seen = true end
+      end
+      if not seen then copied[#copied + 1] = TRADE_STONE_ID end
+      return decorateShop(game,
+        constructScreen(priorShop, builtinShop, game, copied, onQuit))
+    end,
+  })
+end
+
+local function installExperienceModes(mod)
+  local Bag = require("src.inventory.Bag")
+  local state = {
+    mode = optionValue(mod, EXPERIENCE_MODE_OPTION, "vanilla"),
+    item = EXP_SHARE_ID,
+    itemUnlocked = false,
+    pending = false,
+    reason = "not_requested",
+  }
+  mod.exports.experience = state
+
+  local function totalOwned(save)
+    local bag = save and save.inventory and save.inventory[EXP_SHARE_ID] or 0
+    local pc = save and save.pcItems and save.pcItems[EXP_SHARE_ID] or 0
+    return (tonumber(bag) or 0) + (tonumber(pc) or 0)
+  end
+
+  local function ensureShareItem(save, data)
+    state.mode = optionValue(mod, EXPERIENCE_MODE_OPTION, "vanilla")
+    if state.mode ~= "share" then
+      state.reason = "mode_not_share"
+      return false
+    end
+    if not (save and save.inventory and data and data.items
+        and data.items[EXP_SHARE_ID]) then
+      state.pending = true
+      state.reason = "save_or_item_unavailable"
+      return false
+    end
+    local bagCount = tonumber(save.inventory[EXP_SHARE_ID]) or 0
+    local pcCount = save.pcItems and tonumber(save.pcItems[EXP_SHARE_ID]) or 0
+    if bagCount > 0 then
+      state.itemUnlocked = true
+      state.pending = false
+      state.reason = "in_bag"
+      return true
+    end
+    -- SaveData may restore a disabled mod's item to the PC when the bag is
+    -- full.  Move one existing copy back only after Bag.add succeeds, so a
+    -- failed transfer cannot lose or duplicate it.
+    if pcCount > 0 then
+      if Bag.add(save, EXP_SHARE_ID, 1, data) then
+        save.pcItems[EXP_SHARE_ID] = pcCount - 1
+        if save.pcItems[EXP_SHARE_ID] <= 0 then
+          save.pcItems[EXP_SHARE_ID] = nil
+        end
+        Bag.order(save)
+        state.itemUnlocked = true
+        state.pending = false
+        state.reason = "moved_from_pc"
+        return true
+      end
+      state.itemUnlocked = true
+      state.pending = true
+      state.reason = "in_pc_bag_full"
+      return true
+    end
+    if totalOwned(save) > 0 then
+      state.itemUnlocked = true
+      state.pending = false
+      state.reason = "owned"
+      return true
+    end
+    if not Bag.add(save, EXP_SHARE_ID, 1, data) then
+      state.pending = true
+      state.reason = "bag_full"
+      return false
+    end
+    -- v0.1.75 appended a new id once before Bag.order's defensive pass and
+    -- once during it.  Calling order now normalizes that older representation.
+    Bag.order(save)
+    state.itemUnlocked = true
+    state.pending = false
+    state.reason = "granted"
+    mod.log:info("EXP.SHARE unlocked in the item bag")
+    return true
+  end
+
+  local function withExpAll(save, value, fn)
+    local inventory = save and save.inventory
+    if not inventory then return fn() end
+    local existed = inventory.EXP_ALL ~= nil
+    local previous = inventory.EXP_ALL
+    inventory.EXP_ALL = value
+    local result
+    local ok, err = xpcall(function() result = pack(fn()) end, traceback)
+    if existed then inventory.EXP_ALL = previous else inventory.EXP_ALL = nil end
+    if not ok then error(err, 0) end
+    return unpackValues(result, 1, result.n)
+  end
+
+  local function copiedAward(ctx, alive)
+    local copy = {}
+    for key, value in pairs(ctx) do copy[key] = value end
+    copy.alive = alive
+    copy.participants = 1
+    return copy
+  end
+
+  mod.hooks:wrap("battle.exp_award", function(nextFn, ctx)
+    local mode = optionValue(mod, EXPERIENCE_MODE_OPTION, "vanilla")
+    state.mode = mode
+    if mode == "vanilla" or type(ctx) ~= "table"
+        or type(ctx.applyShare) ~= "function" then
+      return nextFn(ctx)
+    end
+    local battle = ctx.battle
+    local game = battle and battle.game
+    local save = game and game.save
+    if not save then return nextFn(ctx) end
+
+    if mode == "share" then
+      ensureShareItem(save, game.data)
+      return withExpAll(save, 1, function() return nextFn(ctx) end)
+    end
+
+    local alive = {}
+    if mode == "lead" then
+      local mon = battle.player and battle.player.mon
+      if mon and (mon.hp or 0) > 0 then alive[1] = mon end
+    elseif mode == "party" then
+      for _, mon in ipairs(save.party or {}) do
+        if (mon.hp or 0) > 0 then alive[#alive + 1] = mon end
+      end
+    else
+      return nextFn(ctx)
+    end
+    return withExpAll(save, nil, function()
+      return nextFn(copiedAward(ctx, alive))
+    end)
+  end, 1000)
+
+  local function lifecycle(payload)
+    if optionValue(mod, EXPERIENCE_MODE_OPTION, "vanilla") ~= "share" then
+      state.mode = optionValue(mod, EXPERIENCE_MODE_OPTION, "vanilla")
+      return
+    end
+    local game = payload and payload.game
+    local save = payload and payload.save or (game and game.save) or Game.save
+    local data = game and game.data or Game.data
+    ensureShareItem(save, data)
+  end
+
+  if mod.events and type(mod.events.on) == "function" then
+    mod.events:on("game.ready", lifecycle)
+    mod.events:on("save.created", lifecycle)
+    mod.events:on("save.loaded", lifecycle)
+    mod.events:on("map.entered", lifecycle)
+    mod.events:on("mod.options_changed", function(payload)
+      if payload and payload.mod == mod.id
+          and payload.key == EXPERIENCE_MODE_OPTION then
+        state.mode = payload.value
+        lifecycle({ game = Game, save = Game.save })
+      end
+    end)
+  end
 end
 
 -- POKEMON_FINAL and DRAMATIC_SHAPE deliberately publish a module loader for
@@ -894,6 +1536,10 @@ end
 
 return function(mod)
   defineOptions(mod)
+  -- These are ordinary bag/battle features and must remain available even
+  -- when the player is using 2D mode or has no supported voxel renderer.
+  installInventoryFeatures(mod)
+  installExperienceModes(mod)
   installBadgeFreeFieldMoves(mod)
   installFreeFlyImmediateFlight(mod)
   installPokemonFinalCacheCompatibility(mod)

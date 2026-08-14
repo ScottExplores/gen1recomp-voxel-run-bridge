@@ -1,7 +1,7 @@
 {
   "id": "voxel_run_bridge",
   "name": "Scott's Tweaks",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "github": "ScottExplores/gen1recomp-voxel-run-bridge",
   "api": 2,
   "entry": "main.lua",
@@ -24,6 +24,7 @@
   "incompatible": [],
   "games": ["gen1"],
   "experimental": false,
+  "affects_link": false,
   "permissions": ["engine_internals"],
-  "description": "Scott's small gameplay tweaks: visual gapped-land fill, badge-free Free Fly and HMs, voxel running, and Pokemon Final compatibility."
+  "description": "Scott's gameplay tweaks: modern bag pockets, shop counts, EXP modes, Trade Stone, gapped land, badge-free field moves, and voxel running."
 }
