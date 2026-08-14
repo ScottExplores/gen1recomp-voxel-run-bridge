@@ -12,6 +12,7 @@ local Map = require("src.world.Map")
 local unpackValues = table.unpack or unpack
 
 local VOXEL_IDS = {
+  "POKEMON_FINAL",
   "DRAMATIC_SHAPE",
   "BATTLE_ART_VOXEL_FORK",
   "DRAMALESS_SHAPE",
@@ -26,8 +27,9 @@ local HM_ACTIONS = {
   FLASH = "flash",
 }
 
-local SKY_RIDE_ID = "DRAMATIC_SKY_RIDE"
-local SKY_RIDE_OPTION = "sky_ride_without_badges"
+local FREE_FLY_ID = "free_fly"
+local FREE_FLY_OPTION = "free_fly_without_badges"
+local FREE_FLY_BADGES_KEY = "badges"
 
 local function pack(...)
   return { n = select("#", ...), ... }
@@ -46,6 +48,12 @@ local function finiteNumber(value, fallback)
     return fallback
   end
   return value
+end
+
+local function runningShoesOwnsFreeMove(FreeMove)
+  return type(FreeMove) == "table"
+    and type(rawget(FreeMove, "runningShoesTick")) == "function"
+    and type(rawget(FreeMove, "runningShoesInner")) == "function"
 end
 
 local function findVoxelMod(mod)
@@ -93,11 +101,11 @@ local function defineOptions(mod)
       help = "Use CUT, FLY, SURF, STRENGTH and FLASH without badges. A party Pokemon must still know the move.",
     },
     {
-      key = SKY_RIDE_OPTION,
+      key = FREE_FLY_OPTION,
       type = "toggle",
-      label = "SKY RIDE NOW",
+      label = "FREE FLY NOW",
       default = true,
-      help = "Let Dramatic Sky Ride take off without THUNDERBADGE. REQUIRE FLY and STORY GATES stay under Sky Ride's control.",
+      help = "Let Free Fly take off without THUNDERBADGE. FLY eligibility, STORY GATES and terrain rules stay under Free Fly's control.",
     },
   })
 end
@@ -168,50 +176,60 @@ local function installBadgeFreeFieldMoves(mod)
   end
 end
 
--- Dramatic Sky Ride 0.1.6+ deliberately performs its badge test outside the
--- engine's fieldmove.eligibility hook. Its public flightRules.badgeChecks
--- export lets us feature-detect that implementation, while the value it and
--- the private startFlight wrapper actually read lives in the loader's
--- per-mod option table. Override only that one runtime value: no badge, move,
--- story flag or persisted DSR preference is edited.
-local function installDramaticSkyRideImmediateFlight(mod)
+-- Free Fly performs its takeoff and water-landing badge tests outside the
+-- engine's fieldmove.eligibility hook. Feature-detect the public flight-state
+-- export and the exact toggle in its registered option schema before applying
+-- a live option overlay. No badge, move, story flag, or persisted Free Fly
+-- preference is edited.
+local function installFreeFlyImmediateFlight(mod)
   local state = {
     active = false,
-    reason = "dramatic_sky_ride_not_active",
+    reason = "free_fly_not_active",
   }
   local activeLoader
   local priorSet = false
   local priorValue
   local priorBucketExisted = false
 
-  local function findSkyRide()
+  local function findFreeFly()
     if type(mod.find) ~= "function" then return nil end
-    local ok, handle = pcall(mod.find, SKY_RIDE_ID)
-    if not ok then ok, handle = pcall(mod.find, mod, SKY_RIDE_ID) end
+    local ok, handle = pcall(mod.find, FREE_FLY_ID)
+    if not ok then ok, handle = pcall(mod.find, mod, FREE_FLY_ID) end
     if ok then return handle end
     return nil
   end
 
-  local function compatible(handle)
-    local rules = handle and handle.exports and handle.exports.flightRules
-    if type(rules) ~= "table" or type(rules.badgeChecks) ~= "function" then
-      return false
+  local function compatible(handle, loader)
+    local exports = handle and handle.exports
+    if type(exports) ~= "table" or type(exports.isFlying) ~= "function" then
+      return false, "flight_state_export_missing"
     end
-    return pcall(rules.badgeChecks)
+    local schemas = loader and loader.optionSchemas
+    local schema = schemas and schemas[FREE_FLY_ID]
+    if type(schema) ~= "table" then
+      return false, "option_schema_missing"
+    end
+    for _, row in ipairs(schema) do
+      if type(row) == "table" and row.key == FREE_FLY_BADGES_KEY
+          and row.type == "toggle" then
+        return true
+      end
+    end
+    return false, "badges_toggle_missing"
   end
 
   local function restore()
     local loader = activeLoader
     local buckets = loader and loader.modOptions
-    local bucket = buckets and buckets[SKY_RIDE_ID]
+    local bucket = buckets and buckets[FREE_FLY_ID]
     if bucket then
       if priorSet then
-        bucket.badge_checks = priorValue
+        bucket[FREE_FLY_BADGES_KEY] = priorValue
       else
-        bucket.badge_checks = nil
+        bucket[FREE_FLY_BADGES_KEY] = nil
       end
       if not priorBucketExisted and next(bucket) == nil then
-        buckets[SKY_RIDE_ID] = nil
+        buckets[FREE_FLY_ID] = nil
       end
     end
     activeLoader = nil
@@ -221,22 +239,16 @@ local function installDramaticSkyRideImmediateFlight(mod)
   end
 
   local function apply(loader)
-    if not optionEnabled(mod, SKY_RIDE_OPTION, true) then
+    if not optionEnabled(mod, FREE_FLY_OPTION, true) then
       if activeLoader then restore() end
       state.reason = "disabled"
       return false
     end
 
-    local handle = findSkyRide()
+    local handle = findFreeFly()
     if not handle then
       state.active = false
-      state.reason = "dramatic_sky_ride_not_active"
-      return false
-    end
-    if not compatible(handle) then
-      state.active = false
-      state.reason = "unsupported_dramatic_sky_ride"
-      mod.log:warn("Dramatic Sky Ride does not expose the supported badge-check adapter")
+      state.reason = "free_fly_not_active"
       return false
     end
     if type(loader) ~= "table" then
@@ -244,23 +256,31 @@ local function installDramaticSkyRideImmediateFlight(mod)
       state.reason = "loader_unavailable"
       return false
     end
+    local isCompatible, compatibilityReason = compatible(handle, loader)
+    if not isCompatible then
+      state.active = false
+      state.reason = "unsupported_free_fly_" .. tostring(compatibilityReason)
+      mod.log:warn("Free Fly does not expose the supported badge-check adapter (%s)",
+        tostring(compatibilityReason))
+      return false
+    end
 
     loader.modOptions = loader.modOptions or {}
-    local bucket = loader.modOptions[SKY_RIDE_ID]
+    local bucket = loader.modOptions[FREE_FLY_ID]
     if activeLoader ~= loader then
       priorBucketExisted = bucket ~= nil
       bucket = bucket or {}
-      loader.modOptions[SKY_RIDE_ID] = bucket
-      priorSet = bucket.badge_checks ~= nil
-      priorValue = bucket.badge_checks
+      loader.modOptions[FREE_FLY_ID] = bucket
+      priorSet = bucket[FREE_FLY_BADGES_KEY] ~= nil
+      priorValue = bucket[FREE_FLY_BADGES_KEY]
       activeLoader = loader
     else
       bucket = bucket or {}
-      loader.modOptions[SKY_RIDE_ID] = bucket
+      loader.modOptions[FREE_FLY_ID] = bucket
     end
-    bucket.badge_checks = false
+    bucket[FREE_FLY_BADGES_KEY] = false
     state.active = true
-    state.reason = "badge_checks_runtime_override"
+    state.reason = "badges_runtime_override"
     state.version = handle.version
     return true
   end
@@ -271,25 +291,25 @@ local function installDramaticSkyRideImmediateFlight(mod)
     end)
     mod.events:on("mod.options_changed", function(payload)
       if not payload then return end
-      if payload.mod == mod.id and payload.key == SKY_RIDE_OPTION then
+      if payload.mod == mod.id and payload.key == FREE_FLY_OPTION then
         if payload.value == true then apply(Game.mods) else restore() end
-      elseif state.active and payload.mod == SKY_RIDE_ID
-          and payload.key == "badge_checks" then
-        -- Keep the player's latest DSR preference ready for restoration if
+      elseif state.active and payload.mod == FREE_FLY_ID
+          and payload.key == FREE_FLY_BADGES_KEY then
+        -- Keep the player's latest Free Fly preference ready for restoration if
         -- Scott's override is later switched off, but hold the live answer
         -- false while the override remains enabled.
         priorSet = payload.value ~= nil
         priorValue = payload.value
         local buckets = activeLoader and activeLoader.modOptions
-        local bucket = buckets and buckets[SKY_RIDE_ID]
-        if bucket then bucket.badge_checks = false end
+        local bucket = buckets and buckets[FREE_FLY_ID]
+        if bucket then bucket[FREE_FLY_BADGES_KEY] = false end
       end
     end)
   end
 
   apply(Game.mods)
 
-  mod.exports.skyRideBadgeBypass = function()
+  mod.exports.freeFlyBadgeBypass = function()
     return state.active, state.reason, state.version
   end
 end
@@ -320,7 +340,7 @@ end
 return function(mod)
   defineOptions(mod)
   installBadgeFreeFieldMoves(mod)
-  installDramaticSkyRideImmediateFlight(mod)
+  installFreeFlyImmediateFlight(mod)
 
   mod.exports.status = {
     active = false,
@@ -370,10 +390,54 @@ return function(mod)
     return
   end
 
+  -- Running Shoes 1.7+ publishes its native voxel wrapper on FreeMove
+  -- itself, not on the exported library table used by older integrations.
+  -- Trust the paired ownership markers even when another mod subsequently
+  -- wraps tick outside it: the shoes' wrapper is still in that call chain,
+  -- and adding ours would apply the movement multiplier twice.
+  if runningShoesOwnsFreeMove(FreeMove) then
+    mod.exports.status = {
+      active = false,
+      voxel = voxelId,
+      reason = "running_shoes_has_native_voxel_support",
+    }
+    mod.log:info("%s FreeMove is already owned by Running Shoes; bridge is idle",
+      voxelId)
+    return
+  end
+
   local innerTick = FreeMove.tick
   local warnedSpeedError = false
+  local delegatedToNativeShoes = false
 
   local function bridgedTick(state)
+    -- MadeinTaly Running Shoes 1.7 attaches its native wrapper lazily from
+    -- input.step, so the ownership markers can appear after this bridge was
+    -- installed. In that ordering its wrapper sits outside ours and has
+    -- already scaled FreeMove; become a pass-through before sampling the
+    -- movement.speed hook or the same run would be multiplied twice.
+    if runningShoesOwnsFreeMove(FreeMove) then
+      if not delegatedToNativeShoes then
+        delegatedToNativeShoes = true
+        mod.exports.status = {
+          active = false,
+          voxel = voxelId,
+          reason = "running_shoes_has_native_voxel_support",
+        }
+        mod.log:info("%s FreeMove gained native Running Shoes support; bridge is idle",
+          voxelId)
+      end
+      return innerTick(state)
+    elseif delegatedToNativeShoes then
+      delegatedToNativeShoes = false
+      mod.exports.status = {
+        active = true,
+        voxel = voxelId,
+        mode = "movement.speed",
+      }
+      mod.log:info("%s native Running Shoes wrapper left; bridge resumed", voxelId)
+    end
+
     local player = state and state.player
 
     -- FreeMove itself stands aside during scripted movement. Do the same
@@ -440,7 +504,7 @@ return function(mod)
   rawset(FreeMove, "tick", bridgedTick)
   rawset(lib, "_voxelRunBridgeHook", {
     owner = mod.id,
-    version = "0.2.1",
+    version = "0.2.2",
     original = innerTick,
   })
 end

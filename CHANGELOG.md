@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.2 - 2026-08-13
+
+- Added `POKEMON_FINAL` as a supported voxel provider, so Running Shoes speed
+  now reaches Pokemon Final's first- and third-person FreeMove path.
+- Detect Running Shoes 1.7's native `FreeMove` ownership markers and stay idle
+  when it already owns a voxel provider, preventing a doubled speed boost.
+- Replaced the Dramatic Sky Ride-only adapter with the default-on **FREE FLY
+  NOW** option, tested with Free Fly 1.5.0 and 1.6.1. It feature-detects Free
+  Fly's public flight state and registered `badges` toggle before applying the
+  live override.
+- Free Fly's exact prior **BADGE CHECKS** value is preserved and restored when
+  Scott's override is disabled. FLY eligibility, story gates, map rules, and
+  save data remain unchanged. Free Fly uses the same toggle for Thunder Badge
+  takeoff and Soul Badge water landing, so both badge checks are relaxed.
+- Removed Dramatic Sky Ride from the active compatibility dependency list.
+- Documented Free Fly 1.6.1+ as the recommended version for Pokemon Final;
+  its capability-based voxel lookup recognizes the renamed private provider.
+
 ## 0.2.1 - 2026-08-13
 
 - Added the default-on **SKY RIDE NOW** option. It feature-detects Dramatic
