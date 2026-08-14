@@ -17,15 +17,29 @@ and verifies FLY eligibility, story rules, inventory, and the player's saved
 Free Fly preference remain isolated. Pokemon Final cache-screen fixtures also
 lock the behavior probe, successful-state check, return/error preservation,
 ownership marker, idempotence, foreign-owner refusal, and exact restoration.
+Gapped-land fixtures cover its default-on schema, compatible renderer
+capability checks, outdoor first-/third-person gates, interior/canopy/sea-map
+exclusions, live disable path, generated-geometry cleanup, gameplay-state
+isolation, and the safe no-provider fallback.
 
-Run it from the repository root with LuaJIT (`luajit tests/main.lua`) or point
-the LOVE console executable at the test directory (`lovec tests`). The
-`.modkitignore` file keeps this directory out of the player-facing ZIP.
+`gapped_land.lua` is the focused, ROM-free 61-check suite for that visual
+layer. Run it from the repository root with either supported Lua runtime:
+
+```powershell
+lua tests\gapped_land.lua
+luajit tests\gapped_land.lua
+```
+
+Run the broad suite from the repository root with LuaJIT
+(`luajit tests/main.lua`) or point the LOVE console executable at the test
+directory (`lovec tests`). The `.modkitignore` file keeps this directory out
+of the player-facing ZIP.
 
 `full_load.lua` additionally installs the package through Gen1Recomp's real
-API-2 loader, verifies the stable ID/new display name and schema, and invokes
-both HM hooks alongside Free Fly and a Pokemon Final provider. Run it from an
-engine checkout with:
+API-2 loader, verifies the stable ID/new display name and all three settings
+rows, checks the gapped-land compatibility status, and invokes both HM hooks
+alongside Free Fly and a Pokemon Final provider. Run it from an engine
+checkout with:
 
 ```powershell
 luajit C:\path\to\mod\tests\full_load.lua C:\path\to\mod C:\path\to\engine
