@@ -101,6 +101,11 @@ local function fixture(opts)
   local eventListeners = {}
   local optionSchema
   local FreeMove = { WALK = 1, BIKE = 2 }
+  local FirstPerson = {
+    hidePlayer = function()
+      return opts.firstPersonHidden ~= false
+    end,
+  }
   local originalTick
   originalTick = function(state)
     seen.walk, seen.bike = FreeMove.WALK, FreeMove.BIKE
@@ -126,6 +131,7 @@ local function fixture(opts)
     require = function(name)
       if opts.requireError then error("provider loader failed") end
       if name == "FreeMove" then return FreeMove end
+      if name == "FirstPerson" then return FirstPerson end
       if name == "ScottPrecacheScreen" and opts.cacheScreen then
         return opts.cacheScreen
       end
@@ -151,6 +157,9 @@ local function fixture(opts)
     if key == "free_fly_without_badges"
         and opts.freeFlyWithoutBadges ~= nil then
       return opts.freeFlyWithoutBadges
+    end
+    if key == "free_fly_cockpit" and opts.freeFlyCockpit ~= nil then
+      return opts.freeFlyCockpit
     end
     for _, row in ipairs(optionSchema or {}) do
       if row.key == key then return row.default end
@@ -203,7 +212,7 @@ local function fixture(opts)
   local freeFly = {
     version = opts.freeFlyVersion or "1.5.0",
     exports = opts.freeFlyMalformed and {} or {
-      isFlying = function() return false end,
+      isFlying = function() return opts.freeFlyFlying == true end,
     },
   }
 
@@ -261,6 +270,7 @@ local function fixture(opts)
     mod = mod,
     lib = lib,
     FreeMove = FreeMove,
+    FirstPerson = FirstPerson,
     originalTick = originalTick,
     runningShoesTick = runningShoesTick,
     seen = seen,
@@ -322,7 +332,7 @@ eq(pokemonFinal.seen.walk, 2,
 eq(pokemonFinal.FreeMove.WALK, 1,
   "Pokemon Final walk speed is restored after tick")
 eq(speedCalls, 1, "Pokemon Final hook call count")
-eq(pokemonFinal.lib._voxelRunBridgeHook.version, "0.4.0",
+eq(pokemonFinal.lib._voxelRunBridgeHook.version, "0.4.2",
   "Pokemon Final bridge marker reports release version")
 
 -- Early Pokemon Final packages could start the disk-cache job successfully
@@ -355,7 +365,7 @@ eq(type(buggyCacheScreen._scottsTweaksCacheStartHook), "table",
   "cache screen receives an ownership marker")
 eq(buggyCacheScreen._scottsTweaksCacheStartHook.owner, "voxel_run_bridge",
   "cache screen marker identifies its owner")
-eq(buggyCacheScreen._scottsTweaksCacheStartHook.version, "0.4.0",
+eq(buggyCacheScreen._scottsTweaksCacheStartHook.version, "0.4.2",
   "cache screen marker identifies its release")
 eq(buggyCacheScreen._scottsTweaksCacheStartHook.original, buggyCacheStart,
   "cache screen marker retains the exact original")
@@ -616,7 +626,7 @@ eq(manifest:match('"id"%s*:%s*"([^"]+)"'), "voxel_run_bridge",
   "stable manifest id")
 eq(manifest:match('"name"%s*:%s*"([^"]+)"'), "Scott's Tweaks",
   "player-facing manifest name")
-eq(manifest:match('"version"%s*:%s*"([^"]+)"'), "0.4.0",
+eq(manifest:match('"version"%s*:%s*"([^"]+)"'), "0.4.2",
   "manifest patch version")
 
 -- Scott's Tweaks exposes the badge bypass as an ordinary, default-on option.
@@ -637,6 +647,121 @@ end
 eq(type(freeFlyOption), "table", "Free Fly option row exists")
 eq(freeFlyOption and freeFlyOption.type, "toggle", "Free Fly option type")
 eq(freeFlyOption and freeFlyOption.default, true, "Free Fly option default")
+
+local cockpitOption
+for _, row in ipairs(schema or {}) do
+  if row.key == "free_fly_cockpit" then cockpitOption = row end
+end
+eq(type(cockpitOption), "table", "Free Fly cockpit option row exists")
+eq(cockpitOption and cockpitOption.type, "toggle",
+  "Free Fly cockpit option type")
+eq(cockpitOption and cockpitOption.default, false,
+  "Free Fly cockpit defaults to a clear first-person view")
+
+-- Free Fly 1.6.2's cockpit picture is gated by FirstPerson.hidePlayer inside
+-- its render.hud wrapper. Scott's higher-priority HUD link changes that one
+-- answer only while the downstream HUD chain runs, then restores the exact
+-- function identity. This simulates Free Fly's check without copying its draw.
+local cockpitHidden = fixture({
+  freeFly = true,
+  freeFlyVersion = "1.6.2",
+  freeFlyFlying = true,
+})
+local cockpitStatus = cockpitHidden.mod.exports.freeFlyCockpitControl
+eq(cockpitStatus.active, true, "Free Fly cockpit adapter reports active")
+eq(cockpitStatus.reason, "first_person_hud_overlay_controlled",
+  "Free Fly cockpit adapter reports its narrow HUD mode")
+eq(cockpitStatus.version, "1.6.2",
+  "Free Fly cockpit adapter reports verified version")
+local originalHidePlayer = cockpitHidden.FirstPerson.hidePlayer
+local hiddenDuringHud
+local hudA, hudB = cockpitHidden.hooks["render.hud"](
+  function()
+    hiddenDuringHud = cockpitHidden.FirstPerson.hidePlayer()
+    return "hud-result", 17
+  end, {}, {})
+eq(hiddenDuringHud, false,
+  "default-off cockpit makes only the downstream HUD see a visible card")
+eq(hudA, "hud-result", "cockpit adapter preserves first HUD return value")
+eq(hudB, 17, "cockpit adapter preserves second HUD return value")
+eq(cockpitHidden.FirstPerson.hidePlayer, originalHidePlayer,
+  "cockpit adapter restores FirstPerson visibility function")
+eq(cockpitHidden.FirstPerson.hidePlayer(), true,
+  "world-render first-person visibility remains hidden after HUD")
+
+local cockpitShown = fixture({
+  freeFly = true,
+  freeFlyVersion = "1.6.2",
+  freeFlyFlying = true,
+  freeFlyCockpit = true,
+})
+local shownHide = cockpitShown.FirstPerson.hidePlayer
+local shownDuringHud
+cockpitShown.hooks["render.hud"](function()
+  shownDuringHud = cockpitShown.FirstPerson.hidePlayer()
+end, {}, {})
+eq(shownDuringHud, true,
+  "enabled cockpit leaves Free Fly's original first-person gate intact")
+eq(cockpitShown.FirstPerson.hidePlayer, shownHide,
+  "enabled cockpit never substitutes the visibility function")
+
+local groundedCockpit = fixture({
+  freeFly = true,
+  freeFlyVersion = "1.6.2",
+  freeFlyFlying = false,
+})
+local groundedHide = groundedCockpit.FirstPerson.hidePlayer
+local groundedDuringHud
+groundedCockpit.hooks["render.hud"](function()
+  groundedDuringHud = groundedCockpit.FirstPerson.hidePlayer()
+end, {}, {})
+eq(groundedDuringHud, true,
+  "grounded HUD does not receive the cockpit substitution")
+eq(groundedCockpit.FirstPerson.hidePlayer, groundedHide,
+  "grounded HUD leaves visibility ownership untouched")
+
+local thirdPersonCockpit = fixture({
+  freeFly = true,
+  freeFlyVersion = "1.6.2",
+  freeFlyFlying = true,
+  firstPersonHidden = false,
+})
+local thirdHide = thirdPersonCockpit.FirstPerson.hidePlayer
+local thirdDuringHud
+thirdPersonCockpit.hooks["render.hud"](function()
+  thirdDuringHud = thirdPersonCockpit.FirstPerson.hidePlayer()
+end, {}, {})
+eq(thirdDuringHud, false,
+  "third-person visibility remains the provider's ordinary answer")
+eq(thirdPersonCockpit.FirstPerson.hidePlayer, thirdHide,
+  "third-person flight never substitutes the visibility function")
+
+local throwingCockpit = fixture({
+  freeFly = true,
+  freeFlyVersion = "1.6.2",
+  freeFlyFlying = true,
+})
+local throwingHide = throwingCockpit.FirstPerson.hidePlayer
+local okCockpit, cockpitErr = pcall(
+  throwingCockpit.hooks["render.hud"],
+  function() error("hud exploded") end, {}, {})
+eq(okCockpit, false, "throwing downstream HUD still propagates its error")
+eq(type(cockpitErr), "string", "throwing downstream HUD returns an error")
+eq(throwingCockpit.FirstPerson.hidePlayer, throwingHide,
+  "cockpit adapter restores visibility after a downstream error")
+
+local futureCockpit = fixture({
+  freeFly = true,
+  freeFlyVersion = "1.6.3",
+  freeFlyFlying = true,
+})
+eq(futureCockpit.mod.exports.freeFlyCockpitControl.active, false,
+  "unverified future Free Fly cockpit adapter stays inactive")
+eq(futureCockpit.mod.exports.freeFlyCockpitControl.reason,
+  "unsupported_free_fly_version",
+  "unverified future Free Fly reports its compatibility gate")
+eq(futureCockpit.hooks["render.hud"], nil,
+  "unverified future Free Fly receives no HUD wrapper")
 
 -- Free Fly's private takeoff gate reads `badges` directly from its own
 -- mod.options API. Scott's runtime overlay changes that exact answer without

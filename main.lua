@@ -29,6 +29,7 @@ local HM_ACTIONS = {
 
 local FREE_FLY_ID = "free_fly"
 local FREE_FLY_OPTION = "free_fly_without_badges"
+local FREE_FLY_COCKPIT_OPTION = "free_fly_cockpit"
 local FREE_FLY_BADGES_KEY = "badges"
 local POKEMON_FINAL_ID = "POKEMON_FINAL"
 local CACHE_START_MARKER = "_scottsTweaksCacheStartHook"
@@ -45,7 +46,7 @@ local GAPPED_LAND_CELL = 64
 -- Native terrain and Flora's detailed apron occupy roughly y=-2..-37.
 -- Keep the broad procedural ground below both so it only fills the void.
 local GAPPED_LAND_Y = -40
-local RELEASE_VERSION = "0.4.0"
+local RELEASE_VERSION = "0.4.2"
 
 local TRADE_EVOLUTIONS = {
   KADABRA = "ALAKAZAM",
@@ -64,6 +65,7 @@ local BAG_POCKETS = {
 local GAPPED_LAND_VOXEL_IDS = {
   "POKEMON_FINAL",
   "DRAMATIC_SHAPE",
+  "BATTLE_ART_VOXEL_FORK",
 }
 
 -- These maps deliberately read as open sea at the horizon. A green apron
@@ -319,6 +321,13 @@ local function defineOptions(mod)
       label = "FREE FLY NOW",
       default = true,
       help = "Let Free Fly take off without THUNDERBADGE. FLY eligibility, STORY GATES and terrain rules stay under Free Fly's control.",
+    },
+    {
+      key = FREE_FLY_COCKPIT_OPTION,
+      type = "toggle",
+      label = "FLY COCKPIT",
+      default = false,
+      help = "Show the flying Pokemon at the bottom of first-person view. OFF hides only that HUD picture; third-person flight is unchanged.",
     },
     {
       key = GAPPED_LAND_OPTION,
@@ -1511,6 +1520,103 @@ local function installFreeFlyImmediateFlight(mod)
   end
 end
 
+-- Free Fly 1.6.2 deliberately draws a second mount picture in render.hud
+-- whenever Battle Art hides the player's world card for first person. Scott
+-- prefers a clear first-person view. Keep this as a narrow presentation
+-- adapter instead of editing Free Fly: its public isFlying export establishes
+-- the flight state, and the voxel provider's published FirstPerson module
+-- establishes whether the world card is hidden. During only the downstream
+-- HUD chain, make that one query answer false so Free Fly omits its cockpit
+-- picture. The 3D scene has already rendered by this point, so the actual
+-- first-person player-card rule is unchanged; third person, movement, mount
+-- state, collision and landing never pass through this adapter.
+local function installFreeFlyCockpitControl(mod)
+  local status = {
+    active = false,
+    reason = "free_fly_not_active",
+  }
+  mod.exports.freeFlyCockpitControl = status
+
+  local handle = findMod(mod, FREE_FLY_ID)
+  if not handle then return status end
+  local exports = handle.exports
+  if type(exports) ~= "table" or type(exports.isFlying) ~= "function" then
+    status.reason = "flight_state_export_missing"
+    return status
+  end
+
+  local version = handle.version or exports.version
+  status.version = version
+  -- This adapter targets the exact locally verified HUD implementation. A
+  -- future Free Fly may publish its own cockpit option or change its draw
+  -- gate; standing aside is safer than pretending an internal contract held.
+  if version ~= "1.6.2" then
+    status.reason = "unsupported_free_fly_version"
+    return status
+  end
+
+  local voxelId, _, lib = findVoxelMod(mod)
+  if not voxelId or type(lib) ~= "table" or type(lib.require) ~= "function" then
+    status.reason = "voxel_provider_unavailable"
+    return status
+  end
+  local okFirstPerson, FirstPerson = pcall(lib.require, "FirstPerson")
+  local originalHide = okFirstPerson and type(FirstPerson) == "table"
+    and rawget(FirstPerson, "hidePlayer") or nil
+  if type(originalHide) ~= "function" then
+    status.reason = "first_person_visibility_api_missing"
+    return status
+  end
+
+  local warnedReplacement = false
+  mod.hooks:wrap("render.hud", function(nextFn, game, viewport)
+    if optionEnabled(mod, FREE_FLY_COCKPIT_OPTION, false) then
+      return nextFn(game, viewport)
+    end
+
+    local okFlying, isFlying = pcall(exports.isFlying)
+    if not okFlying or isFlying ~= true then
+      return nextFn(game, viewport)
+    end
+    if rawget(FirstPerson, "hidePlayer") ~= originalHide then
+      status.active = false
+      status.reason = "first_person_visibility_api_replaced"
+      if not warnedReplacement then
+        warnedReplacement = true
+        mod.log:warn("FLY COCKPIT control stood aside after the FirstPerson visibility API changed")
+      end
+      return nextFn(game, viewport)
+    end
+
+    local okHidden, hidden = pcall(originalHide)
+    if not okHidden or hidden ~= true then
+      return nextFn(game, viewport)
+    end
+
+    local function cockpitSuppressed()
+      return false
+    end
+    rawset(FirstPerson, "hidePlayer", cockpitSuppressed)
+    local result
+    local okHud, hudErr = xpcall(function()
+      result = pack(nextFn(game, viewport))
+    end, traceback)
+    -- Restore only our own frame-local substitution. If another adapter
+    -- deliberately replaced the function during the downstream call, never
+    -- overwrite its newer ownership.
+    if rawget(FirstPerson, "hidePlayer") == cockpitSuppressed then
+      rawset(FirstPerson, "hidePlayer", originalHide)
+    end
+    if not okHud then error(hudErr, 0) end
+    return unpackValues(result, 1, result.n)
+  end, 10000)
+
+  status.active = true
+  status.reason = "first_person_hud_overlay_controlled"
+  status.voxel = voxelId
+  return status
+end
+
 local function resolvedFrames(player, onBike)
   local base = (onBike and player.bikeStepFrames) or player.stepFrames or 16
   base = math.max(1, math.floor(finiteNumber(base, 16)))
@@ -1542,6 +1648,7 @@ return function(mod)
   installExperienceModes(mod)
   installBadgeFreeFieldMoves(mod)
   installFreeFlyImmediateFlight(mod)
+  installFreeFlyCockpitControl(mod)
   installPokemonFinalCacheCompatibility(mod)
   installGappedLand(mod)
 

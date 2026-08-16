@@ -14,7 +14,10 @@ a voxel provider. The suite also feature-detects Free Fly's public flight
 state and real `badges` option, exercises the same live value its private
 takeoff gate reads, proves takeoff no longer returns the THUNDERBADGE error,
 and verifies FLY eligibility, story rules, inventory, and the player's saved
-Free Fly preference remain isolated. Pokemon Final cache-screen fixtures also
+Free Fly preference remain isolated. It also covers the exact Free Fly 1.6.2
+first-person HUD contract: hidden-by-default cockpit art, opt-in restoration,
+third-person pass-through, multiple returns, error-safe restoration, and
+refusal to patch an unverified future version. Pokemon Final cache-screen fixtures also
 lock the behavior probe, successful-state check, return/error preservation,
 ownership marker, idempotence, foreign-owner refusal, and exact restoration.
 Gapped-land fixtures cover its default-on schema, compatible renderer
@@ -53,9 +56,10 @@ of the player-facing ZIP.
 
 `full_load.lua` additionally installs the package through Gen1Recomp's real
 API-2 loader, verifies the stable ID/new display name, the new content and
-settings rows, checks the gapped-land compatibility status, and invokes both
-HM hooks alongside Free Fly and a Pokemon Final provider. Its current matrix
-contains 74 checks per supported engine fixture. Pass `compat` for the
+settings rows, checks the gapped-land compatibility status, invokes both HM
+hooks alongside Free Fly and a Pokemon Final provider, and runs the real
+priority-sorted HUD chain to prove only the cockpit picture is suppressed.
+Its current matrix contains 83 checks per supported engine fixture. Pass `compat` for the
 v0.1.75 fixture and `native` for v0.1.83+ to assert the exact Trade Stone
 dispatcher. Run it from an engine
 checkout with:
@@ -67,7 +71,7 @@ luajit C:\path\to\mod\tests\full_load.lua C:\path\to\mod C:\path\to\engine nativ
 `voxel_full_load.lua` loads Scott's Tweaks with Pokemon Final and a real
 `movement.speed` producer, then proves held-B speed reaches `FreeMove` exactly
 once and its constants are restored. An extracted Free Fly directory is an
-optional third argument (1.5.0 and 1.6.1 are covered); when supplied, the test
+optional third argument (1.5.0 through 1.6.2 are covered); when supplied, the test
 also validates the real `isFlying` export, `badges` schema, and live override.
 
 ```powershell

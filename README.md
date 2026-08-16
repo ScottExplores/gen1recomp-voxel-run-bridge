@@ -5,7 +5,7 @@ is broader, but its internal mod ID remains `voxel_run_bridge`. Existing
 installations therefore update in place, keep their settings, and do not
 become a duplicate mod.
 
-Version 0.4.0 contains nine independent tweaks:
+Version 0.4.2 contains ten independent tweaks:
 
 - **Bag pockets:** press Left or Right to move among ITEMS, BALLS, TM/HM,
   and KEY ITEMS while keeping the original Gen 1 inventory underneath.
@@ -16,11 +16,14 @@ Version 0.4.0 contains nine independent tweaks:
 - **Trade Stone:** every Gen 1 mart sells a ₽500 stone that evolves Kadabra,
   Machoke, Graveler, or Haunter through the normal evolution sequence.
 
-- **Gapped Land:** compatible Pokemon Final and Dramatic Shape renderers can
-  cover the empty visual space beneath the horizon in outdoor first- and
-  third-person views. This presentation option is on by default.
+- **Gapped Land:** compatible Pokemon Final, Dramatic Shape, and Battle Art
+  renderers can cover the empty visual space beneath the horizon in outdoor
+  first- and third-person views. This presentation option is on by default.
 - **Free Fly Now:** Free Fly can take off immediately without the Thunder
   Badge. This compatibility option is on by default.
+- **Free Fly cockpit control:** the default-off **FLY COCKPIT** setting keeps
+  Free Fly's extra Pokemon picture out of first-person view without changing
+  the mount, third-person presentation, movement, or landing.
 - **Badge-free HMs:** use Cut, Fly, Surf, Strength, and Flash without their
   badge. A party Pokemon must still actually know the move. Normal map,
   terrain, and story restrictions remain in effect.
@@ -94,8 +97,9 @@ special canopy scenery so it does not flatten places that are supposed to be
 enclosed or water-covered.
 
 The renderer is selected by its stable mod ID and then checked for the required
-capabilities rather than trusted by display name alone. Version 0.4.0 targets
-Pokemon Final and the verified Dramatic Shape 1.8.0-1.8.2 renderer contract.
+capabilities rather than trusted by display name alone. Version 0.4.2 targets
+Pokemon Final, the verified Dramatic Shape 1.8.0-1.8.2 renderer contract, and
+Battle Art Voxel Fork's published renderer modules.
 If an active voxel provider does not expose the required renderer modules,
 Scott's Tweaks leaves it untouched and every other tweak continues to work.
 
@@ -110,7 +114,7 @@ Free Fly performs its own badge check outside Gen1Recomp's normal HM hook.
 Scott's Tweaks detects Free Fly's real option schema and public flight-state
 export, then holds its live **BADGE CHECKS** answer off while **FREE FLY NOW**
 is enabled. It defaults to enabled, so there is no second setting to find.
-This adapter is tested with Free Fly 1.5.0 and 1.6.1.
+This badge adapter is tested with Free Fly 1.5.0 and the current 1.6.2 release.
 
 This does not add a badge, teach a move, or alter the save. Free Fly still
 decides which Pokemon can carry the player and keeps its FLY eligibility,
@@ -121,12 +125,22 @@ option, so both badge checks are relaxed while **FREE FLY NOW** is on.
 Turn **FREE FLY NOW** off in Scott's Tweaks to return control to Free Fly's
 own saved **BADGE CHECKS** preference. Its exact previous value is restored.
 
-For Pokemon Final, update Free Fly itself to **1.6.1 or newer**. Free Fly
-1.6.1 changed its voxel-provider lookup from the original Dramatic Shape ID
+For Pokemon Final, update Free Fly itself to **1.6.1 or newer** (1.6.2 is the
+current verified release). Free Fly 1.6.1 changed its voxel-provider lookup
+from the original Dramatic Shape ID
 to capability detection, so its first- and third-person flight support also
 finds Pokemon Final. Scott's Tweaks supports the badge toggle in both the
 older 1.5.0 package and the current line, but it does not copy or replace Free
 Fly's flight renderer.
+
+Free Fly 1.6.2 also draws a separate mount picture at the bottom of its
+first-person HUD. Scott's Tweaks exposes that presentation choice as **FLY
+COCKPIT**. It defaults to **OFF** for a clear view. Turn it **ON** to restore
+Free Fly's original cockpit picture. The adapter runs only during the HUD
+pass and only while Free Fly's public state says flight is active, so the
+world-space mount remains visible in third person and all flight rules remain
+owned by Free Fly. Later Free Fly versions are left untouched until their HUD
+contract is verified or they publish a native cockpit setting.
 
 ## Pokemon Final cache result compatibility
 
@@ -162,14 +176,17 @@ voxel free movement on its own.
 
 ### Do you need the run bridge?
 
-- **Pokemon Final + Running Shoes:** yes. Scott's Tweaks 0.4.0 recognizes
+- **Pokemon Final + Running Shoes:** yes. Scott's Tweaks 0.4.2 recognizes
   Pokemon Final's own manifest ID and carries the run speed into its 1ST/3RD
   camera movement.
 - **[thorkdev Running Shoes v0.2.2 or newer](https://github.com/thorkdev/gen1recomp-running-shoes/releases/tag/0.2.2)
   + Dramatic Shape/Battle Art Voxel Fork:** probably not. That Running Shoes
   release already contains a dedicated
   integration, and this bridge detects it and stays idle to prevent doubling
-  the speed.
+  the speed. That release also already provides a running-only camera bob:
+  set **VIEW BOB** to **ON** and **BOB INTENSITY** to **0.5X** for the very
+  light effect. Leave Battle Art's general **HEAD BOB** setting off if you
+  want bobbing only while running.
 - **An older/different `movement.speed` mod:** yes, this is the generic bridge.
 - **Dramaless Shape or PotatoVoxel:** this bridge supports their exported
   `FreeMove` module too, including Running Shoes versions that do not know
@@ -195,17 +212,18 @@ full camera ladder is enabled.
 ## Install or update
 
 If Voxel Run Bridge or any Scott's Tweaks 0.2.x/0.3.x release is installed, open
-Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.4.0
+Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.4.2
 update. It will appear as
 **Scott's Tweaks** afterward, without creating a second entry.
 
 For a first installation:
 
 1. Open **MODS -> Import mod .zip** and choose
-   `voxel_run_bridge-0.4.0.zip`.
+   `voxel_run_bridge-0.4.2.zip`.
 2. Enable **Scott's Tweaks**, then restart the game if the manager asks.
 3. Its **BAG POCKETS**, **GAPPED LAND**, **BADGE-FREE HMS**, and **FREE FLY
-   NOW** options default to **ON**; **EXP. MODE** defaults to **VANILLA**.
+   NOW** options default to **ON**; **FLY COCKPIT** defaults to **OFF** and
+   **EXP. MODE** defaults to **VANILLA**.
 4. Update Free Fly to **1.6.1 or newer** and enable it for free-roaming flight.
 5. For voxel running, also enable one supported voxel provider and a
    movement-speed mod such as Running Shoes.
@@ -267,13 +285,13 @@ Use the `dev` branch of
 ```powershell
 python tools/modkit.py validate C:\path\to\voxel_run_bridge --strict --base fixture
 python tools/modkit.py lint C:\path\to\voxel_run_bridge
-python tools/modkit.py pack C:\path\to\voxel_run_bridge -o C:\path\to\dist\voxel_run_bridge-0.4.0.zip --base fixture
+python tools/modkit.py pack C:\path\to\voxel_run_bridge -o C:\path\to\dist\voxel_run_bridge-0.4.2.zip --base fixture
 ```
 
 The archive is intentionally flat: `manifest.json` and `main.lua` are at its
 root, which Gen1Recomp's importer accepts directly.
 
-Version 0.4.0 is configured for Gen1Recomp's built-in GitHub update checks via
+Version 0.4.2 is configured for Gen1Recomp's built-in GitHub update checks via
 `ScottExplores/gen1recomp-voxel-run-bridge`.
 
 ## Provenance
