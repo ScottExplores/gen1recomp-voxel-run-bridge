@@ -31,7 +31,7 @@ local pokemonFinalPrefix = "mods/POKEMON_FINAL/"
 local freeFlyManifest = [[{
   "id": "free_fly",
   "name": "Free Fly Test Double",
-  "version": "1.5.0",
+  "version": "1.6.2",
   "api": 2,
   "entry": "main.lua",
   "profile": "content",
@@ -65,9 +65,23 @@ local freeFlyEntry = [[return function(mod)
     end
     return true, "TAKEOFF"
   end
-  mod.exports.isFlying = function() return false end
+  local flying = false
+  local cockpitDraws = 0
+  mod.exports.isFlying = function() return flying end
+  mod.exports.testSetFlying = function(value) flying = value == true end
+  mod.exports.testCockpitDraws = function() return cockpitDraws end
   mod.exports.testBadgeChecks = badgeChecksEnabled
   mod.exports.testStartFlight = startFlight
+  mod.hooks:wrap("render.hud", function(nextFn, game, viewport)
+    local out = nextFn(game, viewport)
+    local provider = mod.find("POKEMON_FINAL")
+    local lib = provider and provider.exports and provider.exports.lib
+    local FirstPerson = lib and lib.require("FirstPerson")
+    if flying and FirstPerson and FirstPerson.hidePlayer() then
+      cockpitDraws = cockpitDraws + 1
+    end
+    return out
+  end)
 end]]
 local pokemonFinalManifest = [[{
   "id": "POKEMON_FINAL",
@@ -96,6 +110,8 @@ local pokemonFinalEntry = [[return function(mod)
     glass = function() end,
   }
   local VoxelState = { isFreeCam = function() return true end }
+  local FirstPerson = { hidden = true }
+  function FirstPerson.hidePlayer() return FirstPerson.hidden end
   local DayNight = { isCanopy = function() return false end }
   local Mat4 = { translate = function(x, y, z) return { x, y, z } end }
   local modules = {
@@ -103,6 +119,7 @@ local pokemonFinalEntry = [[return function(mod)
     VoxelScene = VoxelScene,
     Voxel3D = Voxel3D,
     VoxelState = VoxelState,
+    FirstPerson = FirstPerson,
     DayNight = DayNight,
     Mat4 = Mat4,
   }
@@ -112,6 +129,7 @@ local pokemonFinalEntry = [[return function(mod)
   mod.exports.testFreeMove = FreeMove
   mod.exports.testVoxelScene = VoxelScene
   mod.exports.testVoxel3D = Voxel3D
+  mod.exports.testFirstPerson = FirstPerson
 end]]
 local run = T.sdk.loadMod("mods/voxel_run_bridge", {
   data = require("tests.modkit.fixtures").fresh(),
@@ -132,8 +150,8 @@ T.eq(run.mod and run.mod.manifest.id, "voxel_run_bridge",
   "stable updater identity is retained")
 T.eq(run.mod and run.mod.manifest.name, "Scott's Tweaks",
   "new display name is loaded")
-T.eq(run.mod and run.mod.manifest.version, "0.4.0",
-  "loader selected version 0.4.0")
+T.eq(run.mod and run.mod.manifest.version, "0.4.2",
+  "loader selected version 0.4.2")
 T.eq(run.mod and run.mod.manifest.affects_link, false,
   "inventory conveniences do not alter link rules")
 
@@ -152,9 +170,11 @@ T.eq(gappedLandOption and gappedLandOption.default, true,
 
 local bagPocketsOption
 local experienceOption
+local cockpitOption
 for _, row in ipairs(schema) do
   if row.key == "bag_pockets" then bagPocketsOption = row end
   if row.key == "experience_mode" then experienceOption = row end
+  if row.key == "free_fly_cockpit" then cockpitOption = row end
 end
 T.eq(bagPocketsOption and bagPocketsOption.type, "toggle",
   "Bag Pockets uses a toggle")
@@ -166,6 +186,10 @@ T.eq(experienceOption and experienceOption.default, "vanilla",
   "EXP mode defaults to vanilla")
 T.eq(experienceOption and #(experienceOption.choices or {}), 4,
   "EXP mode exposes all four choices")
+T.eq(cockpitOption and cockpitOption.type, "toggle",
+  "Free Fly cockpit control uses a toggle")
+T.eq(cockpitOption and cockpitOption.default, false,
+  "Free Fly cockpit defaults to a clear first-person view")
 
 local shareItem = run.data.items.SCOTTS_EXP_SHARE
 local tradeStone = run.data.items.SCOTTS_TRADE_STONE
@@ -317,6 +341,37 @@ T.eq(crossedGate, false, "Free Fly story gate remains on")
 T.eq(gateReason, "STORY BLOCKED", "Free Fly story rule is unchanged")
 
 local hooks = run.loader.hooks
+local providerExports = run.loader.exports.POKEMON_FINAL
+local FirstPerson = providerExports and providerExports.testFirstPerson
+local originalHidePlayer = FirstPerson and FirstPerson.hidePlayer
+local cockpitControl = run.loader.exports.voxel_run_bridge.freeFlyCockpitControl
+T.eq(cockpitControl and cockpitControl.active, true,
+  "exact Free Fly 1.6.2 cockpit control activates through the loader")
+freeFlyExports.testSetFlying(true)
+hooks:call("render.hud", function() return "base-hud" end, {}, {})
+T.eq(freeFlyExports.testCockpitDraws(), 0,
+  "default-off cockpit suppresses Free Fly's first-person HUD picture")
+T.eq(FirstPerson and FirstPerson.hidePlayer, originalHidePlayer,
+  "loader HUD chain restores the provider's visibility function")
+T.eq(FirstPerson and FirstPerson.hidePlayer(), true,
+  "loader HUD chain leaves the world player-card rule unchanged")
+
+run.loader.modOptions.voxel_run_bridge =
+  run.loader.modOptions.voxel_run_bridge or {}
+run.loader.modOptions.voxel_run_bridge.free_fly_cockpit = true
+hooks:call("render.hud", function() return "base-hud" end, {}, {})
+T.eq(freeFlyExports.testCockpitDraws(), 1,
+  "FLY COCKPIT on restores Free Fly's original HUD picture")
+
+run.loader.modOptions.voxel_run_bridge.free_fly_cockpit = false
+FirstPerson.hidden = false
+hooks:call("render.hud", function() return "base-hud" end, {}, {})
+T.eq(freeFlyExports.testCockpitDraws(), 1,
+  "third-person flight never gains a separate cockpit picture")
+T.eq(FirstPerson.hidePlayer, originalHidePlayer,
+  "third-person HUD leaves provider visibility ownership untouched")
+FirstPerson.hidden = true
+
 local pidgeot = { species = "PIDGEOT", moves = { { id = "FLY" } } }
 local save = { inventory = {}, party = { pidgeot } }
 local user = hooks:call("fieldmove.eligibility", function() return nil end,
@@ -361,7 +416,7 @@ T.check(type(pokemonFinalExports) == "table",
   "Pokemon Final test-double exports are published")
 T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.owner, "voxel_run_bridge",
   "Pokemon Final FreeMove receives Scott's bridge marker")
-T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.4.0",
+T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.4.2",
   "Pokemon Final bridge marker carries the update version")
 T.eq(type(exported.hmWithoutBadges), "function",
   "live HM option accessor is published")

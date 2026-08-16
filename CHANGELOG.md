@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.4.2 - 2026-08-16
+
+- Added **FLY COCKPIT**, defaulting to OFF, for players who want Free Fly
+  1.6.2's extra first-person mount picture hidden. The adapter uses Free Fly's
+  public flight-state export and the voxel provider's published FirstPerson
+  visibility query, and changes that query only inside the downstream HUD
+  call. The world-space mount, third-person view, flight movement, collision,
+  encounters, and landing are unchanged.
+- Scoped the cockpit adapter to the exact verified Free Fly 1.6.2 HUD contract.
+  Missing providers, missing APIs, and later Free Fly versions remain
+  untouched instead of receiving a speculative compatibility patch.
+- Documented that the bundled thorkdev Running Shoes 0.3.0 already owns the
+  requested running-only view bob. **VIEW BOB: ON** plus **BOB INTENSITY:
+  0.5X** is its lightest setting, so Scott's Tweaks adds no duplicate bob.
+
+## 0.4.1 - 2026-08-15
+
+- Added Battle Art Voxel Fork to the capability-tested **GAPPED LAND**
+  providers. Battle Art already exposed the same `VoxelScene`, `Voxel3D`,
+  `VoxelState`, `DayNight`, and `Mat4` adapter surface used by the existing
+  providers; the visual apron remains Scott-owned and presentation-only.
+- Verified the provider path without changing Battle Art terrain, collision,
+  map connections, live mesh streaming, or any disk/session cache input.
+- Verified the existing Free Fly adapter with current Free Fly 1.6.2 and the
+  full mod loader on Gen1Recomp 0.1.88 and 0.1.96.
+
 ## 0.4.0 - 2026-08-13
 
 - Added the default-on **BAG POCKETS** view. Left/Right switches between

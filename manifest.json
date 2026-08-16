@@ -1,7 +1,7 @@
 {
   "id": "voxel_run_bridge",
   "name": "Scott's Tweaks",
-  "version": "0.4.0",
+  "version": "0.4.2",
   "github": "ScottExplores/gen1recomp-voxel-run-bridge",
   "api": 2,
   "entry": "main.lua",
@@ -26,5 +26,5 @@
   "experimental": false,
   "affects_link": false,
   "permissions": ["engine_internals"],
-  "description": "Scott's gameplay tweaks: modern bag pockets, shop counts, EXP modes, Trade Stone, gapped land, badge-free field moves, and voxel running."
+  "description": "Scott's gameplay tweaks: modern bag pockets, shop counts, EXP modes, Trade Stone, gapped land, badge-free field moves, voxel running, and a clear first-person Free Fly view."
 }
