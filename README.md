@@ -5,7 +5,7 @@ is broader, but its internal mod ID remains `voxel_run_bridge`. Existing
 installations therefore update in place, keep their settings, and do not
 become a duplicate mod.
 
-Version 0.4.2 contains ten independent tweaks:
+Version 0.4.3 contains ten independent tweaks:
 
 - **Bag pockets:** press Left or Right to move among ITEMS, BALLS, TM/HM,
   and KEY ITEMS while keeping the original Gen 1 inventory underneath.
@@ -97,7 +97,7 @@ special canopy scenery so it does not flatten places that are supposed to be
 enclosed or water-covered.
 
 The renderer is selected by its stable mod ID and then checked for the required
-capabilities rather than trusted by display name alone. Version 0.4.2 targets
+capabilities rather than trusted by display name alone. Version 0.4.3 targets
 Pokemon Final, the verified Dramatic Shape 1.8.0-1.8.2 renderer contract, and
 Battle Art Voxel Fork's published renderer modules.
 If an active voxel provider does not expose the required renderer modules,
@@ -176,7 +176,7 @@ voxel free movement on its own.
 
 ### Do you need the run bridge?
 
-- **Pokemon Final + Running Shoes:** yes. Scott's Tweaks 0.4.2 recognizes
+- **Pokemon Final + Running Shoes:** yes. Scott's Tweaks 0.4.3 recognizes
   Pokemon Final's own manifest ID and carries the run speed into its 1ST/3RD
   camera movement.
 - **[thorkdev Running Shoes v0.2.2 or newer](https://github.com/thorkdev/gen1recomp-running-shoes/releases/tag/0.2.2)
@@ -212,14 +212,14 @@ full camera ladder is enabled.
 ## Install or update
 
 If Voxel Run Bridge or any Scott's Tweaks 0.2.x/0.3.x release is installed, open
-Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.4.2
+Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.4.3
 update. It will appear as
 **Scott's Tweaks** afterward, without creating a second entry.
 
 For a first installation:
 
 1. Open **MODS -> Import mod .zip** and choose
-   `voxel_run_bridge-0.4.2.zip`.
+   `SCOTTS_TWEAKS-0.4.3.zip`.
 2. Enable **Scott's Tweaks**, then restart the game if the manager asks.
 3. Its **BAG POCKETS**, **GAPPED LAND**, **BADGE-FREE HMS**, and **FREE FLY
    NOW** options default to **ON**; **FLY COCKPIT** defaults to **OFF** and
@@ -285,14 +285,19 @@ Use the `dev` branch of
 ```powershell
 python tools/modkit.py validate C:\path\to\voxel_run_bridge --strict --base fixture
 python tools/modkit.py lint C:\path\to\voxel_run_bridge
-python tools/modkit.py pack C:\path\to\voxel_run_bridge -o C:\path\to\dist\voxel_run_bridge-0.4.2.zip --base fixture
+python tools/modkit.py pack C:\path\to\voxel_run_bridge -o C:\path\to\dist\SCOTTS_TWEAKS-0.4.3.zip --base fixture
 ```
 
 The archive is intentionally flat: `manifest.json` and `main.lua` are at its
 root, which Gen1Recomp's importer accepts directly.
 
-Version 0.4.2 is configured for Gen1Recomp's built-in GitHub update checks via
+Version 0.4.3 is configured for Gen1Recomp's built-in GitHub update checks via
 `ScottExplores/gen1recomp-voxel-run-bridge`.
+
+The download is deliberately named `SCOTTS_TWEAKS-0.4.3.zip` to match the
+name players see in the mod list. Its internal ID remains `voxel_run_bridge`
+so existing installs and saved settings update in place rather than appearing
+as a second mod.
 
 ## Provenance
 

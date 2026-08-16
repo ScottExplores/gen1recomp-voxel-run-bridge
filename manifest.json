@@ -1,7 +1,7 @@
 {
   "id": "voxel_run_bridge",
   "name": "Scott's Tweaks",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "github": "ScottExplores/gen1recomp-voxel-run-bridge",
   "api": 2,
   "entry": "main.lua",

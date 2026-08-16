@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.3 - 2026-08-16
+
+- Renamed the player-facing download to `SCOTTS_TWEAKS-0.4.3.zip` so the ZIP
+  name now matches the **Scott's Tweaks** name shown in Gen1Recomp.
+- Preserved the internal `voxel_run_bridge` mod ID and GitHub updater address.
+  Existing installations, saved settings, compatibility hooks, and automatic
+  updates therefore continue in place without creating a duplicate mod.
+- This is a packaging-and-labeling release; gameplay behavior is unchanged
+  from 0.4.2.
+
 ## 0.4.2 - 2026-08-16
 
 - Added **FLY COCKPIT**, defaulting to OFF, for players who want Free Fly
