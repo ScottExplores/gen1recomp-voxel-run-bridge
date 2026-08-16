@@ -131,16 +131,32 @@ local pokemonFinalEntry = [[return function(mod)
   mod.exports.testVoxel3D = Voxel3D
   mod.exports.testFirstPerson = FirstPerson
 end]]
+local modFiles = {
+  [prefix .. "manifest.json"] = read("manifest.json"),
+  [prefix .. "main.lua"] = read("main.lua"),
+  [freeFlyPrefix .. "manifest.json"] = freeFlyManifest,
+  [freeFlyPrefix .. "main.lua"] = freeFlyEntry,
+  [pokemonFinalPrefix .. "manifest.json"] = pokemonFinalManifest,
+  [pokemonFinalPrefix .. "main.lua"] = pokemonFinalEntry,
+}
+for _, relative in ipairs({
+  "modules/settings.lua",
+  "modules/migrations.lua",
+  "modules/trainer_forfeit.lua",
+  "modules/trainer_dialogue.lua",
+  "modules/oak_spare_starter.lua",
+  "modules/running.lua",
+  "modules/option_screen.lua",
+  "modules/tweaks_menu.lua",
+  "modules/thor_dual_screen.lua",
+}) do
+  local ok, body = pcall(read, relative)
+  if ok then modFiles[prefix .. relative] = body end
+end
+
 local run = T.sdk.loadMod("mods/voxel_run_bridge", {
   data = require("tests.modkit.fixtures").fresh(),
-  fs = T.sdk.memfs({
-    [prefix .. "manifest.json"] = read("manifest.json"),
-    [prefix .. "main.lua"] = read("main.lua"),
-    [freeFlyPrefix .. "manifest.json"] = freeFlyManifest,
-    [freeFlyPrefix .. "main.lua"] = freeFlyEntry,
-    [pokemonFinalPrefix .. "manifest.json"] = pokemonFinalManifest,
-    [pokemonFinalPrefix .. "main.lua"] = pokemonFinalEntry,
-  }),
+  fs = T.sdk.memfs(modFiles),
   generation = 1,
 })
 
@@ -150,12 +166,41 @@ T.eq(run.mod and run.mod.manifest.id, "voxel_run_bridge",
   "stable updater identity is retained")
 T.eq(run.mod and run.mod.manifest.name, "Scott's Tweaks",
   "new display name is loaded")
-T.eq(run.mod and run.mod.manifest.version, "0.4.3",
-  "loader selected version 0.4.3")
+T.eq(run.mod and run.mod.manifest.version, "0.5.0",
+  "loader selected version 0.5.0")
 T.eq(run.mod and run.mod.manifest.affects_link, false,
   "inventory conveniences do not alter link rules")
+local thorApi = run.loader.exports.voxel_run_bridge.thorDualScreen
+T.check(type(thorApi) == "table",
+  "main orchestrator installs the physical-Thor presenter")
+for _, name in ipairs({
+  "getEnabled", "getMode", "secondDisplayAttached", "getStatus",
+}) do
+  T.check(type(thorApi and thorApi[name]) == "function",
+    "Thor export publishes " .. name)
+end
+T.eq(thorApi and thorApi.getMode(), "off",
+  "central dual_screen default reaches the Thor presenter")
 
 local schema = run.loader.optionSchemas.voxel_run_bridge or {}
+local schemaByKey = {}
+for _, row in ipairs(schema) do schemaByKey[row.key] = row end
+for key, expected in pairs({
+  trainer_forfeit_enabled = true,
+  trainer_rematches = true,
+  trainer_adaptive_dialogue = true,
+  trainer_growth = "gentle",
+  oak_spare_starter = true,
+  running_enabled = true,
+  running_speed = 1.5,
+  running_view_bob = true,
+  running_bob_intensity = 0.5,
+  dual_screen = false,
+}) do
+  T.check(type(schemaByKey[key]) == "table", key .. " is in central schema")
+  T.eq(schemaByKey[key] and schemaByKey[key].default, expected,
+    key .. " has the release default")
+end
 local gappedLandOption
 for _, row in ipairs(schema) do
   if row.key == "gapped_land" then gappedLandOption = row break end
@@ -276,6 +321,105 @@ local function buildScreen(id, ...)
   end
   return Screens.get(screenGame, id).new(screenGame, ...)
 end
+local menuApi = run.loader.exports.voxel_run_bridge.tweaksMenu
+local tweaksMain = buildScreen(menuApi.screenIds.main)
+T.eq(#(tweaksMain.rows or {}), 5,
+  "Scott's Tweaks opens as five organized categories")
+local organized = {}
+for _, id in pairs({
+  menuApi.screenIds.inventory, menuApi.screenIds.trainers,
+  menuApi.screenIds.movement, menuApi.screenIds.field,
+  menuApi.screenIds.display,
+}) do
+  local child = buildScreen(id)
+  for _, row in ipairs(child.rows or {}) do
+    local key = type(row.id) == "string"
+      and row.id:match("^voxel_run_bridge:(.+)$") or nil
+    if key then organized[key] = row end
+  end
+end
+local organizedCount = 0
+for key in pairs(organized) do
+  organizedCount = organizedCount + 1
+  T.check(schemaByKey[key] ~= nil,
+    key .. " organized row is backed by the central schema")
+end
+T.eq(organizedCount, #schema,
+  "categorized screens retain every Mod Manager setting")
+
+local writes = 0
+screenGame.mods = run.loader
+require("src.core.Game").mods = run.loader
+screenGame.save.options = { modOptions = {} }
+screenGame.writeOptions = function() writes = writes + 1 end
+T.eq(organized.running_enabled.value(screenGame), "ON",
+  "organized running row reads the central default")
+organized.running_enabled.step(screenGame, 1)
+T.eq(organized.running_enabled.value(screenGame), "OFF",
+  "organized running row changes live")
+T.eq(screenGame.save.options.modOptions.voxel_run_bridge.running_enabled,
+  false, "organized row persists to save options")
+T.eq(run.loader.modOptions.voxel_run_bridge.running_enabled, false,
+  "organized row mirrors into Loader options")
+T.eq(writes, 1, "organized row performs one option write")
+organized.running_enabled.step(screenGame, -1)
+
+T.eq(organized.free_fly_without_badges.value(screenGame), "ON",
+  "organized Free Fly row reads the central default")
+local writesBeforeFreeFly = writes
+organized.free_fly_without_badges.step(screenGame, 1)
+T.eq(organized.free_fly_without_badges.value(screenGame), "OFF",
+  "organized Free Fly row changes the shared value")
+T.eq(run.loader.exports.free_fly.testBadgeChecks(), true,
+  "organized row emits the live event that restores Free Fly's preference")
+T.eq(writes, writesBeforeFreeFly + 1,
+  "organized Free Fly row performs one option write")
+organized.free_fly_without_badges.step(screenGame, -1)
+T.eq(run.loader.exports.free_fly.testBadgeChecks(), false,
+  "turning organized Free Fly row back on reapplies the live override")
+
+T.eq(organized.dual_screen.value(screenGame), "OFF",
+  "Thor row shows the central OFF value without a legacy provider")
+local liveThorApi = run.loader.exports.voxel_run_bridge.thorDualScreen
+run.loader.exports.voxel_run_bridge.thorDualScreen = {
+  getStatus = function() return {
+    delegated = true, delegateId = "gen1recomp_ds",
+    blockedReason = "delegated_to_gen1recomp_ds",
+  } end,
+}
+local writesBeforeDelegated = writes
+T.eq(organized.dual_screen.value(screenGame), "OTHER MOD",
+  "legacy Dual Screen makes the organized Thor row non-authoritative")
+T.eq(organized.dual_screen.step(screenGame, 1), false,
+  "delegated Thor row refuses edits")
+T.eq(writes, writesBeforeDelegated,
+  "delegated Thor row performs no option write")
+run.loader.exports.voxel_run_bridge.thorDualScreen = liveThorApi
+T.eq(organized.dual_screen.value(screenGame), "OFF",
+  "after legacy removal the Thor row returns to ON/OFF authority")
+local writesBeforeThor = writes
+organized.dual_screen.step(screenGame, 1)
+T.eq(organized.dual_screen.value(screenGame), "ON",
+  "organized Thor row changes the shared live value")
+T.eq(liveThorApi.getMode(), "on",
+  "organized Thor row notifies the installed presenter")
+T.eq(screenGame.save.options.modOptions.voxel_run_bridge.dual_screen, true,
+  "organized Thor row persists the central value")
+T.eq(writes, writesBeforeThor + 1,
+  "organized Thor row performs one option write")
+organized.dual_screen.step(screenGame, -1)
+
+local startRows = run.loader.hooks:call("ui.start_menu.items",
+  function(_, rows) return rows end, screenGame, {
+    { id = "vanilla.party", label = "POKEMON" },
+    { id = "vanilla.mods", label = "MODS" },
+  })
+local startCount = 0
+for _, row in ipairs(startRows) do
+  if row.id == "scotts_tweaks.open" then startCount = startCount + 1 end
+end
+T.eq(startCount, 1, "Start exposes exactly one Scott's Tweaks entry")
+
 local bagScreen = buildScreen("BagMenu", {})
 T.eq(bagScreen.title, "< ITEMS >",
   "real BagMenu opens in the Items pocket")
@@ -393,6 +537,24 @@ T.eq(menu[2] and menu[2].action, "stats", "STATS remains after field moves")
 
 local exported = run.loader.exports.voxel_run_bridge
 T.check(type(exported) == "table", "exports are published")
+T.eq(exported.moduleErrors, nil,
+  "all required consolidated modules install without a contained error")
+T.eq(exported.trainerForfeit and exported.trainerForfeit.installed, true,
+  "integrated trainer forfeit/rematches install")
+T.eq(exported.trainerForfeit and exported.trainerForfeit.sourceVersion,
+  "0.3.0", "trainer feature records its incorporated source version")
+T.eq(exported.oakSpareStarter and exported.oakSpareStarter.installed, true,
+  "integrated Oak spare starter installs")
+T.eq(exported.oakSpareStarter and exported.oakSpareStarter.sourceVersion,
+  "0.1.1", "Oak feature records its incorporated source version")
+T.eq(exported.running and exported.running.installed, true,
+  "integrated B-button running producer installs")
+T.eq(exported.running and exported.running.alwaysAvailable, true,
+  "running does not require a story unlock")
+T.eq(exported.migrations and exported.migrations.installed, true,
+  "legacy migration adapter installs")
+T.eq(exported.tweaksMenu and exported.tweaksMenu.installed, true,
+  "categorized Scott's Tweaks menu installs")
 T.eq(exported.status and exported.status.active, true,
   "voxel bridge activates through the production loader")
 T.eq(exported.status and exported.status.voxel, "POKEMON_FINAL",
@@ -416,7 +578,7 @@ T.check(type(pokemonFinalExports) == "table",
   "Pokemon Final test-double exports are published")
 T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.owner, "voxel_run_bridge",
   "Pokemon Final FreeMove receives Scott's bridge marker")
-T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.4.3",
+T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.5.0",
   "Pokemon Final bridge marker carries the update version")
 T.eq(type(exported.hmWithoutBadges), "function",
   "live HM option accessor is published")

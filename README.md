@@ -5,7 +5,9 @@ is broader, but its internal mod ID remains `voxel_run_bridge`. Existing
 installations therefore update in place, keep their settings, and do not
 become a duplicate mod.
 
-Version 0.4.3 contains ten independent tweaks:
+Version 0.5.0 keeps the existing updater identity and adds one categorized
+**START > MOD MENUS > SCOTT'S TWEAKS** home for all of its settings. Its
+features are:
 
 - **Bag pockets:** press Left or Right to move among ITEMS, BALLS, TM/HM,
   and KEY ITEMS while keeping the original Gen 1 inventory underneath.
@@ -15,6 +17,16 @@ Version 0.4.3 contains ten independent tweaks:
   Selecting EXP.SHARE permanently unlocks a visible key item in the bag.
 - **Trade Stone:** every Gen 1 mart sells a ₽500 stone that evolves Kadabra,
   Machoke, Graveler, or Haunter through the normal evolution sequence.
+- **Trainer forfeits and rematches:** pay ¥200 to leave an ordinary trainer
+  battle, then safely revisit defeated ordinary trainers or any of the eight
+  Gym Leaders without replaying one-time story rewards. Authored journey
+  dialogue and gentle rematch growth work offline.
+- **Oak's spare starter:** in Red or Blue, return after the Oak's Lab rival
+  battle and claim the one remaining starter ball once, when the party has
+  room.
+- **Built-in B running:** hold B while walking for an always-available 1.5X
+  run by default. First-person voxel running receives a new, very light
+  distance-based camera bob at 0.5X intensity by default.
 
 - **Gapped Land:** compatible Pokemon Final, Dramatic Shape, and Battle Art
   renderers can cover the empty visual space beneath the horizon in outdoor
@@ -33,8 +45,50 @@ Version 0.4.3 contains ten independent tweaks:
   no longer reports **COULD NOT START** after its build actually started. The
   corrected Pokemon Final package is detected by behavior and left untouched.
 
-None of these features grants badges, teaches moves, changes story flags, or
-edits a save's badge inventory.
+These features never fabricate badges or rewrite story flags. Oak's starter
+uses Gen1Recomp's normal gift flow, so receiving it intentionally updates the
+party and Pokédex just like another legitimate gift Pokémon.
+
+## One organized settings menu
+
+Open **START > MOD MENUS > SCOTT'S TWEAKS** when Gen 1 Modern UI is enabled.
+Without Modern UI, **SCOTT'S TWEAKS** appears directly on Start. The first
+screen groups the same settings into **Bag & Experience**, **Trainers & Oak**,
+**Running**, **Field Moves**, and **Display & Thor**. Every value also remains
+in Gen1Recomp's ordinary Mod Manager schema, so either route edits one source
+of truth.
+
+## Trainer forfeits and rematches
+
+The incorporated Trainer Forfeit & Rematches 0.3.0 feature adds a ¥200
+confirmation to RUN in ordinary trainer encounters. A successful payment
+ends that battle without granting victory or applying blackout loss behavior.
+Talking to a completed ordinary trainer offers a clean rematch. Brock, Misty,
+Lt. Surge, Erika, Koga, Sabrina, Blaine, and Giovanni also become safely
+repeatable only after their original badge/TM choreography is fully complete.
+Giovanni remains gone; his Viridian Gym guide offers the repeat battle.
+
+Rematches preserve original defeated flags and never replay badges, TMs, map
+changes, or other one-time victory hooks. Journey dialogue is deterministic,
+authored, offline, and stored under Scott's Tweaks' private trainer-memory
+key. **TRAINER GROWTH: GENTLE** can raise repeat rosters modestly for that
+battle without rewriting base trainer data.
+
+**PAID FORFEIT** and **TRAINER REMATCHES** are independent. Turning the paid
+RUN choice off leaves ordinary/Gym rematch availability, journey recording,
+dialogue, and gentle growth working. Turning rematches off leaves only the
+paid ordinary-trainer RUN choice.
+
+## Oak's spare starter
+
+In Red or Blue, finish the normal starter choice and Oak's Lab rival battle,
+then interact with the sole ball left on Oak's table. If the party has fewer
+than six Pokémon, the remaining level-5 starter joins through the engine's
+normal gift flow and the ball is hidden permanently. With a full party, it
+waits in the lab. Yellow is deliberately unchanged.
+
+If `random_starters` is active, only this Oak feature stands aside; every
+other Scott's Tweaks feature remains active.
 
 ## Bag pockets and shop counts
 
@@ -97,7 +151,7 @@ special canopy scenery so it does not flatten places that are supposed to be
 enclosed or water-covered.
 
 The renderer is selected by its stable mod ID and then checked for the required
-capabilities rather than trusted by display name alone. Version 0.4.3 targets
+capabilities rather than trusted by display name alone. Version 0.5.0 targets
 Pokemon Final, the verified Dramatic Shape 1.8.0-1.8.2 renderer contract, and
 Battle Art Voxel Fork's published renderer modules.
 If an active voxel provider does not expose the required renderer modules,
@@ -158,43 +212,34 @@ Pokemon Final source or assets are included in this public mod.
 
 ## Voxel running
 
-The original bridge makes Gen1Recomp movement-speed mods work while a
-supported voxel mod is driving the player in **1ST** or **3RD** person. That
-includes Running Shoes mods that use the engine's public `movement.speed`
-hook.
+Scott's Tweaks now supplies its own public `movement.speed` producer. Hold B
+while walking to run immediately; no shoes item, quest, badge, or save unlock
+is required. The default is 1.5X, with 1.25X and 2X choices. Bikes, surfing,
+scripted movement, and input-locked scenes are excluded.
 
-It does not grant shoes, add a quest, or choose a speed. It carries the speed
-already selected by another mod from the normal grid walker into the voxel
-mod's continuous `FreeMove` walker. Step out of first/third person and the
-ordinary engine path takes over unchanged.
+The original bridge remains the renderer-neutral adapter that carries the
+same held-B result into a compatible voxel mod's continuous **1ST/3RD**
+`FreeMove` walker. It samples the one public producer exactly once and restores
+the renderer's temporary speed constant after every tick, including errors.
 
-**The bridge has no effect by itself.** Enable one movement-speed producer as
-well, such as [MadeinTaly's Running Shoes](https://github.com/MadeinTaly/gen1recomp-running-shoes)
-or [Run Mode](https://github.com/masterwebx/gen1recomp-run-mode). Those two
-are the main reason this adapter exists: their normal run hook does not enter
-voxel free movement on its own.
+**RUN HEAD BOB** is a new Scott-authored first-person camera effect. It
+advances from actual distance traveled rather than a timer, touches only a
+per-frame camera proxy, and never mutates player height or collision. It
+defaults on at the intentionally subtle **0.5X** intensity. Turn it off for a
+completely steady first-person run.
 
 ### Do you need the run bridge?
 
-- **Pokemon Final + Running Shoes:** yes. Scott's Tweaks 0.4.3 recognizes
-  Pokemon Final's own manifest ID and carries the run speed into its 1ST/3RD
-  camera movement.
-- **[thorkdev Running Shoes v0.2.2 or newer](https://github.com/thorkdev/gen1recomp-running-shoes/releases/tag/0.2.2)
-  + Dramatic Shape/Battle Art Voxel Fork:** probably not. That Running Shoes
-  release already contains a dedicated
-  integration, and this bridge detects it and stays idle to prevent doubling
-  the speed. That release also already provides a running-only camera bob:
-  set **VIEW BOB** to **ON** and **BOB INTENSITY** to **0.5X** for the very
-  light effect. Leave Battle Art's general **HEAD BOB** setting off if you
-  want bobbing only while running.
-- **An older/different `movement.speed` mod:** yes, this is the generic bridge.
+- **Pokemon Final:** yes. Scott's Tweaks recognizes Pokemon Final's stable ID
+  and carries its built-in run into the 1ST/3RD camera movement.
+- **A standalone `running_shoes` mod:** that mod remains the sole running
+  owner. Scott's internal producer and bob stand aside, and the corresponding
+  Tweaks rows say **OTHER MOD** instead of stacking a second multiplier.
+- **Run Mode or another `movement.speed` producer:** turn **B-BUTTON RUN** off
+  if that producer should own the speed; the generic voxel bridge can still
+  carry its result.
 - **Dramaless Shape or PotatoVoxel:** this bridge supports their exported
-  `FreeMove` module too, including Running Shoes versions that do not know
-  those mod IDs.
-
-MadeinTaly's and thorkdev's projects both use the manifest ID
-`running_shoes`, so Gen1Recomp treats them as alternative implementations;
-do not install both at once.
+  `FreeMove` module too.
 
 Supported voxel manifest IDs:
 
@@ -209,24 +254,68 @@ one another in their own manifests. PotatoVoxel's default low-power profile
 currently hides the 1ST/3RD rungs, so its bridge support matters only when its
 full camera ladder is enabled.
 
+## Standalone-mod transition and save migration
+
+Scott's Tweaks now contains the MIT Trainer Forfeit 0.3.0, Oak's Spare Starter
+0.1.1, and Scott's clean running producer. It does not copy private voxel or
+dual-screen mods, and it does not copy the unlicensed thorkdev Running Shoes
+source.
+
+If `trainer_forfeit`, `oak_spare_starter`, or `running_shoes` is still enabled,
+Scott's Tweaks detects it and delegates that corresponding feature instead of
+installing a duplicate hook. Disable the old standalone mod when ready to use
+the integrated controls. Other Tweaks remain active throughout the transition.
+
+On the first load of each save, 0.5.0 copies recognized legacy values only
+when the corresponding new value was never explicitly stored:
+
+- Trainer Forfeit rematch/dialogue/growth preferences and journey memory;
+- Oak's one-time claimed marker;
+- the distinctive 0.x Running Shoes enabled/speed/view-bob settings, or
+  Scott Mod's run preferences; and
+- old `gen1recomp_ds.enabled` into **THOR SECOND SCREEN**.
+
+The import records one per-feature marker table in `voxel_run_bridge` save
+data. It never deletes or edits an old mod namespace, and repeating the
+lifecycle event is a no-op. A feature's marker remains pending while its
+standalone provider is active, so a later claim, trainer-history update, or
+preference change is imported after that provider is removed rather than
+being stranded.
+
+## Physical Thor second screen
+
+**THOR SECOND SCREEN** is the one on/off authority for Scott's original
+physical-AYN-Thor presenter. It routes supported menu surfaces only when a
+real lower display is attached. On a normal PC, handheld with one display, or
+missing second display, the game remains a normal single-screen layout. It
+does not merge or redistribute the private upstream-derived Dual Screen or
+Battle Art implementations.
+
+If the older `gen1recomp_ds` mod is still enabled, its presenter remains the
+owner and this row reads **OTHER MOD** without accepting edits. Disable that
+legacy mod and restart; Scott's row then returns to its normal **ON/OFF**
+control, with the final legacy enabled preference imported only when no newer
+Scott's Tweaks choice was already saved.
+
 ## Install or update
 
 If Voxel Run Bridge or any Scott's Tweaks 0.2.x/0.3.x release is installed, open
-Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.4.3
+Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.5.0
 update. It will appear as
 **Scott's Tweaks** afterward, without creating a second entry.
 
 For a first installation:
 
 1. Open **MODS -> Import mod .zip** and choose
-   `SCOTTS_TWEAKS-0.4.3.zip`.
+   `SCOTTS_TWEAKS-0.5.0.zip`.
 2. Enable **Scott's Tweaks**, then restart the game if the manager asks.
-3. Its **BAG POCKETS**, **GAPPED LAND**, **BADGE-FREE HMS**, and **FREE FLY
-   NOW** options default to **ON**; **FLY COCKPIT** defaults to **OFF** and
-   **EXP. MODE** defaults to **VANILLA**.
+3. Open **START > MOD MENUS > SCOTT'S TWEAKS**. Bag pockets, trainer features,
+   Oak's starter, B running, light run bob, gapped land, badge-free HMs, and
+   Free Fly Now default on. EXP defaults to Vanilla, Fly Cockpit and Thor
+   Second Screen default off, run speed defaults to 1.5X, and bob to 0.5X.
 4. Update Free Fly to **1.6.1 or newer** and enable it for free-roaming flight.
-5. For voxel running, also enable one supported voxel provider and a
-   movement-speed mod such as Running Shoes.
+5. For 1ST/3RD running, enable one supported voxel provider; no separate
+   running mod is required.
 
 The manager will ask for the `engine_internals` permission. Scott's Tweaks
 uses Gen1Recomp's official content, screen, battle, field-move, and party-menu
@@ -235,9 +324,9 @@ supports the narrowly namespaced Trade Stone dispatcher on Gen1Recomp 0.1.75;
 newer engines already dispatch the registered effect natively. It requests no
 network or filesystem permission.
 
-Restart after enabling, disabling, or updating this bridge. Its small
-inter-mod wrapper is installed into the voxel provider's exported table and
-cannot be safely swapped by the developer F5 hot-reload path.
+Restart after enabling or disabling a whole mod. Developer F5 entry reloads
+reuse owned process-global dispatchers and refresh their generation-local
+callbacks instead of stacking movement or camera wrappers.
 
 ## How badge-free HMs work
 
@@ -285,28 +374,36 @@ Use the `dev` branch of
 ```powershell
 python tools/modkit.py validate C:\path\to\voxel_run_bridge --strict --base fixture
 python tools/modkit.py lint C:\path\to\voxel_run_bridge
-python tools/modkit.py pack C:\path\to\voxel_run_bridge -o C:\path\to\dist\SCOTTS_TWEAKS-0.4.3.zip --base fixture
+python tools/modkit.py pack C:\path\to\voxel_run_bridge -o C:\path\to\dist\SCOTTS_TWEAKS-0.5.0.zip --base fixture
 ```
 
-The archive is intentionally flat: `manifest.json` and `main.lua` are at its
-root, which Gen1Recomp's importer accepts directly.
+The archive keeps `manifest.json`, `main.lua`, `LICENSE`, notices, and the
+`modules/` directory at its root. Gen1Recomp's importer mounts those paths
+unchanged; development tests and unrelated workspace files are excluded.
 
-Version 0.4.3 is configured for Gen1Recomp's built-in GitHub update checks via
+Version 0.5.0 is configured for Gen1Recomp's built-in GitHub update checks via
 `ScottExplores/gen1recomp-voxel-run-bridge`.
 
-The download is deliberately named `SCOTTS_TWEAKS-0.4.3.zip` to match the
+The download is deliberately named `SCOTTS_TWEAKS-0.5.0.zip` to match the
 name players see in the mod list. Its internal ID remains `voxel_run_bridge`
 so existing installs and saved settings update in place rather than appearing
 as a second mod.
 
 ## Provenance
 
-This implementation was written against Gen1Recomp's documented movement
-and rendering contracts and the voxel mods' exported module interfaces. The
+The original Scott's Tweaks code was written against Gen1Recomp's documented
+movement/rendering contracts and voxel mods' exported module interfaces. The
 Gapped Land plane is generated by Scott's Tweaks and includes no copied
 renderer code, textures, or horizon art. It does not copy the existing
 `thorkdev/gen1recomp-running-shoes` implementation, whose repository currently
 does not declare a software license. That project is credited for publicly
 demonstrating and documenting the first-person movement gap.
+
+Version 0.5.0 also incorporates Scott-owned MIT modules from Trainer Forfeit
+0.3.0, Oak's Spare Starter 0.1.1, Scott Mod, and Scott's Sprite Menu. Their
+copyright notices and MIT terms are preserved in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). The physical-Thor presenter
+is new public code; no source from the private/upstream-derived Dual Screen or
+Battle Art packages is included.
 
 No ROM, extracted graphics, save data, or other game content is included.

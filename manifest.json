@@ -1,7 +1,7 @@
 {
   "id": "voxel_run_bridge",
   "name": "Scott's Tweaks",
-  "version": "0.4.3",
+  "version": "0.5.0",
   "github": "ScottExplores/gen1recomp-voxel-run-bridge",
   "api": 2,
   "entry": "main.lua",
@@ -12,6 +12,10 @@
   "dependencies": [],
   "optional_dependencies": [
     "running_shoes",
+    "trainer_forfeit",
+    "oak_spare_starter",
+    "random_starters",
+    "gen1recomp_ds",
     "RUN_MODE",
     "free_fly",
     "POKEMON_FINAL",
@@ -26,5 +30,5 @@
   "experimental": false,
   "affects_link": false,
   "permissions": ["engine_internals"],
-  "description": "Scott's gameplay tweaks: modern bag pockets, shop counts, EXP modes, Trade Stone, gapped land, badge-free field moves, voxel running, and a clear first-person Free Fly view."
+  "description": "Scott's organized gameplay menu: modern bag pockets, EXP modes, Trade Stone, trainer forfeits and rematches, Oak's spare starter, B-button running with light head bob, badge-free field moves, gapped land, and physical-Thor dual-screen control."
 }
