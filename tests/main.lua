@@ -332,7 +332,7 @@ eq(pokemonFinal.seen.walk, 2,
 eq(pokemonFinal.FreeMove.WALK, 1,
   "Pokemon Final walk speed is restored after tick")
 eq(speedCalls, 1, "Pokemon Final hook call count")
-eq(pokemonFinal.lib._voxelRunBridgeHook.version, "0.4.3",
+eq(pokemonFinal.lib._voxelRunBridgeHook.version, "0.5.0",
   "Pokemon Final bridge marker reports release version")
 
 -- Early Pokemon Final packages could start the disk-cache job successfully
@@ -365,7 +365,7 @@ eq(type(buggyCacheScreen._scottsTweaksCacheStartHook), "table",
   "cache screen receives an ownership marker")
 eq(buggyCacheScreen._scottsTweaksCacheStartHook.owner, "voxel_run_bridge",
   "cache screen marker identifies its owner")
-eq(buggyCacheScreen._scottsTweaksCacheStartHook.version, "0.4.3",
+eq(buggyCacheScreen._scottsTweaksCacheStartHook.version, "0.5.0",
   "cache screen marker identifies its release")
 eq(buggyCacheScreen._scottsTweaksCacheStartHook.original, buggyCacheStart,
   "cache screen marker retains the exact original")
@@ -626,7 +626,7 @@ eq(manifest:match('"id"%s*:%s*"([^"]+)"'), "voxel_run_bridge",
   "stable manifest id")
 eq(manifest:match('"name"%s*:%s*"([^"]+)"'), "Scott's Tweaks",
   "player-facing manifest name")
-eq(manifest:match('"version"%s*:%s*"([^"]+)"'), "0.4.3",
+eq(manifest:match('"version"%s*:%s*"([^"]+)"'), "0.5.0",
   "manifest patch version")
 
 -- Scott's Tweaks exposes the badge bypass as an ordinary, default-on option.

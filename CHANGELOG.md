@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.5.0 - 2026-08-16
+
+- Added one categorized **START > MOD MENUS > SCOTT'S TWEAKS** surface with
+  Bag & Experience, Trainers & Oak, Running, Field Moves, and Display & Thor
+  pages. All 16 values remain in one Mod Manager schema and both menus write
+  the same live/save option buckets.
+- Incorporated the MIT Trainer Forfeit & Rematches 0.3.0 implementation under
+  the namespaced `trainerForfeit` export: ¥200 ordinary-trainer forfeits,
+  reward-safe ordinary and eight-Gym-Leader rematches, offline authored
+  journey dialogue, and optional gentle repeat-battle growth. Paid RUN and
+  rematches are independent toggles; disabling one does not disable the other.
+- Incorporated the MIT Oak's Spare Starter 0.1.1 implementation under the
+  namespaced `oakSpareStarter` export. Red/Blue can claim the one remaining
+  lab starter once after the rival battle; Yellow remains unchanged.
+- Added Scott's always-available held-B running producer, defaulting to 1.5X,
+  without a story unlock. Bikes, surfing, scripted movement, and input locks
+  remain on their native paths.
+- Added an original, very light distance-based first-person running bob,
+  defaulting on at 0.5X. It samples actual movement and changes only a camera
+  proxy for that frame; player lift, collision, and world state are untouched.
+- Made the bob and voxel-speed wrappers persistent owned dispatchers. A second
+  real Loader entry refreshes generation-local callbacks without growing the
+  wrapper chain or applying the 1.5X multiplier twice.
+- Delegated only the corresponding integrated feature when an enabled
+  `trainer_forfeit`, `oak_spare_starter`, or `running_shoes` provider is
+  present. `random_starters` disables only Oak's lab feature; every unrelated
+  Scott's Tweaks feature remains available. Hot-reload transitions suspend
+  Tweaks' retained Trainer/Running dispatchers and resume them without stacking
+  when the standalone provider is removed.
+- Added a one-time, per-save, per-feature, non-destructive import for legacy trainer
+  settings/memory, Oak's claim, distinctive 0.x running settings, Scott Mod
+  run settings, and `gen1recomp_ds.enabled`. Explicit new choices win and no
+  legacy namespace is erased. A feature stays pending while its old provider
+  remains active, then imports its final legacy state after removal.
+- Added the default-off **THOR SECOND SCREEN** authority for the new original
+  physical-Thor presenter. It stays single-screen when no real lower display
+  is attached and includes no private upstream-derived Dual Screen or Battle
+  Art implementation.
+- Preserved the stable `voxel_run_bridge` ID and
+  `ScottExplores/gen1recomp-voxel-run-bridge` updater address.
+- Added `THIRD_PARTY_NOTICES.md` with the retained MIT copyrights and terms
+  for incorporated Scott-owned releases.
+- Expanded ROM-free unit, migration, real API-2 Loader, and four-entry hot
+  reload coverage across Gen1Recomp 0.1.88 and 0.1.96 fixtures.
+
 ## 0.4.3 - 2026-08-16
 
 - Renamed the player-facing download to `SCOTTS_TWEAKS-0.4.3.zip` so the ZIP

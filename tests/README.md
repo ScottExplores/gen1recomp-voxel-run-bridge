@@ -54,12 +54,58 @@ Run the broad suite from the repository root with LuaJIT
 directory (`lovec tests`). The `.modkitignore` file keeps this directory out
 of the player-facing ZIP.
 
+`consolidated_features.lua` drives the incorporated trainer and Oak modules
+under the `voxel_run_bridge` namespace. It covers the live paid-forfeit off
+switch, ¥200 payment, reward-safe rematch checkpoint marker, namespaced
+exports/state, exact base-talk delegation, standalone-provider delegation,
+Random Starters owning only Oak's Lab, paid-forfeit/rematch independence, and
+the leased raw-Overworld dispatcher across a two-entry hot reload.
+
+`migrations.lua` verifies the per-save one-time import, deep-copied trainer
+memory, explicit-new-value precedence, live/save option mirroring, one-write
+persistence, idempotence, preservation of every legacy namespace, and F5's
+save-first/fresh-Loader reconciliation with standard live option events. Both
+focused suites run under Lua 5.1 and LuaJIT:
+
+```powershell
+lua tests\consolidated_features.lua
+luajit tests\consolidated_features.lua
+lua tests\migrations.lua
+luajit tests\migrations.lua
+```
+
+`running_hot_reload.lua` performs four real API-2 Loader entry loads while the
+same voxel `FreeMove` and `FirstPerson` tables remain alive. It proves the bob
+callback refreshes, wrapper identities remain stable, the provider tick is
+called once, the 1.5X multiplier is applied once, temporary speed is restored,
+multi-returns survive, camera lift never mutates player state, and enabling
+then removing standalone Running Shoes suspends and resumes the same dispatcher:
+
+```powershell
+luajit tests\running_hot_reload.lua <mod-root> <engine-root>
+```
+
+`thor_dual_screen.lua` is the focused clean-presenter suite. It checks the
+public render/display seams in both 0.1.88 and 0.1.96, stock single-screen
+fallthrough, physical lower-display routing, frozen upper/live lower menu
+composition, scaling, fault recovery, legacy `gen1recomp_ds` delegation,
+same-facade identity, and two real API-2 Loader entries. Select each fixture
+as the live Loader once; every invocation contains 178 checks and runs under
+both LuaJIT and Lua 5.1:
+
+```powershell
+luajit tests\thor_dual_screen.lua <mod-root> <engine-.88> <engine-.96> <engine-.88>
+luajit tests\thor_dual_screen.lua <mod-root> <engine-.88> <engine-.96> <engine-.96>
+lua tests\thor_dual_screen.lua <mod-root> <engine-.88> <engine-.96> <engine-.88>
+lua tests\thor_dual_screen.lua <mod-root> <engine-.88> <engine-.96> <engine-.96>
+```
+
 `full_load.lua` additionally installs the package through Gen1Recomp's real
 API-2 loader, verifies the stable ID/new display name, the new content and
 settings rows, checks the gapped-land compatibility status, invokes both HM
 hooks alongside Free Fly and a Pokemon Final provider, and runs the real
 priority-sorted HUD chain to prove only the cockpit picture is suppressed.
-Its current matrix contains 83 checks per supported engine fixture. Pass `compat` for the
+Its current matrix contains 156 checks per supported engine fixture. Pass `compat` for the
 v0.1.75 fixture and `native` for v0.1.83+ to assert the exact Trade Stone
 dispatcher. Run it from an engine
 checkout with:

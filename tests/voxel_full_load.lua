@@ -111,6 +111,15 @@ local files = {
   [shoesPrefix .. "manifest.json"] = shoesManifest,
   [shoesPrefix .. "main.lua"] = shoesEntry,
 }
+for _, relative in ipairs({
+  "modules/settings.lua", "modules/migrations.lua",
+  "modules/trainer_forfeit.lua", "modules/trainer_dialogue.lua",
+  "modules/oak_spare_starter.lua", "modules/running.lua",
+  "modules/option_screen.lua", "modules/tweaks_menu.lua",
+  "modules/thor_dual_screen.lua",
+}) do
+  files[scottPrefix .. relative] = read(relative)
+end
 
 local expectedFreeFlyVersion
 if freeFlyRoot then

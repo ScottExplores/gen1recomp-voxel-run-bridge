@@ -41,12 +41,32 @@ local TRADE_STONE_ID = "SCOTTS_TRADE_STONE"
 local TRADE_STONE_EFFECT = "SCOTTS_TRADE_STONE_EFFECT"
 local GAPPED_LAND_RENDER_MARKER = "_scottsTweaksGappedLandRenderHook"
 local GAPPED_LAND_INVALIDATE_MARKER = "_scottsTweaksGappedLandInvalidateHook"
+local VOXEL_BRIDGE_MARKER = "_scottsTweaksVoxelRunBridge"
 local GAPPED_LAND_RADIUS = 1024
 local GAPPED_LAND_CELL = 64
 -- Native terrain and Flora's detailed apron occupy roughly y=-2..-37.
 -- Keep the broad procedural ground below both so it only fills the void.
 local GAPPED_LAND_Y = -40
-local RELEASE_VERSION = "0.4.3"
+local RELEASE_VERSION = "0.5.0"
+
+local OPTION_DEFAULTS = {
+  hm_without_badges = true,
+  free_fly_without_badges = true,
+  free_fly_cockpit = false,
+  gapped_land = true,
+  bag_pockets = true,
+  experience_mode = "vanilla",
+  trainer_forfeit_enabled = true,
+  trainer_rematches = true,
+  trainer_adaptive_dialogue = true,
+  trainer_growth = "gentle",
+  oak_spare_starter = true,
+  running_enabled = true,
+  running_speed = 1.5,
+  running_view_bob = true,
+  running_bob_intensity = 0.5,
+  dual_screen = false,
+}
 
 local TRADE_EVOLUTIONS = {
   KADABRA = "ALAKAZAM",
@@ -88,6 +108,114 @@ local function traceback(err)
   return tostring(err)
 end
 
+local findMod
+
+-- Read this mod's modules through the API-2 path-scoped reader so the same
+-- package works from a folder or a ZIP mount. No global package.path entry is
+-- needed and another mod cannot shadow these files.
+local function loadOwn(mod, relative)
+  if type(mod.read) ~= "function" then
+    return nil, "path-scoped mod reader unavailable"
+  end
+  local okRead, source = pcall(mod.read, mod, relative)
+  if not okRead or type(source) ~= "string" then
+    return nil, okRead and (relative .. " is missing") or source
+  end
+  local compile = loadstring or load
+  local chunk, err = compile(source,
+    "@" .. tostring(mod.path or mod.id) .. "/" .. relative)
+  if not chunk then return nil, err end
+  if setfenv and getfenv then setfenv(chunk, getfenv(1)) end
+  local okLoad, result = xpcall(chunk, traceback)
+  if not okLoad then return nil, result end
+  return result
+end
+
+local function installFeatureModules(mod)
+  if type(mod.read) ~= "function" then return end
+
+  local Settings, settingsErr = loadOwn(mod, "modules/settings.lua")
+  if type(Settings) ~= "table" or type(Settings.new) ~= "function" then
+    mod.exports.moduleErrors = mod.exports.moduleErrors or {}
+    mod.exports.moduleErrors.settings = tostring(settingsErr or "invalid module")
+    if mod.log and mod.log.warn then
+      mod.log:warn("Scott's Tweaks modules unavailable: %s",
+        tostring(settingsErr or "invalid settings module"))
+    end
+    return
+  end
+
+  local settings = Settings.new(mod, OPTION_DEFAULTS)
+  local context = {
+    releaseVersion = RELEASE_VERSION,
+    defaults = OPTION_DEFAULTS,
+    settings = settings,
+    loadOwn = function(relative) return loadOwn(mod, relative) end,
+    findMod = function(id) return findMod(mod, id) end,
+  }
+  mod.exports.settings = {
+    get = function(key, fallback) return settings:get(key, fallback) end,
+    set = function(game, key, value) return settings:set(game, key, value) end,
+    defaults = OPTION_DEFAULTS,
+  }
+
+  local function install(relative, exportKey, optional)
+    local installer, loadErr = loadOwn(mod, relative)
+    if type(installer) ~= "function" then
+      if not optional then
+        mod.exports.moduleErrors = mod.exports.moduleErrors or {}
+        mod.exports.moduleErrors[exportKey] = tostring(loadErr or "invalid installer")
+        if mod.log and mod.log.warn then
+          mod.log:warn("%s unavailable: %s", exportKey,
+            tostring(loadErr or "invalid installer"))
+        end
+      end
+      return nil
+    end
+    local ok, result = xpcall(function()
+      return installer(mod, context)
+    end, traceback)
+    if not ok then
+      mod.exports.moduleErrors = mod.exports.moduleErrors or {}
+      mod.exports.moduleErrors[exportKey] = tostring(result)
+      if mod.log and mod.log.warn then
+        mod.log:warn("%s failed safely: %s", exportKey, tostring(result))
+      end
+      return nil
+    end
+    return result
+  end
+
+  install("modules/migrations.lua", "migrations")
+  install("modules/trainer_forfeit.lua", "trainerForfeit")
+  install("modules/oak_spare_starter.lua", "oakSpareStarter")
+  install("modules/running.lua", "running")
+  -- The physical-Thor presenter publishes a narrow table API rather than an
+  -- installer chunk. Load it once after the central dual_screen option exists.
+  local Thor, thorLoadErr = loadOwn(mod, "modules/thor_dual_screen.lua")
+  if type(Thor) ~= "table" or type(Thor.install) ~= "function" then
+    mod.exports.moduleErrors = mod.exports.moduleErrors or {}
+    mod.exports.moduleErrors.thorDualScreen = tostring(
+      thorLoadErr or "invalid Thor presenter module")
+    if mod.log and mod.log.warn then
+      mod.log:warn("thorDualScreen unavailable: %s",
+        tostring(thorLoadErr or "invalid Thor presenter module"))
+    end
+  else
+    local okThor, thorResult = xpcall(function()
+      return Thor.install(mod, { optionKey = "dual_screen" })
+    end, traceback)
+    if not okThor then
+      mod.exports.moduleErrors = mod.exports.moduleErrors or {}
+      mod.exports.moduleErrors.thorDualScreen = tostring(thorResult)
+      if mod.log and mod.log.warn then
+        mod.log:warn("thorDualScreen failed safely: %s", tostring(thorResult))
+      end
+    end
+  end
+  install("modules/tweaks_menu.lua", "tweaksMenu")
+end
+
 local function finiteNumber(value, fallback)
   value = tonumber(value)
   if not value or value ~= value or value == math.huge or value == -math.huge then
@@ -102,7 +230,7 @@ local function runningShoesOwnsFreeMove(FreeMove)
     and type(rawget(FreeMove, "runningShoesInner")) == "function"
 end
 
-local function findMod(mod, id)
+findMod = function(mod, id)
   if type(mod.find) ~= "function" then return nil end
   local ok, found = pcall(mod.find, id)
   if not ok then ok, found = pcall(mod.find, mod, id) end
@@ -355,6 +483,79 @@ local function defineOptions(mod)
         { "EXP.SHARE", "share" },
       },
       help = "VANILLA keeps normal rules. LEAD ONLY rewards the active Pokemon. PARTY ALL gives full EXP to every healthy party member. EXP.SHARE permanently unlocks its bag item.",
+    },
+    {
+      key = "trainer_forfeit_enabled",
+      type = "toggle",
+      label = "PAID FORFEIT",
+      default = true,
+      help = "Offer a safe ¥200 RUN choice in ordinary trainer battles. A separate Trainer Forfeit mod remains the owner when it is enabled.",
+    },
+    {
+      key = "trainer_rematches",
+      type = "toggle",
+      label = "TRAINER REMATCHES",
+      default = true,
+      help = "Offer reward-safe rematches after ordinary trainers and all eight Gym Leaders are fully completed.",
+    },
+    {
+      key = "trainer_adaptive_dialogue",
+      type = "toggle",
+      label = "JOURNEY DIALOGUE",
+      default = true,
+      help = "Use offline authored rematch lines chosen from the current journey and prior results.",
+    },
+    {
+      key = "trainer_growth",
+      type = "choice",
+      label = "TRAINER GROWTH",
+      default = "gentle",
+      choices = { { "OFF", "off" }, { "GENTLE", "gentle" } },
+      help = "GENTLE lets repeat challengers improve modestly without changing their species or moves.",
+    },
+    {
+      key = "oak_spare_starter",
+      type = "toggle",
+      label = "OAK SPARE STARTER",
+      default = true,
+      help = "After the lab rival battle, let Oak's one remaining ball be claimed once. Random Starters owns the lab when enabled.",
+    },
+    {
+      key = "running_enabled",
+      type = "toggle",
+      label = "B-BUTTON RUN",
+      default = true,
+      help = "Hold B while walking to run immediately. Bikes, surfing, scripts and locked movement keep their normal speed.",
+    },
+    {
+      key = "running_speed",
+      type = "choice",
+      label = "RUN SPEED",
+      default = 1.5,
+      choices = { { "1.25X", 1.25 }, { "1.5X", 1.5 }, { "2X", 2 } },
+      help = "Choose the held-B walking multiplier.",
+    },
+    {
+      key = "running_view_bob",
+      type = "toggle",
+      label = "RUN HEAD BOB",
+      default = true,
+      help = "Add a very light, distance-based first-person camera motion while running.",
+    },
+    {
+      key = "running_bob_intensity",
+      type = "choice",
+      label = "BOB INTENSITY",
+      default = 0.5,
+      choices = { { "0.25X", 0.25 }, { "0.5X", 0.5 }, { "0.75X", 0.75 }, { "1X", 1 } },
+      help = "Scale the subtle running camera motion. The default is 0.5X.",
+    },
+    {
+      key = "dual_screen",
+      type = "toggle",
+      label = "THOR SECOND SCREEN",
+      default = false,
+      help = "Use the physical AYN Thor lower display for menus when it is attached. Single-screen systems stay unchanged.",
     },
   })
 end
@@ -1642,6 +1843,7 @@ end
 
 return function(mod)
   defineOptions(mod)
+  installFeatureModules(mod)
   -- These are ordinary bag/battle features and must remain available even
   -- when the player is using 2D mode or has no supported voxel renderer.
   installInventoryFeatures(mod)
@@ -1676,7 +1878,10 @@ return function(mod)
     return
   end
 
-  if lib._voxelRunBridgeHook then
+  local exportedBridge = lib._voxelRunBridgeHook
+  if exportedBridge and not (type(exportedBridge) == "table"
+      and exportedBridge.owner == mod.id
+      and exportedBridge.dispatcher == true) then
     mod.exports.status = {
       active = false,
       voxel = voxelId,
@@ -1700,6 +1905,28 @@ return function(mod)
     return
   end
 
+  local persistentBridge = rawget(FreeMove, VOXEL_BRIDGE_MARKER)
+  if type(persistentBridge) == "table"
+      and persistentBridge.owner == mod.id
+      and persistentBridge.dispatcher == true then
+    persistentBridge.mod = mod
+    persistentBridge.voxel = voxelId
+    persistentBridge.version = RELEASE_VERSION
+    rawset(lib, "_voxelRunBridgeHook", persistentBridge)
+    mod.exports.status = {
+      active = true, voxel = voxelId, mode = "movement.speed",
+      reason = "dispatcher_refreshed",
+    }
+    mod.log:info("%s movement.speed dispatcher refreshed", voxelId)
+    return
+  elseif persistentBridge then
+    mod.exports.status = {
+      active = false, voxel = voxelId, reason = "bridge_hook_owned",
+    }
+    mod.log:warn("%s FreeMove bridge is owned by another adapter", voxelId)
+    return
+  end
+
   -- Running Shoes 1.7+ publishes its native voxel wrapper on FreeMove
   -- itself, not on the exported library table used by older integrations.
   -- Trust the paired ownership markers even when another mod subsequently
@@ -1717,8 +1944,11 @@ return function(mod)
   end
 
   local innerTick = FreeMove.tick
-  local warnedSpeedError = false
-  local delegatedToNativeShoes = false
+  local bridge = {
+    owner = mod.id, version = RELEASE_VERSION, dispatcher = true,
+    original = innerTick, mod = mod, voxel = voxelId,
+    warnedSpeedError = false, delegatedToNativeShoes = false,
+  }
 
   local function bridgedTick(state)
     -- MadeinTaly Running Shoes 1.7 attaches its native wrapper lazily from
@@ -1727,25 +1957,26 @@ return function(mod)
     -- already scaled FreeMove; become a pass-through before sampling the
     -- movement.speed hook or the same run would be multiplied twice.
     if runningShoesOwnsFreeMove(FreeMove) then
-      if not delegatedToNativeShoes then
-        delegatedToNativeShoes = true
-        mod.exports.status = {
+      if not bridge.delegatedToNativeShoes then
+        bridge.delegatedToNativeShoes = true
+        bridge.mod.exports.status = {
           active = false,
-          voxel = voxelId,
+          voxel = bridge.voxel,
           reason = "running_shoes_has_native_voxel_support",
         }
-        mod.log:info("%s FreeMove gained native Running Shoes support; bridge is idle",
-          voxelId)
+        bridge.mod.log:info("%s FreeMove gained native Running Shoes support; bridge is idle",
+          bridge.voxel)
       end
       return innerTick(state)
-    elseif delegatedToNativeShoes then
-      delegatedToNativeShoes = false
-      mod.exports.status = {
+    elseif bridge.delegatedToNativeShoes then
+      bridge.delegatedToNativeShoes = false
+      bridge.mod.exports.status = {
         active = true,
-        voxel = voxelId,
+        voxel = bridge.voxel,
         mode = "movement.speed",
       }
-      mod.log:info("%s native Running Shoes wrapper left; bridge resumed", voxelId)
+      bridge.mod.log:info("%s native Running Shoes wrapper left; bridge resumed",
+        bridge.voxel)
     end
 
     local player = state and state.player
@@ -1777,9 +2008,9 @@ return function(mod)
     end)
 
     if not okSpeed then
-      if not warnedSpeedError then
-        warnedSpeedError = true
-        mod.log:warn("movement.speed bridge failed; using voxel default: %s",
+      if not bridge.warnedSpeedError then
+        bridge.warnedSpeedError = true
+        bridge.mod.log:warn("movement.speed bridge failed; using voxel default: %s",
           tostring(speedErr))
       end
       return innerTick(state)
@@ -1812,9 +2043,7 @@ return function(mod)
   -- validation and logging above them avoids leaving half an adapter behind
   -- if setup fails.
   rawset(FreeMove, "tick", bridgedTick)
-  rawset(lib, "_voxelRunBridgeHook", {
-    owner = mod.id,
-    version = RELEASE_VERSION,
-    original = innerTick,
-  })
+  bridge.wrapper = bridgedTick
+  rawset(FreeMove, VOXEL_BRIDGE_MARKER, bridge)
+  rawset(lib, "_voxelRunBridgeHook", bridge)
 end

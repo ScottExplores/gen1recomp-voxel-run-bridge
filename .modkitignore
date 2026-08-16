@@ -5,6 +5,10 @@ tests/voxel_full_load.lua
 tests/cache_compat_full_load.lua
 tests/inventory_ui.lua
 tests/experience_trade.lua
+tests/consolidated_features.lua
+tests/migrations.lua
+tests/running_hot_reload.lua
+tests/thor_dual_screen.lua
 tests/README.md
 docs/MODDING_GUIDE.md
 dist/voxel_run_bridge-0.2.0.zip

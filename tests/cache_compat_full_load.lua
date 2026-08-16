@@ -84,6 +84,15 @@ local files = {
   [pokemonPrefix .. "lib/ScottPrecacheScreen.lua"] =
     readFrom(pokemonRoot, "lib/ScottPrecacheScreen.lua"),
 }
+for _, relative in ipairs({
+  "modules/settings.lua", "modules/migrations.lua",
+  "modules/trainer_forfeit.lua", "modules/trainer_dialogue.lua",
+  "modules/oak_spare_starter.lua", "modules/running.lua",
+  "modules/option_screen.lua", "modules/tweaks_menu.lua",
+  "modules/thor_dual_screen.lua",
+}) do
+  files[scottPrefix .. relative] = readFrom(sourceRoot, relative)
+end
 
 local run = T.sdk.loadMod("mods/voxel_run_bridge", {
   data = require("tests.modkit.fixtures").fresh(),
