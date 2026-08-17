@@ -141,12 +141,13 @@ FreeMove providers. It does not grant shoes or choose a run multiplier.
 
 ## Inventory and experience composition
 
-Scott's Tweaks 0.6.0 uses the API-2 `screens` registry as a decorator seam.
+Scott's Tweaks 0.6.1 uses the API-2 `screens` registry as a decorator seam.
 It captures the previously registered `BagMenu` and `ShopMenu` factories,
 constructs them unchanged, then decorates the returned list/menu instances.
 A later total-conversion screen override can still replace Scott's layer.
 The pocket view filters `Bag.order(save)` locally and writes SELECT swaps back
-by item ID; it never replaces `Bag.order`, inventory tables, or capacity.
+by item ID; it never replaces `Bag.order`, inventory tables, or capacity. Its
+presentation order matches Gold: Items, Balls, Key Items, then TM/HM.
 
 Gen 1 extracted items do not carry Gen 2 pocket metadata, even on newer
 Gen1Recomp builds. A compatible classifier therefore uses the registered
@@ -171,7 +172,7 @@ never patched, which preserves ordinary link evolutions and link fingerprints.
 
 ## Private optional ROM interfaces
 
-Scott's Tweaks 0.6.0 demonstrates a ROM-safe way to offer an authentic Gold
+Scott's Tweaks 0.6.1 demonstrates a ROM-safe way to offer an authentic Gold
 interface without distributing Nintendo data. Gen1Recomp 0.1.96 declares the
 clean Gold ROM as an optional per-mod import. The mod reads it only from its
 private `baseroms` directory, validates the exact supported dump, and decodes

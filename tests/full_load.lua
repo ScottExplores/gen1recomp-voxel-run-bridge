@@ -168,8 +168,8 @@ T.eq(run.mod and run.mod.manifest.id, "voxel_run_bridge",
   "stable updater identity is retained")
 T.eq(run.mod and run.mod.manifest.name, "Scott's Tweaks",
   "new display name is loaded")
-T.eq(run.mod and run.mod.manifest.version, "0.6.0",
-  "loader selected version 0.6.0")
+T.eq(run.mod and run.mod.manifest.version, "0.6.1",
+  "loader selected version 0.6.1")
 T.eq(run.mod and run.mod.manifest.affects_link, false,
   "inventory conveniences do not alter link rules")
 local thorApi = run.loader.exports.voxel_run_bridge.thorDualScreen
@@ -225,8 +225,13 @@ for _, row in ipairs(schema) do
 end
 T.eq(bagPocketsOption and bagPocketsOption.type, "toggle",
   "Bag Pockets uses a toggle")
+T.eq(bagPocketsOption and bagPocketsOption.label, "CLASSIC BAG POCKETS",
+  "schema distinguishes classic pockets from required Gold Pack pockets")
 T.eq(bagPocketsOption and bagPocketsOption.default, true,
   "Bag Pockets defaults on")
+T.check(type(bagPocketsOption and bagPocketsOption.help) == "string"
+    and bagPocketsOption.help:find("Gold Pack", 1, true) ~= nil,
+  "schema explains that Gold Pack keeps its pocket projection")
 T.eq(experienceOption and experienceOption.type, "choice",
   "EXP mode uses a choice")
 T.eq(experienceOption and experienceOption.default, "vanilla",
@@ -353,6 +358,21 @@ local hasGen2ImportApi = pcall(require, "src.import.RomManifest")
 T.eq(organized.gen2_menus.value(),
   hasGen2ImportApi and "IMPORT GOLD" or "NEEDS 0.1.96",
   "Gold interface reports the actionable engine/import state")
+run.loader.modOptions.voxel_run_bridge =
+  run.loader.modOptions.voxel_run_bridge or {}
+run.loader.modOptions.voxel_run_bridge.gen2_menus = true
+local goldInventoryMenu = buildScreen(menuApi.screenIds.inventory)
+local goldInventoryRows = {}
+for _, row in ipairs(goldInventoryMenu.rows or {}) do
+  local key = type(row.id) == "string"
+    and row.id:match("^voxel_run_bridge:(.+)$") or nil
+  if key then goldInventoryRows[key] = row end
+end
+T.eq(goldInventoryRows.bag_pockets, nil,
+  "organized menu hides redundant Classic Bag Pockets while Gold is enabled")
+T.check(type(goldInventoryRows.experience_mode) == "table",
+  "organized Gold inventory menu retains EXP mode")
+run.loader.modOptions.voxel_run_bridge.gen2_menus = false
 
 local writes = 0
 screenGame.mods = run.loader
@@ -432,13 +452,28 @@ T.eq(bagScreen.title, "< ITEMS >",
   "real BagMenu opens in the Items pocket")
 T.eq(bagScreen.items[1] and bagScreen.items[1].value,
   "SCOTTS_TRADE_STONE", "real BagMenu shows Trade Stone in Items")
-pressed = "left"
+pressed = "right"
+bagScreen:update(0)
+pressed = nil
+T.eq(bagScreen.title, "< BALLS >",
+  "real BagMenu follows Gold order from Items to Balls")
+pressed = "right"
 bagScreen:update(0)
 pressed = nil
 T.eq(bagScreen.title, "< KEY ITEMS >",
-  "real BagMenu Left wraps to Key Items")
+  "real BagMenu follows Gold order from Balls to Key Items")
 T.eq(bagScreen.items[1] and bagScreen.items[1].value,
   "SCOTTS_EXP_SHARE", "real BagMenu shows EXP.SHARE in Key Items")
+pressed = "right"
+bagScreen:update(0)
+pressed = nil
+T.eq(bagScreen.title, "< TM/HM >",
+  "real BagMenu follows Gold order from Key Items to TM/HM")
+pressed = "right"
+bagScreen:update(0)
+pressed = nil
+T.eq(bagScreen.title, "< ITEMS >",
+  "real BagMenu wraps from TM/HM to Items")
 
 local shopScreen = buildScreen("ShopMenu", {}, function() end)
 stack:push(shopScreen)
@@ -585,7 +620,7 @@ T.check(type(pokemonFinalExports) == "table",
   "Pokemon Final test-double exports are published")
 T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.owner, "voxel_run_bridge",
   "Pokemon Final FreeMove receives Scott's bridge marker")
-T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.6.0",
+T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.6.1",
   "Pokemon Final bridge marker carries the update version")
 T.eq(type(exported.hmWithoutBadges), "function",
   "live HM option accessor is published")

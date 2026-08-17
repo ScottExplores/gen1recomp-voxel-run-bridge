@@ -48,7 +48,7 @@ local GAPPED_LAND_CELL = 64
 -- Native terrain and Flora's detailed apron occupy roughly y=-2..-37.
 -- Keep the broad procedural ground below both so it only fills the void.
 local GAPPED_LAND_Y = -40
-local RELEASE_VERSION = "0.6.0"
+local RELEASE_VERSION = "0.6.1"
 
 local OPTION_DEFAULTS = {
   hm_without_badges = true,
@@ -80,8 +80,8 @@ local TRADE_EVOLUTIONS = {
 local BAG_POCKETS = {
   { id = "items", label = "ITEMS" },
   { id = "balls", label = "BALLS" },
-  { id = "machines", label = "TM/HM" },
   { id = "key", label = "KEY ITEMS" },
+  { id = "machines", label = "TM/HM" },
 }
 
 local GAPPED_LAND_VOXEL_IDS = {
@@ -490,9 +490,9 @@ local function defineOptions(mod)
     {
       key = BAG_POCKETS_OPTION,
       type = "toggle",
-      label = "BAG POCKETS",
+      label = "CLASSIC BAG POCKETS",
       default = true,
-      help = "Organize the Gen 1 bag into ITEMS, BALLS, TM/HM and KEY ITEMS. Press Left or Right in the bag to change pockets.",
+      help = "Organize the classic Red bag into Gold-order ITEMS, BALLS, KEY ITEMS and TM/HM pockets. Use D-pad Left or Right to change pockets. Gold Pack keeps this projection active whenever GEN 2 INTERFACE is on.",
     },
     {
       key = GEN2_MENUS_OPTION,
@@ -784,7 +784,7 @@ local function installInventoryFeatures(mod)
   local pocketStatus = {
     active = true,
     mode = "screen_pockets",
-    pockets = { "items", "balls", "machines", "key" },
+    pockets = { "items", "balls", "key", "machines" },
   }
   local shopStatus = {
     active = true,

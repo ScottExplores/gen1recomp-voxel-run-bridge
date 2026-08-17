@@ -534,6 +534,41 @@ check(drewPackLabel, "Gold Start presents native ITEM callback as PACK")
 eq(rows[3].label, "ITEM", "PACK presentation does not mutate native row")
 eq(on.controller.loads, 1, "draw reuses loaded payload")
 
+-- Released Start providers use ITEM, ITEMS, or PACK for the same native bag
+-- callback.  Every spelling keeps its descriptor identity, presents as PACK,
+-- and receives Pokegear immediately after it.
+for _, nativeLabel in ipairs({ "ITEMS", "PACK" }) do
+  local descriptor = {
+    id = nativeLabel:lower(),
+    label = nativeLabel,
+    onSelect = function() return nativeLabel end,
+  }
+  local aliasRows = invokeStartHook(on, {
+    descriptor,
+    { id = "mods", label = "MODS", onSelect = function() end },
+  })
+  eq(aliasRows[1], descriptor,
+    nativeLabel .. " descriptor identity remains native")
+  eq(aliasRows[2].label, "POKéGEAR",
+    "Pokegear follows native " .. nativeLabel)
+  on.game.startItems = aliasRows
+  on.game.startIndex = 1
+  local aliasStart = on.screens:get("StartMenu").new(on.game)
+  local beforeAliasDraw = #calls.chrome
+  aliasStart:draw()
+  local renderedPack = false
+  for index = beforeAliasDraw + 1, #calls.chrome do
+    local call = calls.chrome[index]
+    if call.name == "print" and call.args[1] == "PACK" then
+      renderedPack = true
+      break
+    end
+  end
+  check(renderedPack, nativeLabel .. " is rendered as PACK")
+  eq(aliasRows[1].label, nativeLabel,
+    nativeLabel .. " label is not mutated")
+end
+
 local bag = on.screens:get("BagMenu").new(on.game)
 check(type(rawget(bag, "_scottsTweaksGoldPackDraw")) == "table",
   "Bag has an instance draw marker for Modern UI fail-open")
@@ -553,7 +588,12 @@ bag:draw()
 eq(calls.pack[#calls.pack].pocket, "BALL", "Balls pocket maps to Gold BALL")
 bag._scottsTweaksPocketLayer.state.pocket = 3
 bag:draw()
-eq(calls.pack[#calls.pack].pocket, "TM_HM", "machines map to Gold TM_HM")
+eq(calls.pack[#calls.pack].pocket, "KEY_ITEM",
+  "third pocket maps to Gold KEY_ITEM")
+bag._scottsTweaksPocketLayer.state.pocket = 4
+bag:draw()
+eq(calls.pack[#calls.pack].pocket, "TM_HM",
+  "fourth pocket maps to Gold TM_HM")
 local originalBagItems = bag.items
 bag.items = { { value = "TM01", label = "TM01" } }
 bag.index = 1
@@ -573,9 +613,6 @@ check(drewMoveDescription,
 eq(drewItemFallback, false,
   "Gold TM/HM bottom box does not prefer Red's item description")
 bag.items = originalBagItems
-bag._scottsTweaksPocketLayer.state.pocket = 4
-bag:draw()
-eq(calls.pack[#calls.pack].pocket, "KEY_ITEM", "keys map to Gold KEY_ITEM")
 
 -- The custom screen is not a Menu/ListMenu/OptionRows model.  Its engine
 -- Pokegear presenter is private, receives only CLOCK+MAP unlock state, and its

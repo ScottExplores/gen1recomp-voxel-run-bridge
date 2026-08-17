@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.6.1 - 2026-08-16
+
+- Gold Start now presents either native `ITEM` or `ITEMS` rows as **PACK** and
+  places the separate **POKéGEAR** row immediately after `ITEM`, `ITEMS`, or an
+  existing `PACK` row. The original descriptor and Red bag callback remain
+  unchanged.
+- Changed the Red pocket projection and Gold Pack presentation to the exact
+  Gold cycle: **ITEMS -> BALLS -> KEY ITEMS -> TM/HM**. Item use, SELECT
+  reorder, quantities, capacity, and the underlying Red inventory are still
+  authoritative.
+- Renamed the central option to **CLASSIC BAG POCKETS** with explicit D-pad and
+  Gold dependency help. The organized Scott's Tweaks menu hides that redundant
+  row while **GEN 2 INTERFACE** is enabled; Gold Pack continues to keep the
+  required projection active without overwriting the saved classic preference.
+
 ## 0.6.0 - 2026-08-16
 
 - Added the optional **GEN 2 INTERFACE**. It uses the player's privately

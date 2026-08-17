@@ -1,6 +1,6 @@
 # Incorporated MIT components
 
-Scott's Tweaks 0.6.0 incorporates and adapts the following independently
+Scott's Tweaks 0.6.1 incorporates and adapts the following independently
 released MIT components. Their original mod identities remain supported as
 delegated providers; these notices do not imply that a legacy mod must be
 installed beside Scott's Tweaks.
