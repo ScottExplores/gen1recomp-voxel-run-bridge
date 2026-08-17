@@ -149,7 +149,6 @@ for _, relative in ipairs({
   "modules/option_screen.lua",
   "modules/tweaks_menu.lua",
   "modules/thor_dual_screen.lua",
-  "modules/gen2_ui_assets.lua",
   "modules/gen2_ui.lua",
 }) do
   local ok, body = pcall(read, relative)
@@ -168,8 +167,8 @@ T.eq(run.mod and run.mod.manifest.id, "voxel_run_bridge",
   "stable updater identity is retained")
 T.eq(run.mod and run.mod.manifest.name, "Scott's Tweaks",
   "new display name is loaded")
-T.eq(run.mod and run.mod.manifest.version, "0.6.1",
-  "loader selected version 0.6.1")
+T.eq(run.mod and run.mod.manifest.version, "0.7.0",
+  "loader selected version 0.7.0")
 T.eq(run.mod and run.mod.manifest.affects_link, false,
   "inventory conveniences do not alter link rules")
 local thorApi = run.loader.exports.voxel_run_bridge.thorDualScreen
@@ -226,12 +225,12 @@ end
 T.eq(bagPocketsOption and bagPocketsOption.type, "toggle",
   "Bag Pockets uses a toggle")
 T.eq(bagPocketsOption and bagPocketsOption.label, "CLASSIC BAG POCKETS",
-  "schema distinguishes classic pockets from required Gold Pack pockets")
+  "schema distinguishes classic pockets from PACK navigation")
 T.eq(bagPocketsOption and bagPocketsOption.default, true,
   "Bag Pockets defaults on")
 T.check(type(bagPocketsOption and bagPocketsOption.help) == "string"
-    and bagPocketsOption.help:find("Gold Pack", 1, true) ~= nil,
-  "schema explains that Gold Pack keeps its pocket projection")
+    and bagPocketsOption.help:find("PACK + POK", 1, true) ~= nil,
+  "schema explains that PACK + Pokegear keeps its pocket projection")
 T.eq(experienceOption and experienceOption.type, "choice",
   "EXP mode uses a choice")
 T.eq(experienceOption and experienceOption.default, "vanilla",
@@ -354,13 +353,37 @@ for key in pairs(organized) do
 end
 T.eq(organizedCount, #schema,
   "categorized screens retain every Mod Manager setting")
-local hasGen2ImportApi = pcall(require, "src.import.RomManifest")
-T.eq(organized.gen2_menus.value(),
-  hasGen2ImportApi and "IMPORT GOLD" or "NEEDS 0.1.96",
-  "Gold interface reports the actionable engine/import state")
+T.eq(organized.gen2_menus.value(), "OFF",
+  "built-in PACK + Pokegear needs no external import")
 run.loader.modOptions.voxel_run_bridge =
   run.loader.modOptions.voxel_run_bridge or {}
 run.loader.modOptions.voxel_run_bridge.gen2_menus = true
+local bagCallback = function() return "native-red-bag" end
+local packRows = run.loader.hooks:call("ui.start_menu.items",
+  function(_, rows) return rows end, screenGame, {
+    { id = "vanilla.item", label = "ITEM", onSelect = bagCallback },
+    { id = "vanilla.mods", label = "MODS" },
+  })
+T.eq(packRows[1].label, "PACK",
+  "enabled built-in feature presents Red ITEM as PACK")
+T.eq(packRows[1].onSelect, bagCallback,
+  "PACK preserves the exact Red bag callback")
+T.eq(packRows[2].id, "scotts_tweaks.pokegear",
+  "POKeGEAR is inserted immediately after PACK")
+T.eq(packRows[2].label, "POKéGEAR",
+  "POKeGEAR uses its requested Start label")
+local gen2Api = run.loader.exports.voxel_run_bridge.gen2Ui
+T.eq(gen2Api.getStatus().romImport, false,
+  "built-in Pokegear has no ROM-import dependency")
+local pokegearScreen = buildScreen(gen2Api.screenIds.pokegear)
+T.check(type(pokegearScreen.items) == "table"
+    and #pokegearScreen.items == 2,
+  "real Pokegear screen exposes Clock and Kanto Map")
+T.check(type(pokegearScreen.items[1].label) == "string"
+    and pokegearScreen.items[1].label:match("^CLOCK ") ~= nil,
+  "real Pokegear screen renders a live clock row")
+T.eq(pokegearScreen.items[2].label, "KANTO MAP",
+  "real Pokegear screen routes to Red's Kanto Map")
 local goldInventoryMenu = buildScreen(menuApi.screenIds.inventory)
 local goldInventoryRows = {}
 for _, row in ipairs(goldInventoryMenu.rows or {}) do
@@ -369,9 +392,9 @@ for _, row in ipairs(goldInventoryMenu.rows or {}) do
   if key then goldInventoryRows[key] = row end
 end
 T.eq(goldInventoryRows.bag_pockets, nil,
-  "organized menu hides redundant Classic Bag Pockets while Gold is enabled")
+  "organized menu hides redundant Classic Bag Pockets while PACK is enabled")
 T.check(type(goldInventoryRows.experience_mode) == "table",
-  "organized Gold inventory menu retains EXP mode")
+  "organized PACK inventory menu retains EXP mode")
 run.loader.modOptions.voxel_run_bridge.gen2_menus = false
 
 local writes = 0
@@ -620,7 +643,7 @@ T.check(type(pokemonFinalExports) == "table",
   "Pokemon Final test-double exports are published")
 T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.owner, "voxel_run_bridge",
   "Pokemon Final FreeMove receives Scott's bridge marker")
-T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.6.1",
+T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.7.0",
   "Pokemon Final bridge marker carries the update version")
 T.eq(type(exported.hmWithoutBadges), "function",
   "live HM option accessor is published")

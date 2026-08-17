@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.0 - 2026-08-16
+
+- Replaced the Gold-ROM import with a built-in, ROM-free **PACK + POKéGEAR**
+  feature. Existing `gen2_menus` saves migrate automatically.
+- The Red ITEM/ITEMS row is presented as **PACK** without changing its bag
+  callback. The existing four-pocket projection remains the inventory owner.
+- Added a separate root **POKéGEAR** row with a live, preference-aware clock
+  and Red's native Kanto Map. No imported file, decoded art, or new APK picker
+  is required, and Gen 1 Modern UI can remain enabled.
+- Removed the optional Pokemon Gold import declaration and all runtime asset
+  extraction. Historical 0.6.x behavior remains documented below only.
+
 ## 0.6.1 - 2026-08-16
 
 - Gold Start now presents either native `ITEM` or `ITEMS` rows as **PACK** and
