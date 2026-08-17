@@ -9,6 +9,8 @@ tests/consolidated_features.lua
 tests/migrations.lua
 tests/running_hot_reload.lua
 tests/thor_dual_screen.lua
+tests/gen2_ui_assets.lua
+tests/gen2_ui.lua
 tests/README.md
 docs/MODDING_GUIDE.md
 dist/voxel_run_bridge-0.2.0.zip
@@ -18,3 +20,5 @@ dist/voxel_run_bridge-0.2.3.zip
 dist/voxel_run_bridge-0.3.0.zip
 dist/voxel_run_bridge-0.4.0.zip
 .luarc.json
+baseroms/
+**/baseroms/

@@ -223,7 +223,7 @@ return function(mod, context)
   })
 
   local feature = {
-    installed = true, version = "0.5.0", sourceVersion = "0.1.1",
+    installed = true, version = "0.6.0", sourceVersion = "0.1.1",
     claimedField = CLAIMED_FIELD,
   }
   mod.exports.oakSpareStarter = feature
