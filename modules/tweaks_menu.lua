@@ -147,10 +147,15 @@ return function(mod, context)
     }
   end
   local function inventoryRows()
-    return {
-      toggle("bag_pockets", "BAG POCKETS"),
-      choice("experience_mode", "EXP. MODE", expChoices),
-    }
+    local rows = {}
+    -- Gold Pack always needs Scott's Red-inventory pocket projection.  Hide
+    -- the classic-only preference while Gold owns Pack rather than showing an
+    -- OFF value that cannot take effect until GEN 2 INTERFACE is disabled.
+    if settings:get("gen2_menus") ~= true then
+      rows[#rows + 1] = toggle("bag_pockets", "CLASSIC BAG POCKETS")
+    end
+    rows[#rows + 1] = choice("experience_mode", "EXP. MODE", expChoices)
+    return rows
   end
   local function trainerRows()
     return {

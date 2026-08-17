@@ -25,7 +25,7 @@ capability checks, outdoor first-/third-person gates, interior/canopy/sea-map
 exclusions, live disable path, generated-geometry cleanup, gameplay-state
 isolation, and the safe no-provider fallback.
 
-`inventory_ui.lua` is the focused 376-check bag/shop suite. Its v0.1.75 and
+`inventory_ui.lua` is the focused 392-check bag/shop suite. Its v0.1.75 and
 v0.1.83 doubles verify four-pocket classification, Left/Right navigation,
 per-pocket cursor memory, ID-based global reordering, option-off passthrough,
 lower screen-factory composition, copied/idempotent Trade Stone stock, and a
@@ -105,7 +105,7 @@ API-2 loader, verifies the stable ID/new display name, the new content and
 settings rows, checks the gapped-land compatibility status, invokes both HM
 hooks alongside Free Fly and a Pokemon Final provider, and runs the real
 priority-sorted HUD chain to prove only the cockpit picture is suppressed.
-Its current matrix contains 158 checks per supported engine fixture. Pass `compat` for the
+Its current matrix contains 165 checks per supported engine fixture. Pass `compat` for the
 v0.1.75 fixture and `native` for v0.1.83+ to assert the exact Trade Stone
 dispatcher. Run it from an engine
 checkout with:
@@ -124,11 +124,12 @@ derived writes. Without a ROM argument it runs hermetically; with the exact
 luajit tests\gen2_ui_assets.lua <mod-root> <engine-.96> <clean-gold-rom>
 ```
 
-`gen2_ui.lua` verifies that Red Start/Bag behavior stays authoritative, Gold
-screens own presentation only while enabled and ready, Modern UI resumes on
-OFF/unavailable paths, Pokégear ordering/location/animation is correct, Thor
-receives the ordinary UI canvas, and two Loader entries retire stale images
-without growing wrappers.
+`gen2_ui.lua` verifies that Red Start/Bag behavior stays authoritative, native
+ITEM/ITEMS descriptors present as PACK without mutation, Pokegear follows all
+three ITEM/ITEMS/PACK spellings, Gold pockets use ITEM/BALL/KEY_ITEM/TM_HM
+order, Modern UI resumes on OFF/unavailable paths, Pokégear
+location/animation is correct, Thor receives the ordinary UI canvas, and two
+Loader entries retire stale images without growing wrappers.
 
 ```powershell
 luajit tests\gen2_ui.lua <mod-root> <engine-.96>

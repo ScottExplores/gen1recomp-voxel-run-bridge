@@ -379,7 +379,10 @@ local function fixture(version, config)
     return result
   end
   local itemEffects = registry()
-  local optionValues = { bag_pockets = config.bagPockets }
+  local optionValues = {
+    bag_pockets = config.bagPockets,
+    gen2_menus = config.gen2Menus,
+  }
   local optionSchema = {}
   local options = {}
   function options:define(rows)
@@ -478,14 +481,14 @@ local function testEnabledBag(version)
   list.index = 2
   list:update(0)
   pressAndUpdate(ctx, list, "right")
-  eq(list.title, "< TM/HM >", version .. " Right opens TM/HM")
-  sequenceEq(rowIds(list), { "TM_THUNDERBOLT", "HM_FLY" },
-    version .. " machine metadata and id-prefix classification")
-
-  pressAndUpdate(ctx, list, "right")
   eq(list.title, "< KEY ITEMS >", version .. " Right opens Key Items")
   sequenceEq(rowIds(list), { "BICYCLE", "CUSTOM_KEY" },
     version .. " keyItem and non-tossable classification")
+
+  pressAndUpdate(ctx, list, "right")
+  eq(list.title, "< TM/HM >", version .. " Right opens TM/HM")
+  sequenceEq(rowIds(list), { "TM_THUNDERBOLT", "HM_FLY" },
+    version .. " machine metadata and id-prefix classification")
 
   pressAndUpdate(ctx, list, "right")
   eq(list.title, "< ITEMS >", version .. " Right wraps to Items")
@@ -549,6 +552,20 @@ local function testDisabledBag(version)
     version .. " option-off leaves order untouched")
   mapEq(ctx.game.save.inventory, inventoryBefore,
     version .. " option-off leaves save untouched")
+end
+
+local function testGoldForcesProjection(version)
+  local ctx = fixture(version, { bagPockets = false, gen2Menus = true })
+  local list, lowerList = openBag(ctx)
+  check(list == lowerList,
+    version .. " Gold projection decorates the preserved Red Bag instance")
+  check(type(rawget(list, "_scottsTweaksPocketLayer")) == "table",
+    version .. " Gold keeps the required pocket projection with classic off")
+  eq(list.title, "< ITEMS >",
+    version .. " Gold-forced projection opens in Items")
+  pressAndUpdate(ctx, list, "right")
+  eq(list.title, "< BALLS >",
+    version .. " Gold-forced projection follows exact Gold order")
 end
 
 local function testShop(version)
@@ -616,6 +633,7 @@ end
 for _, version in ipairs({ "0.1.75", "0.1.83" }) do
   testEnabledBag(version)
   testDisabledBag(version)
+  testGoldForcesProjection(version)
   testShop(version)
 end
 

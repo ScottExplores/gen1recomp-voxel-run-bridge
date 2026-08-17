@@ -113,7 +113,7 @@ local function findPocket(list)
   local state = type(marker) == "table" and marker.state or nil
   local index = type(state) == "table" and tonumber(state.pocket) or 1
   index = math.max(1, math.min(4, math.floor(index or 1)))
-  return ({ "ITEM", "BALL", "TM_HM", "KEY_ITEM" })[index], index
+  return ({ "ITEM", "BALL", "KEY_ITEM", "TM_HM" })[index], index
 end
 
 local function selectedItem(list)
@@ -328,6 +328,7 @@ local START_DESCRIPTIONS = {
   ["POKéDEX"] = { "POKéMON", "database" },
   ["POKéMON"] = { "Party POKéMON", "status" },
   ["ITEM"] = { "Contains", "items" },
+  ["ITEMS"] = { "Contains", "items" },
   ["PACK"] = { "Contains", "items" },
   ["POKéGEAR"] = { "Clock and", "Kanto map" },
   ["SAVE"] = { "Save your", "progress" },
@@ -336,6 +337,12 @@ local START_DESCRIPTIONS = {
   ["MODS"] = { "Installed", "add-ons" },
   ["QUIT"] = { "Return to", "the title" },
 }
+
+local function startLabel(item)
+  local label = type(item) == "table" and item.label or nil
+  if label == "ITEM" or label == "ITEMS" then return "PACK" end
+  return label
+end
 
 local function rowDescription(menu, item)
   if type(item) ~= "table" then return nil end
@@ -370,7 +377,7 @@ function Runtime:drawStart(menu)
     for row = 1, visible do
       local item = items[scroll + row]
       if item then
-        local label = item.label == "ITEM" and "PACK" or item.label
+        local label = startLabel(item)
         local pixels = type(Font.width) == "function"
           and Font.width(tostring(label or "")) or #tostring(label or "") * 8
         widest = math.max(widest, math.ceil(pixels / 8))
@@ -385,7 +392,7 @@ function Runtime:drawStart(menu)
       if item then
         local ty = 1 + (row - 1) * 2
         if scroll + row == index then Chrome.cursor(tx + 1, ty) end
-        local label = item.label == "ITEM" and "PACK" or item.label
+        local label = startLabel(item)
         Chrome.print(tostring(label or ""), tx + 2, ty)
       end
     end
@@ -853,7 +860,8 @@ local function insertPokegear(items, game, mod)
   for index, item in ipairs(out) do
     local label = type(item) == "table" and item.label or nil
     local id = type(item) == "table" and item.id or nil
-    if label == "ITEM" or label == "PACK" or id == "pack" or id == "item" then
+    if label == "ITEM" or label == "ITEMS" or label == "PACK"
+        or id == "pack" or id == "item" or id == "items" then
       at = index + 1
       break
     end

@@ -1,4 +1,4 @@
--- Focused ROM-free contracts for Scott's Tweaks 0.6.0.
+-- Focused ROM-free contracts for Scott's Tweaks 0.6.1.
 -- Run from the mod root with Lua 5.1 or LuaJIT:
 --   lua5.1 tests/experience_trade.lua
 --   luajit tests/experience_trade.lua
