@@ -117,7 +117,7 @@ for _, relative in ipairs({
   "modules/oak_spare_starter.lua", "modules/running.lua",
   "modules/option_screen.lua", "modules/tweaks_menu.lua",
   "modules/thor_dual_screen.lua",
-  "modules/gen2_ui_assets.lua", "modules/gen2_ui.lua",
+  "modules/gen2_ui.lua",
 }) do
   files[scottPrefix .. relative] = read(relative)
 end

@@ -48,7 +48,7 @@ local GAPPED_LAND_CELL = 64
 -- Native terrain and Flora's detailed apron occupy roughly y=-2..-37.
 -- Keep the broad procedural ground below both so it only fills the void.
 local GAPPED_LAND_Y = -40
-local RELEASE_VERSION = "0.6.1"
+local RELEASE_VERSION = "0.7.0"
 
 local OPTION_DEFAULTS = {
   hm_without_badges = true,
@@ -193,25 +193,8 @@ local function installFeatureModules(mod)
   install("modules/oak_spare_starter.lua", "oakSpareStarter")
   install("modules/running.lua", "running")
 
-  -- Gold interface graphics are decoded privately from the player's optional
-  -- ROM import. The controller never writes or bundles ROM-derived files.
-  local Gen2Assets, gen2AssetsErr = loadOwn(mod, "modules/gen2_ui_assets.lua")
-  if type(Gen2Assets) == "table" and type(Gen2Assets.new) == "function" then
-    local okAssets, controller = xpcall(function()
-      return Gen2Assets.new(mod)
-    end, traceback)
-    if okAssets and type(controller) == "table" then
-      context.gen2Assets = controller
-    else
-      gen2AssetsErr = controller
-    end
-  end
-  if not context.gen2Assets then
-    mod.exports.moduleErrors = mod.exports.moduleErrors or {}
-    mod.exports.moduleErrors.gen2Assets = tostring(
-      gen2AssetsErr or "invalid Gold interface asset module")
-  end
-
+  -- PACK + POKeGEAR use Red's existing controllers and Kanto map directly.
+  -- No external ROM or decoded-art controller is required.
   install("modules/gen2_ui.lua", "gen2Ui")
   -- The physical-Thor presenter publishes a narrow table API rather than an
   -- installer chunk. Load it once after the central dual_screen option exists.
@@ -492,14 +475,14 @@ local function defineOptions(mod)
       type = "toggle",
       label = "CLASSIC BAG POCKETS",
       default = true,
-      help = "Organize the classic Red bag into Gold-order ITEMS, BALLS, KEY ITEMS and TM/HM pockets. Use D-pad Left or Right to change pockets. Gold Pack keeps this projection active whenever GEN 2 INTERFACE is on.",
+      help = "Organize the classic Red bag into ITEMS, BALLS, KEY ITEMS and TM/HM pockets. Use D-pad Left or Right to change pockets. PACK + POKeGEAR keeps this projection active while its menu is on.",
     },
     {
       key = GEN2_MENUS_OPTION,
       type = "toggle",
-      label = "GEN 2 INTERFACE",
+      label = "PACK + POKéGEAR",
       default = false,
-      help = "Use authentic Gold Start, Pack and Pokegear presentation extracted privately from your imported Pokemon Gold ROM. Other screens keep Gen 1 Modern UI.",
+      help = "Show PACK on Red's Start menu and add a built-in POKeGEAR with a live clock and Kanto map. No Gold ROM is required; Gen 1 Modern UI can stay on.",
     },
     {
       key = EXPERIENCE_MODE_OPTION,

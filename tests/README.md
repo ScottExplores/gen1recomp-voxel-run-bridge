@@ -105,7 +105,7 @@ API-2 loader, verifies the stable ID/new display name, the new content and
 settings rows, checks the gapped-land compatibility status, invokes both HM
 hooks alongside Free Fly and a Pokemon Final provider, and runs the real
 priority-sorted HUD chain to prove only the cockpit picture is suppressed.
-Its current matrix contains 165 checks per supported engine fixture. Pass `compat` for the
+Its current matrix contains 173 checks per supported engine fixture. Pass `compat` for the
 v0.1.75 fixture and `native` for v0.1.83+ to assert the exact Trade Stone
 dispatcher. Run it from an engine
 checkout with:
@@ -114,25 +114,14 @@ checkout with:
 luajit C:\path\to\mod\tests\full_load.lua C:\path\to\mod C:\path\to\engine native
 ```
 
-`gen2_ui_assets.lua` verifies the private, memory-only Gold extraction path,
-exact clean-ROM identity, Pack/Pokegear graphics, landmarks, authentic Chris
-frames and all four object palettes, resource retirement, and the absence of
-derived writes. Without a ROM argument it runs hermetically; with the exact
-0.1.96 engine and clean Gold ROM it also exercises the real extractor:
+`gen2_ui.lua` verifies the built-in, ROM-free PACK + POKeGEAR flow: Red's
+ITEM/ITEMS callback remains authoritative, source descriptors are not mutated,
+Pokegear follows ITEM/ITEMS/PACK spellings, the clock uses the public formatter,
+Kanto Map opens through Red's native screen, the option-off list is exact, and
+a second Loader entry safely refreshes the screen factory.
 
 ```powershell
-luajit tests\gen2_ui_assets.lua <mod-root> <engine-.96> <clean-gold-rom>
-```
-
-`gen2_ui.lua` verifies that Red Start/Bag behavior stays authoritative, native
-ITEM/ITEMS descriptors present as PACK without mutation, Pokegear follows all
-three ITEM/ITEMS/PACK spellings, Gold pockets use ITEM/BALL/KEY_ITEM/TM_HM
-order, Modern UI resumes on OFF/unavailable paths, Pokégear
-location/animation is correct, Thor receives the ordinary UI canvas, and two
-Loader entries retire stale images without growing wrappers.
-
-```powershell
-luajit tests\gen2_ui.lua <mod-root> <engine-.96>
+luajit tests\gen2_ui.lua <mod-root>
 ```
 
 `voxel_full_load.lua` loads Scott's Tweaks with Pokemon Final and a real

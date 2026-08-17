@@ -5,13 +5,13 @@ is broader, but its internal mod ID remains `voxel_run_bridge`. Existing
 installations therefore update in place, keep their settings, and do not
 become a duplicate mod.
 
-Version 0.6.1 keeps the existing updater identity and adds one categorized
+Version 0.7.0 keeps the existing updater identity and adds one categorized
 **START > MOD MENUS > SCOTT'S TWEAKS** home for all of its settings. Its
 features are:
 
-- **Optional authentic Gold interface:** import your own supported Pokemon
-  Gold ROM once, then switch on Gold-style Start, Pack/backpack/pocket and
-  Pokegear Clock/Kanto Map screens. No ROM or extracted art is distributed.
+- **Built-in Pack and Pokegear:** Red's ITEM row can appear as PACK, followed
+  by a separate POKéGEAR with a live clock and Red's native Kanto Map. It is
+  entirely built in and never asks for a Pokemon Gold ROM.
 - **Classic bag pockets:** press D-pad Left or Right to move in Gold order
   through ITEMS, BALLS, KEY ITEMS, and TM/HM while keeping the original Gen 1
   inventory underneath.
@@ -58,7 +58,7 @@ party and Pokédex just like another legitimate gift Pokémon.
 Open **START > MOD MENUS > SCOTT'S TWEAKS** when Gen 1 Modern UI is enabled.
 Without Modern UI, **SCOTT'S TWEAKS** appears directly on Start. The first
 screen groups the same settings into **Bag & Experience**, **Trainers & Oak**,
-**Running**, **Field Moves**, **Display & Thor**, and **Gen 2 Interface**.
+**Running**, **Field Moves**, **Display & Thor**, and **Pack + Pokegear**.
 Every value also remains in Gen1Recomp's ordinary Mod Manager schema, so
 either route edits one source of truth.
 
@@ -105,41 +105,29 @@ real bag order.
 This is a view over the existing inventory, not a larger replacement bag.
 Saving, item quantities, the Gen 1 slot limit, battle item use, selling, and
 other mods' items remain owned by Gen1Recomp. Unknown custom items stay
-visible under ITEMS. With **GEN 2 INTERFACE** off, turn **CLASSIC BAG POCKETS**
-off to use the original one-list bag. Gold Pack always keeps this Red-inventory
-pocket projection active because its backpack and pocket art require it.
+visible under ITEMS. With **PACK + POKéGEAR** off, turn **CLASSIC BAG POCKETS**
+off to use the original one-list bag. PACK keeps this Red-inventory pocket
+projection active without overwriting the saved classic preference.
 
 When BUY is open at a mart, its title includes **BAG:N** for the currently
 highlighted item. The count updates after a purchase and does not alter shop
 prices or stock supplied by other mods.
 
-## Authentic Gold interface
+## Built-in Pack and Pokegear
 
-**GEN 2 INTERFACE** is default OFF. Gen1Recomp 0.1.96 can privately import the
-exact USA/Europe Pokemon Gold ROM into Scott's Tweaks. The mod decodes only
-the menu material it needs in memory and never writes those graphics into the
-release ZIP or GitHub repository.
+**PACK + POKéGEAR** is default OFF and needs no external file. When enabled,
+the native Red ITEM/ITEMS row is presented as **PACK** with the exact same bag
+callback. The four-pocket Red inventory view remains underneath, in the order
+ITEMS, BALLS, KEY ITEMS, and TM/HM.
 
-When enabled, the Start menu uses Gold presentation, the existing Red bag is
-drawn with Gold's real Pack/backpack/pocket art, and Start gains a Pokegear
-with the real Gold Clock and Kanto Map presentation. The map marker is Gold's
-actual animated Chris overworld sprite with the ROM's matching morning, day,
-night, and dark palettes; no substitute icon is drawn or bundled. Red remains
-the game underneath: its item effects, use/toss/reorder logic, battle bag,
-Trade Stone, EXP.SHARE, save flow, party screens, callbacks, and mod-added
-Start rows remain authoritative. Scott's four-pocket projection is required
-and automatically active while this interface is enabled. The organized
-Scott's Tweaks menu therefore hides the redundant **CLASSIC BAG POCKETS** row
-until **GEN 2 INTERFACE** is switched off again; the saved classic preference
-is not overwritten.
+A separate **POKéGEAR** row appears immediately after PACK. It opens a small
+native screen containing the current clock and Red's existing Kanto Map. This
+does not copy or imitate Pokemon Gold artwork, and it deliberately omits fake
+Phone/Radio systems that Red does not have.
 
-Gen 1 Modern UI should stay installed. It automatically steps aside only for
-Scott's Gold Start, Pack, and Pokegear screens, while continuing to present
-Party, Pokedex, Options, Mod Manager, PC, Shop, and other supported screens.
-Scott's Thor presenter sends the same Gold UI canvas to the lower screen; no
-second dual-screen renderer is installed. This first release is controller
-operated and intentionally omits fake Phone/Radio systems that Red does not
-have.
+Gen 1 Modern UI should stay installed. It can present the native Bag, Kanto
+Map, and all of its other supported screens normally. Scott's Thor presenter
+sends those same UI canvases to the lower screen without a second renderer.
 
 ## Experience modes
 
@@ -186,7 +174,7 @@ special canopy scenery so it does not flatten places that are supposed to be
 enclosed or water-covered.
 
 The renderer is selected by its stable mod ID and then checked for the required
-capabilities rather than trusted by display name alone. Version 0.6.1 targets
+capabilities rather than trusted by display name alone. Version 0.7.0 targets
 Pokemon Final, the verified Dramatic Shape 1.8.0-1.8.2 renderer contract, and
 Battle Art Voxel Fork's published renderer modules.
 If an active voxel provider does not expose the required renderer modules,
@@ -335,29 +323,26 @@ Scott's Tweaks choice was already saved.
 ## Install or update
 
 If Voxel Run Bridge or any earlier Scott's Tweaks release is installed, open
-Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.6.1
+Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.7.0
 update. It will appear as **Scott's Tweaks** afterward without creating a
 second entry.
 
 For a first installation:
 
 1. Open **MODS -> Import mod .zip** and choose
-   `SCOTTS_TWEAKS-0.6.1.zip`.
+   `SCOTTS_TWEAKS-0.7.0.zip`.
 2. Enable **Scott's Tweaks**, then restart the game if the manager asks.
 3. Open **START > MOD MENUS > SCOTT'S TWEAKS**. Classic bag pockets, trainer
    features, Oak's starter, B running, light run bob, gapped land, badge-free
    HMs, and Free Fly Now default on. EXP defaults to Vanilla; Fly Cockpit,
-   Thor Second Screen, and Gen 2 Interface default off; run speed defaults to
+   Thor Second Screen, and Pack + Pokegear default off; run speed defaults to
    1.5X and bob to 0.5X.
 4. Update Free Fly to **1.6.1 or newer** and enable it for free-roaming flight.
 5. For 1ST/3RD running, enable one supported voxel provider; no separate
    running mod is required.
-6. To use the Gold interface on Gen1Recomp 0.1.96, open **MODS**, select
-   **Scott's Tweaks**, open **Imported files**, choose **Pokemon Gold ROM
-   (USA/Europe)**, and select the clean Gold ROM. Restart once, then open
-   **START > MOD MENUS > SCOTT'S TWEAKS > GEN 2 INTERFACE** and switch
-   **GEN 2 INTERFACE** ON. The imported ROM remains private and same-ID
-   Scott's Tweaks updates preserve it.
+6. To use PACK and POKéGEAR, open **START > MOD MENUS > SCOTT'S TWEAKS >
+   PACK + POKéGEAR** and switch it ON. No imported file or app replacement is
+   required.
 
 The manager will ask for the `engine_internals` permission. Scott's Tweaks
 uses Gen1Recomp's official content, screen, battle, field-move, and party-menu
@@ -416,17 +401,17 @@ Use the `dev` branch of
 ```powershell
 python tools/modkit.py validate C:\path\to\voxel_run_bridge --strict --base fixture
 python tools/modkit.py lint C:\path\to\voxel_run_bridge
-python tools/modkit.py pack C:\path\to\voxel_run_bridge -o C:\path\to\dist\SCOTTS_TWEAKS-0.6.1.zip --base fixture
+python tools/modkit.py pack C:\path\to\voxel_run_bridge -o C:\path\to\dist\SCOTTS_TWEAKS-0.7.0.zip --base fixture
 ```
 
 The archive keeps `manifest.json`, `main.lua`, `LICENSE`, notices, and the
 `modules/` directory at its root. Gen1Recomp's importer mounts those paths
 unchanged; development tests and unrelated workspace files are excluded.
 
-Version 0.6.1 is configured for Gen1Recomp's built-in GitHub update checks via
+Version 0.7.0 is configured for Gen1Recomp's built-in GitHub update checks via
 `ScottExplores/gen1recomp-voxel-run-bridge`.
 
-The download is deliberately named `SCOTTS_TWEAKS-0.6.1.zip` to match the
+The download is deliberately named `SCOTTS_TWEAKS-0.7.0.zip` to match the
 name players see in the mod list. Its internal ID remains `voxel_run_bridge`
 so existing installs and saved settings update in place rather than appearing
 as a second mod.
@@ -441,13 +426,12 @@ renderer code, textures, or horizon art. It does not copy the existing
 does not declare a software license. That project is credited for publicly
 demonstrating and documenting the first-person movement gap.
 
-Version 0.6.1 also incorporates Scott-owned MIT modules from Trainer Forfeit
+Version 0.7.0 also incorporates Scott-owned MIT modules from Trainer Forfeit
 0.3.0, Oak's Spare Starter 0.1.1, Scott Mod, and Scott's Sprite Menu. Their
 copyright notices and MIT terms are preserved in
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). The physical-Thor presenter
 is new public code; no source from the private/upstream-derived Dual Screen or
 Battle Art packages is included.
 
-No ROM, extracted graphics, save data, or other game content is included.
-The optional Gold import stays under the installed mod's private `baseroms/`
-directory and is preserved by same-ID Gen1Recomp updates.
+No ROM, extracted graphics, save data, or other game content is included or
+requested by Scott's Tweaks.

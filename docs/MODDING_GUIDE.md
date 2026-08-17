@@ -141,7 +141,7 @@ FreeMove providers. It does not grant shoes or choose a run multiplier.
 
 ## Inventory and experience composition
 
-Scott's Tweaks 0.6.1 uses the API-2 `screens` registry as a decorator seam.
+Scott's Tweaks 0.7.0 uses the API-2 `screens` registry as a decorator seam.
 It captures the previously registered `BagMenu` and `ShopMenu` factories,
 constructs them unchanged, then decorates the returned list/menu instances.
 A later total-conversion screen override can still replace Scott's layer.
@@ -170,28 +170,19 @@ unchanged. The effect returns `evolveTo`; BagMenu owns consumption and invokes
 the standard `via = "ITEM"` evolution path. Native TRADE evolution rows are
 never patched, which preserves ordinary link evolutions and link fingerprints.
 
-## Private optional ROM interfaces
+## ROM-free Pack and Pokegear composition
 
-Scott's Tweaks 0.6.1 demonstrates a ROM-safe way to offer an authentic Gold
-interface without distributing Nintendo data. Gen1Recomp 0.1.96 declares the
-clean Gold ROM as an optional per-mod import. The mod reads it only from its
-private `baseroms` directory, validates the exact supported dump, and decodes
-the needed menu tiles, palettes, landmarks, and player sprite in memory.
-Neither the ROM nor derived images belong in source control or a release ZIP.
+Scott's Tweaks 0.7.0 keeps Red's controllers and extracted data authoritative.
+Its Start hook shallow-copies the ITEM/ITEMS descriptor, changes only the
+visible label to PACK, and retains the exact bag callback. A separate POKeGEAR
+row opens a native `Menu` containing the public date/time formatter and Red's
+existing `TownMap` screen.
 
-The feature remains optional and fail-open. Older engines and missing or wrong
-imports leave every other tweak operational and return the native Red screen
-instances untouched. This exact-instance handoff matters: a harmless-looking
-custom `draw` wrapper can cause a later presenter such as Gen 1 Modern UI to
-decline the screen, even if that wrapper merely calls the original draw.
-
-Red controllers and data remain authoritative. The Gold Pack is a presenter
-over the existing Red bag and Scott's pocket projection; it does not import
-Gen 2 inventory capacity, item semantics, Phone, or Radio state. The ordinary
-UI canvas is also the only output surface, allowing the Thor presenter to
-route it without a second display owner. Gen1Recomp preserves the private
-`baseroms` tree during same-ID updates and rejects any mod ZIP that attempts to
-bundle it.
+This design needs no Pokemon Gold ROM, imported file, decoded art, or new APK
+picker. The pocket projection still owns inventory filtering and preserves Red
+item use, capacity, battle behavior, and save data. All screens draw to the
+ordinary UI canvas, so Gen 1 Modern UI and Scott's Thor presenter compose on
+their existing paths without another renderer or display owner.
 
 ## Community observations
 

@@ -7,7 +7,7 @@ local SCREEN_TRAINERS = "ScottsTweaksTrainerOptions"
 local SCREEN_MOVEMENT = "ScottsTweaksMovementOptions"
 local SCREEN_FIELD = "ScottsTweaksFieldOptions"
 local SCREEN_DISPLAY = "ScottsTweaksDisplayOptions"
-local SCREEN_GEN2 = "ScottsTweaksGen2Options"
+local SCREEN_GEN2 = "ScottsTweaksPokegearOptions"
 
 return function(mod, context)
   local OptionScreen, screenErr = context.loadOwn("modules/option_screen.lua")
@@ -95,34 +95,6 @@ return function(mod, context)
       end
     end
   end
-  local function gen2Unavailable()
-    local controller = context.gen2Assets
-    if type(controller) ~= "table" or type(controller.status) ~= "function" then
-      return "NEEDS 0.1.96"
-    end
-    local hasApi = pcall(require, "src.import.RomManifest")
-    if not hasApi then return "NEEDS 0.1.96" end
-    local ok, status = pcall(controller.status, controller)
-    if not ok or type(status) ~= "table" then return "UNAVAILABLE" end
-    if status.attempted ~= true and type(controller.load) == "function" then
-      pcall(controller.load, controller)
-      ok, status = pcall(controller.status, controller)
-      if not ok or type(status) ~= "table" then return "UNAVAILABLE" end
-    end
-    if status.ready == true then return nil end
-    if status.reason == "unsupported_engine"
-        or status.reason == "gen2_import_api_unavailable" then
-      return "NEEDS 0.1.96"
-    end
-    if status.reason == "optional_import_missing" then
-      return "IMPORT GOLD"
-    end
-    if status.reason == "optional_import_invalid_size"
-        or status.reason == "optional_import_invalid_md5" then
-      return "WRONG GOLD ROM"
-    end
-    return "UNAVAILABLE"
-  end
   local speedChoices = {
     { "1.25X", 1.25 }, { "1.5X", 1.5 }, { "2X", 2 },
   }
@@ -143,14 +115,14 @@ return function(mod, context)
       category("RUNNING", SCREEN_MOVEMENT),
       category("FIELD MOVES", SCREEN_FIELD),
       category("DISPLAY & THOR", SCREEN_DISPLAY),
-      category("GEN 2 INTERFACE", SCREEN_GEN2),
+      category("PACK + POKéGEAR", SCREEN_GEN2),
     }
   end
   local function inventoryRows()
     local rows = {}
-    -- Gold Pack always needs Scott's Red-inventory pocket projection.  Hide
-    -- the classic-only preference while Gold owns Pack rather than showing an
-    -- OFF value that cannot take effect until GEN 2 INTERFACE is disabled.
+    -- PACK always needs Scott's Red-inventory pocket projection. Hide the
+    -- classic-only preference while PACK + POKeGEAR owns that presentation,
+    -- without overwriting the saved preference used when the feature is off.
     if settings:get("gen2_menus") ~= true then
       rows[#rows + 1] = toggle("bag_pockets", "CLASSIC BAG POCKETS")
     end
@@ -192,7 +164,7 @@ return function(mod, context)
   end
   local function gen2Rows()
     return {
-      toggle("gen2_menus", "GEN 2 INTERFACE", gen2Unavailable),
+      toggle("gen2_menus", "PACK + POKéGEAR"),
     }
   end
 
@@ -214,7 +186,7 @@ return function(mod, context)
   mod.content.screens:register(SCREEN_DISPLAY,
     screen("DISPLAY & THOR", displayRows))
   mod.content.screens:register(SCREEN_GEN2,
-    screen("GEN 2 INTERFACE", gen2Rows))
+    screen("PACK + POKéGEAR", gen2Rows))
 
   mod.hooks:wrap("ui.start_menu.items", function(nextFn, game, items)
     local out = nextFn(game, items)
@@ -230,7 +202,7 @@ return function(mod, context)
       onSelect = function() push(game, SCREEN_MAIN) end,
     })
   -- Stay inside Modern UI's default-priority grouping wrapper. The separate
-  -- Gold Pokegear hook deliberately runs outside it so Pokegear remains a
+  -- Pokegear's hook deliberately runs outside it so Pokegear remains a
   -- normal root-menu feature while Scott's settings live under MOD MENUS.
   end, -100)
 

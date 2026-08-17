@@ -9,7 +9,6 @@ tests/consolidated_features.lua
 tests/migrations.lua
 tests/running_hot_reload.lua
 tests/thor_dual_screen.lua
-tests/gen2_ui_assets.lua
 tests/gen2_ui.lua
 tests/README.md
 docs/MODDING_GUIDE.md
