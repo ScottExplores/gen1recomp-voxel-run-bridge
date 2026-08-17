@@ -242,7 +242,7 @@ return function(mod, context)
 
   local feature = {
     installed = true,
-    version = context and context.releaseVersion or "0.5.0",
+    version = context and context.releaseVersion or "0.6.0",
     alwaysAvailable = true,
     bob = bobStatus,
     isRunning = function(ctx) return wantsRun(ctx) end,

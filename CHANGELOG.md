@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.6.0 - 2026-08-16
+
+- Added the optional **GEN 2 INTERFACE**. It uses the player's privately
+  imported, exact USA/Europe Pokemon Gold ROM to draw authentic Gold Start,
+  Pack/backpack/pocket and Pokegear Clock/Kanto Map presentation. No ROM or
+  extracted image is included in the mod or its GitHub release.
+- Kept Red's live controllers and data authoritative underneath the new look:
+  item use/toss/reorder, battle items, Trade Stone, EXP.SHARE, mod-added Start
+  rows and Scott's four pocket backend continue to work.
+- Gen 1 Modern UI can remain enabled. Gold presentation owns only the Start,
+  Pack and Pokegear surfaces; Modern UI continues to present Party, Pokedex,
+  Options, Mod Manager, PC, Shop and the other supported screens.
+- Scott's existing Thor presenter automatically sends the Gold menu canvas to
+  the lower screen. The Gold interface remains controller-operated and does
+  not add a second display owner.
+- Added a stable optional Gold ROM import that survives same-ID in-app updates.
+  Missing imports fail open: every other Scott's Tweaks feature still loads.
+- The Kanto Map marker uses Gold's authentic animated Chris overworld frames
+  and exact PAL_OW_RED morning/day/night/dark palettes from the imported ROM;
+  no replacement marker art is generated or shipped.
+
 ## 0.5.0 - 2026-08-16
 
 - Added one categorized **START > MOD MENUS > SCOTT'S TWEAKS** surface with

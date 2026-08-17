@@ -1,7 +1,7 @@
 {
   "id": "voxel_run_bridge",
   "name": "Scott's Tweaks",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "github": "ScottExplores/gen1recomp-voxel-run-bridge",
   "api": 2,
   "entry": "main.lua",
@@ -18,11 +18,23 @@
     "gen1recomp_ds",
     "RUN_MODE",
     "free_fly",
+    "gen1_modern_ui",
     "POKEMON_FINAL",
     "DRAMATIC_SHAPE",
     "BATTLE_ART_VOXEL_FORK",
     "DRAMALESS_SHAPE",
     "potato_voxel"
+  ],
+  "optional_imports": [
+    {
+      "id": "pokemon_gold_ui",
+      "name": "Pokemon Gold ROM (USA/Europe)",
+      "description": "Optional private source for the authentic Gold Start, Pack and Pokegear interface. The ROM and derived graphics are never included in this mod.",
+      "file": "pokemon_gold.gbc",
+      "format": "raw",
+      "size": 2097152,
+      "md5": ["a6924ce1f9ad2228e1c6580779b23878"]
+    }
   ],
   "conflicts": [],
   "incompatible": [],
@@ -30,5 +42,5 @@
   "experimental": false,
   "affects_link": false,
   "permissions": ["engine_internals"],
-  "description": "Scott's organized gameplay menu: modern bag pockets, EXP modes, Trade Stone, trainer forfeits and rematches, Oak's spare starter, B-button running with light head bob, badge-free field moves, gapped land, and physical-Thor dual-screen control."
+  "description": "Scott's organized gameplay menu: optional authentic Gold Start/Pack/Pokegear interface, bag pockets, EXP modes, Trade Stone, trainer forfeits and rematches, Oak's spare starter, B-button running with light head bob, badge-free field moves, gapped land, and physical-Thor dual-screen control."
 }

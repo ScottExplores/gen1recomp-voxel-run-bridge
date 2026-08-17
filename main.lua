@@ -35,6 +35,7 @@ local POKEMON_FINAL_ID = "POKEMON_FINAL"
 local CACHE_START_MARKER = "_scottsTweaksCacheStartHook"
 local GAPPED_LAND_OPTION = "gapped_land"
 local BAG_POCKETS_OPTION = "bag_pockets"
+local GEN2_MENUS_OPTION = "gen2_menus"
 local EXPERIENCE_MODE_OPTION = "experience_mode"
 local EXP_SHARE_ID = "SCOTTS_EXP_SHARE"
 local TRADE_STONE_ID = "SCOTTS_TRADE_STONE"
@@ -47,7 +48,7 @@ local GAPPED_LAND_CELL = 64
 -- Native terrain and Flora's detailed apron occupy roughly y=-2..-37.
 -- Keep the broad procedural ground below both so it only fills the void.
 local GAPPED_LAND_Y = -40
-local RELEASE_VERSION = "0.5.0"
+local RELEASE_VERSION = "0.6.0"
 
 local OPTION_DEFAULTS = {
   hm_without_badges = true,
@@ -55,6 +56,7 @@ local OPTION_DEFAULTS = {
   free_fly_cockpit = false,
   gapped_land = true,
   bag_pockets = true,
+  gen2_menus = false,
   experience_mode = "vanilla",
   trainer_forfeit_enabled = true,
   trainer_rematches = true,
@@ -190,6 +192,27 @@ local function installFeatureModules(mod)
   install("modules/trainer_forfeit.lua", "trainerForfeit")
   install("modules/oak_spare_starter.lua", "oakSpareStarter")
   install("modules/running.lua", "running")
+
+  -- Gold interface graphics are decoded privately from the player's optional
+  -- ROM import. The controller never writes or bundles ROM-derived files.
+  local Gen2Assets, gen2AssetsErr = loadOwn(mod, "modules/gen2_ui_assets.lua")
+  if type(Gen2Assets) == "table" and type(Gen2Assets.new) == "function" then
+    local okAssets, controller = xpcall(function()
+      return Gen2Assets.new(mod)
+    end, traceback)
+    if okAssets and type(controller) == "table" then
+      context.gen2Assets = controller
+    else
+      gen2AssetsErr = controller
+    end
+  end
+  if not context.gen2Assets then
+    mod.exports.moduleErrors = mod.exports.moduleErrors or {}
+    mod.exports.moduleErrors.gen2Assets = tostring(
+      gen2AssetsErr or "invalid Gold interface asset module")
+  end
+
+  install("modules/gen2_ui.lua", "gen2Ui")
   -- The physical-Thor presenter publishes a narrow table API rather than an
   -- installer chunk. Load it once after the central dual_screen option exists.
   local Thor, thorLoadErr = loadOwn(mod, "modules/thor_dual_screen.lua")
@@ -470,6 +493,13 @@ local function defineOptions(mod)
       label = "BAG POCKETS",
       default = true,
       help = "Organize the Gen 1 bag into ITEMS, BALLS, TM/HM and KEY ITEMS. Press Left or Right in the bag to change pockets.",
+    },
+    {
+      key = GEN2_MENUS_OPTION,
+      type = "toggle",
+      label = "GEN 2 INTERFACE",
+      default = false,
+      help = "Use authentic Gold Start, Pack and Pokegear presentation extracted privately from your imported Pokemon Gold ROM. Other screens keep Gen 1 Modern UI.",
     },
     {
       key = EXPERIENCE_MODE_OPTION,
@@ -777,7 +807,8 @@ local function installInventoryFeatures(mod)
   local function decorateBag(game, opts, list)
     if type(list) ~= "table" or type(list.update) ~= "function"
         or type(list.draw) ~= "function" or type(list.onChoose) ~= "function"
-        or not optionEnabled(mod, BAG_POCKETS_OPTION, true) then
+        or not (optionEnabled(mod, BAG_POCKETS_OPTION, true)
+          or optionEnabled(mod, GEN2_MENUS_OPTION, false)) then
       return list
     end
     if rawget(list, "_scottsTweaksPocketLayer") then return list end

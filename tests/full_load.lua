@@ -149,6 +149,8 @@ for _, relative in ipairs({
   "modules/option_screen.lua",
   "modules/tweaks_menu.lua",
   "modules/thor_dual_screen.lua",
+  "modules/gen2_ui_assets.lua",
+  "modules/gen2_ui.lua",
 }) do
   local ok, body = pcall(read, relative)
   if ok then modFiles[prefix .. relative] = body end
@@ -166,8 +168,8 @@ T.eq(run.mod and run.mod.manifest.id, "voxel_run_bridge",
   "stable updater identity is retained")
 T.eq(run.mod and run.mod.manifest.name, "Scott's Tweaks",
   "new display name is loaded")
-T.eq(run.mod and run.mod.manifest.version, "0.5.0",
-  "loader selected version 0.5.0")
+T.eq(run.mod and run.mod.manifest.version, "0.6.0",
+  "loader selected version 0.6.0")
 T.eq(run.mod and run.mod.manifest.affects_link, false,
   "inventory conveniences do not alter link rules")
 local thorApi = run.loader.exports.voxel_run_bridge.thorDualScreen
@@ -323,13 +325,14 @@ local function buildScreen(id, ...)
 end
 local menuApi = run.loader.exports.voxel_run_bridge.tweaksMenu
 local tweaksMain = buildScreen(menuApi.screenIds.main)
-T.eq(#(tweaksMain.rows or {}), 5,
-  "Scott's Tweaks opens as five organized categories")
+T.eq(#(tweaksMain.rows or {}), 6,
+  "Scott's Tweaks opens as six organized categories")
 local organized = {}
 for _, id in pairs({
   menuApi.screenIds.inventory, menuApi.screenIds.trainers,
   menuApi.screenIds.movement, menuApi.screenIds.field,
   menuApi.screenIds.display,
+  menuApi.screenIds.gen2,
 }) do
   local child = buildScreen(id)
   for _, row in ipairs(child.rows or {}) do
@@ -346,6 +349,10 @@ for key in pairs(organized) do
 end
 T.eq(organizedCount, #schema,
   "categorized screens retain every Mod Manager setting")
+local hasGen2ImportApi = pcall(require, "src.import.RomManifest")
+T.eq(organized.gen2_menus.value(),
+  hasGen2ImportApi and "IMPORT GOLD" or "NEEDS 0.1.96",
+  "Gold interface reports the actionable engine/import state")
 
 local writes = 0
 screenGame.mods = run.loader
@@ -578,7 +585,7 @@ T.check(type(pokemonFinalExports) == "table",
   "Pokemon Final test-double exports are published")
 T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.owner, "voxel_run_bridge",
   "Pokemon Final FreeMove receives Scott's bridge marker")
-T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.5.0",
+T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.6.0",
   "Pokemon Final bridge marker carries the update version")
 T.eq(type(exported.hmWithoutBadges), "function",
   "live HM option accessor is published")

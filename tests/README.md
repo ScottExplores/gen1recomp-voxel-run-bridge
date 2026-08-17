@@ -105,13 +105,33 @@ API-2 loader, verifies the stable ID/new display name, the new content and
 settings rows, checks the gapped-land compatibility status, invokes both HM
 hooks alongside Free Fly and a Pokemon Final provider, and runs the real
 priority-sorted HUD chain to prove only the cockpit picture is suppressed.
-Its current matrix contains 156 checks per supported engine fixture. Pass `compat` for the
+Its current matrix contains 158 checks per supported engine fixture. Pass `compat` for the
 v0.1.75 fixture and `native` for v0.1.83+ to assert the exact Trade Stone
 dispatcher. Run it from an engine
 checkout with:
 
 ```powershell
 luajit C:\path\to\mod\tests\full_load.lua C:\path\to\mod C:\path\to\engine native
+```
+
+`gen2_ui_assets.lua` verifies the private, memory-only Gold extraction path,
+exact clean-ROM identity, Pack/Pokegear graphics, landmarks, authentic Chris
+frames and all four object palettes, resource retirement, and the absence of
+derived writes. Without a ROM argument it runs hermetically; with the exact
+0.1.96 engine and clean Gold ROM it also exercises the real extractor:
+
+```powershell
+luajit tests\gen2_ui_assets.lua <mod-root> <engine-.96> <clean-gold-rom>
+```
+
+`gen2_ui.lua` verifies that Red Start/Bag behavior stays authoritative, Gold
+screens own presentation only while enabled and ready, Modern UI resumes on
+OFF/unavailable paths, Pokégear ordering/location/animation is correct, Thor
+receives the ordinary UI canvas, and two Loader entries retire stale images
+without growing wrappers.
+
+```powershell
+luajit tests\gen2_ui.lua <mod-root> <engine-.96>
 ```
 
 `voxel_full_load.lua` loads Scott's Tweaks with Pokemon Final and a real

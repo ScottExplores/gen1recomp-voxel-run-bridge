@@ -7,6 +7,7 @@ local SCREEN_TRAINERS = "ScottsTweaksTrainerOptions"
 local SCREEN_MOVEMENT = "ScottsTweaksMovementOptions"
 local SCREEN_FIELD = "ScottsTweaksFieldOptions"
 local SCREEN_DISPLAY = "ScottsTweaksDisplayOptions"
+local SCREEN_GEN2 = "ScottsTweaksGen2Options"
 
 return function(mod, context)
   local OptionScreen, screenErr = context.loadOwn("modules/option_screen.lua")
@@ -94,6 +95,34 @@ return function(mod, context)
       end
     end
   end
+  local function gen2Unavailable()
+    local controller = context.gen2Assets
+    if type(controller) ~= "table" or type(controller.status) ~= "function" then
+      return "NEEDS 0.1.96"
+    end
+    local hasApi = pcall(require, "src.import.RomManifest")
+    if not hasApi then return "NEEDS 0.1.96" end
+    local ok, status = pcall(controller.status, controller)
+    if not ok or type(status) ~= "table" then return "UNAVAILABLE" end
+    if status.attempted ~= true and type(controller.load) == "function" then
+      pcall(controller.load, controller)
+      ok, status = pcall(controller.status, controller)
+      if not ok or type(status) ~= "table" then return "UNAVAILABLE" end
+    end
+    if status.ready == true then return nil end
+    if status.reason == "unsupported_engine"
+        or status.reason == "gen2_import_api_unavailable" then
+      return "NEEDS 0.1.96"
+    end
+    if status.reason == "optional_import_missing" then
+      return "IMPORT GOLD"
+    end
+    if status.reason == "optional_import_invalid_size"
+        or status.reason == "optional_import_invalid_md5" then
+      return "WRONG GOLD ROM"
+    end
+    return "UNAVAILABLE"
+  end
   local speedChoices = {
     { "1.25X", 1.25 }, { "1.5X", 1.5 }, { "2X", 2 },
   }
@@ -114,6 +143,7 @@ return function(mod, context)
       category("RUNNING", SCREEN_MOVEMENT),
       category("FIELD MOVES", SCREEN_FIELD),
       category("DISPLAY & THOR", SCREEN_DISPLAY),
+      category("GEN 2 INTERFACE", SCREEN_GEN2),
     }
   end
   local function inventoryRows()
@@ -155,6 +185,11 @@ return function(mod, context)
       toggle("dual_screen", "THOR SECOND SCREEN", dualUnavailable),
     }
   end
+  local function gen2Rows()
+    return {
+      toggle("gen2_menus", "GEN 2 INTERFACE", gen2Unavailable),
+    }
+  end
 
   local function screen(title, rows)
     return { new = function(game)
@@ -173,6 +208,8 @@ return function(mod, context)
     screen("FIELD MOVES", fieldRows))
   mod.content.screens:register(SCREEN_DISPLAY,
     screen("DISPLAY & THOR", displayRows))
+  mod.content.screens:register(SCREEN_GEN2,
+    screen("GEN 2 INTERFACE", gen2Rows))
 
   mod.hooks:wrap("ui.start_menu.items", function(nextFn, game, items)
     local out = nextFn(game, items)
@@ -187,14 +224,17 @@ return function(mod, context)
       label = "SCOTT'S TWEAKS",
       onSelect = function() push(game, SCREEN_MAIN) end,
     })
-  end)
+  -- Stay inside Modern UI's default-priority grouping wrapper. The separate
+  -- Gold Pokegear hook deliberately runs outside it so Pokegear remains a
+  -- normal root-menu feature while Scott's settings live under MOD MENUS.
+  end, -100)
 
   local api = {
     installed = true,
     screenIds = {
       main = SCREEN_MAIN, inventory = SCREEN_INVENTORY,
       trainers = SCREEN_TRAINERS, movement = SCREEN_MOVEMENT,
-      field = SCREEN_FIELD, display = SCREEN_DISPLAY,
+      field = SCREEN_FIELD, display = SCREEN_DISPLAY, gen2 = SCREEN_GEN2,
     },
   }
   mod.exports.tweaksMenu = api
