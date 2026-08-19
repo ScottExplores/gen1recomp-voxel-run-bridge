@@ -1,0 +1,15 @@
+{
+  "id": "all_pokemon_catchable_151_mod",
+  "name": "All Pokemon Catchable 151 Mod",
+  "version": "0.3.3-beta - Yellow Support Hotfix",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "category": "GAMEPLAY",
+  "game_version": ">=0.0.0-0 <2.0.0",
+  "priority": 100,
+  "dependencies": [],
+  "optional_dependencies": [],
+  "conflicts": [],
+  "description": "Complete the Kanto Pokedex without trading."
+}
