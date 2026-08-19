@@ -74,6 +74,41 @@ T.check(type(exports.lib and exports.lib.require) == "function",
   "renderer module loader is available to companion adapters")
 T.eq(exports.version, "1.9.3", "vendored renderer reports its own version")
 
+-- Settings layout: SIMPLE is the everyday set, ALL adds the renderer tuning
+-- pages back, and no setting is dropped by either.
+local sm = exports.settingsMenu
+T.check(type(sm) == "table", "settings menu exported")
+local cats = {}
+for _, c in ipairs(sm and sm.categories or {}) do cats[c.id] = c end
+for _, id in ipairs({ "quick", "world", "player", "sprites", "battles" }) do
+  T.check(cats[id] ~= nil and not cats[id].advancedOnly,
+    "everyday category present in SIMPLE: " .. id)
+end
+for _, id in ipairs({ "views", "advanced" }) do
+  T.check(cats[id] ~= nil and cats[id].advancedOnly == true,
+    "tuning category is hidden under SIMPLE: " .. id)
+end
+T.eq(cats.world and cats.world.label, "OPEN WORLD", "world screen is named plainly")
+T.check(sm and sm.screenIds and sm.screenIds.player ~= nil, "player screen registered")
+
+local cov = sm and sm.coverage and sm.coverage()
+T.check(type(cov) == "table", "settings coverage readable")
+T.eq(cov and cov.duplicates, 0, "no setting appears in two categories")
+local playerKeys = {}
+for _, k in ipairs(cov and cov.categories and cov.categories.player or {}) do
+  playerKeys[k] = true
+end
+for _, k in ipairs({ "playerView", "frontFlip", "backPlacement" }) do
+  T.check(playerKeys[k], "front/back player control lives on the player screen: " .. k)
+end
+
+-- Day/night: the dial is unchanged, only the rate, so 1 HOUR is three times
+-- the 20 MIN period rather than a second set of timings.
+local DayNight = exports.lib.require("DayNight")
+T.eq(DayNight.PERIOD and DayNight.PERIOD.hour, 3600, "1 HOUR is a real hour")
+T.eq(DayNight.PERIOD and DayNight.PERIOD.cycle, 1200, "20 MIN period unchanged")
+T.eq(DayNight.CYCLE, 1200, "dial width unchanged")
+
 local vend = exports.vendored
 T.check(type(vend) == "table", "vendor host reported status")
 local loadedSet = {}

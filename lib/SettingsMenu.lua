@@ -19,27 +19,33 @@ local SCREEN = {
   world = "BattleArtWorldOptions",
   battles = "BattleArtBattlesOptions",
   sprites = "BattleArtSpritesTrainersOptions",
+  player = "BattleArtPlayerOptions",
   advanced = "BattleArtAdvancedOptions",
   crystal = "BattleArtCrystalOptions",
   pack = "BattleArtSpritePackOptions",
 }
 
+-- SIMPLE hides the categories a player only visits to tune the renderer, so
+-- the everyday menu is five short screens instead of a wall of switches. ALL
+-- restores them. Nothing is disabled either way -- a hidden row keeps whatever
+-- value it already had.
 local CATEGORY_ORDER = {
-  { id = "quick", label = "QUICK" },
-  { id = "views", label = "VIEWS & CAMERA" },
-  { id = "world", label = "WORLD" },
-  { id = "battles", label = "BATTLES" },
-  { id = "sprites", label = "SPRITES & TRAINERS" },
-  { id = "advanced", label = "ADVANCED" },
+  { id = "quick",    label = "QUICK" },
+  { id = "world",    label = "OPEN WORLD" },
+  { id = "player",   label = "PLAYER" },
+  { id = "sprites",  label = "SPRITES" },
+  { id = "battles",  label = "BATTLES" },
+  { id = "views",    label = "VIEWS & CAMERA", advancedOnly = true },
+  { id = "advanced", label = "ADVANCED",       advancedOnly = true },
 }
+
 
 -- Every persistent schema key has one canonical category. Quick is a small
 -- set of shortcuts and may intentionally repeat frequent rows. Unknown future
 -- keys are appended to Advanced at install time instead of becoming orphaned.
 local CATEGORY_KEYS = {
   views = {
-    "grid", "curve", "headbob", "fpfov", "dof", "jump",
-    "jumpkey", "jumppad", "third",
+    "grid", "curve", "dof", "jump", "jumpkey", "jumppad",
   },
   world = {
     "worldFill", "renderDistance", "water", "shadowQuality", "daytime",
@@ -52,11 +58,17 @@ local CATEGORY_KEYS = {
     "battles", "letsgo", "hudScale", "spriteLight", "hudColor",
     "arenaFill", "backdropOffset", "bossBg", "textboxFill",
   },
+  -- Everything that answers "how do I appear" lives together, so the front
+  -- / back trainer choice and the player art sets are one screen rather than
+  -- scattered between the sprite and camera pages.
+  player = {
+    "playerView", "frontFlip", "backPlacement",
+    "playerTrainerSource", "playerArtSet", "playerAnimatedSet",
+    "headbob", "third", "fpfov",
+  },
   sprites = {
     "battleArt", "duplicateFix", "opponentTrainerSource",
-    "playerTrainerSource", "trainerArtSet", "playerArtSet",
-    "playerAnimatedSet", "frontAnimatedSet", "backAnimatedSet",
-    "playerView", "frontFlip", "backPlacement",
+    "trainerArtSet", "frontAnimatedSet", "backAnimatedSet",
   },
   advanced = {
     "aa", "fastchunks", "particles", "ambience", "grasssfx", "stepsfx",
@@ -233,11 +245,32 @@ local function refreshUnderlyingOptions(game)
   if (top.index or 1) > cancel then top.index = cancel end
 end
 
+-- SIMPLE is the default: the everyday screens only. ALL adds the renderer
+-- tuning pages back. This hides rows, it never changes their values, so
+-- switching back to ALL finds every setting exactly as it was left.
+local SIMPLE_KEY = "simpleSettings"
+
+local function simpleMode()
+  local ok, value = pcall(mod.options.get, mod.options, SIMPLE_KEY)
+  if ok and value ~= nil then return value and true or false end
+  return true
+end
+
 local function mainRows()
   local out = {}
+  local simple = simpleMode()
   for _, category in ipairs(CATEGORY_ORDER) do
-    out[#out + 1] = openRow(category.label, "OPEN", SCREEN[category.id])
+    if not (simple and category.advancedOnly) then
+      out[#out + 1] = openRow(category.label, "OPEN", SCREEN[category.id])
+    end
   end
+  out[#out + 1] = {
+    label = "SETTINGS",
+    value = function() return simpleMode() and "SIMPLE" or "ALL" end,
+    step = function(game)
+      return writeOption(game, { key = SIMPLE_KEY }, not simpleMode())
+    end,
+  }
   return out
 end
 
@@ -282,6 +315,19 @@ local function spriteRows()
     skip = { playerView = true, frontFlip = true }
     out[#out + 1] = openRow("PACK",
       function() return state.sprite:packLabel() end, SCREEN.pack)
+  else
+    out[#out + 1] = openRow("SPRITE MENU", "EXTERNAL",
+      "ScottsSpriteOptions")
+  end
+  return appendKeyRows(out, state.categoryKeys.sprites, skip)
+end
+
+-- The player screen also carries the Crystal player-art controls when the
+-- integrated sprite pack is present, so choosing who you look like and which
+-- way you face is one place rather than three.
+local function playerRows()
+  local out = {}
+  if state.sprite:integrated() then
     out[#out + 1] = {
       label = "PLAYER POKEMON",
       value = function() return state.sprite:playerViewLabel() end,
@@ -308,11 +354,8 @@ local function spriteRows()
       if not state.sprite:crystalHandle() then return "NOT LOADED" end
       return state.sprite:crystalReady() and "OPEN" or "UPDATE CRYSTAL"
     end, SCREEN.crystal, function() return state.sprite:crystalReady() end)
-  else
-    out[#out + 1] = openRow("SPRITE MENU", "EXTERNAL",
-      "ScottsSpriteOptions")
   end
-  return appendKeyRows(out, state.categoryKeys.sprites, skip)
+  return appendKeyRows(out, state.categoryKeys.player)
 end
 
 local function advancedRows()
@@ -337,11 +380,13 @@ local function registerScreens()
   mod.content.screens:register(SCREEN.views,
     screen("VIEWS & CAMERA", viewsRows))
   mod.content.screens:register(SCREEN.world,
-    screen("WORLD", worldRows))
+    screen("OPEN WORLD", worldRows))
+  mod.content.screens:register(SCREEN.player,
+    screen("PLAYER", playerRows))
   mod.content.screens:register(SCREEN.battles,
     screen("BATTLES", battleRows))
   mod.content.screens:register(SCREEN.sprites,
-    screen("SPRITES & TRAINERS", spriteRows))
+    screen("SPRITES", spriteRows))
   mod.content.screens:register(SCREEN.advanced,
     screen("ADVANCED", advancedRows))
   mod.content.screens:register(SCREEN.crystal,

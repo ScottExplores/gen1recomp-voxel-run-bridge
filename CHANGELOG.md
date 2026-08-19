@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.10.0 - 2026-08-19
+
+- **Settings are reorganised and default to SIMPLE.** The main screen is now
+  QUICK, OPEN WORLD, PLAYER, SPRITES and BATTLES. `VIEWS & CAMERA` and
+  `ADVANCED` -- the renderer tuning pages -- are hidden until the new
+  **SETTINGS: SIMPLE / ALL** row at the bottom is switched to ALL. Hiding a row
+  never changes its value, so switching back finds everything as it was left.
+- **New PLAYER screen** collects everything that answers "how do I appear":
+  `PLAYER POKEMON` (front or back), `MY POKEMON FLIP`, `TRAINER ART`, the
+  player art and animated sets, `CRYSTAL OPTIONS`, plus head bob, third-person
+  and first-person FOV. These were previously spread across the sprite and
+  camera pages. No setting is duplicated -- the menu's own coverage check
+  asserts zero duplicates.
+- `WORLD` is renamed **OPEN WORLD** and `SPRITES & TRAINERS` to **SPRITES**,
+  now that the trainer and player rows have their own home.
+- **Day/night can take a full hour.** `DAYTIME` gains **1 HOUR** beside the
+  existing cycle, which is now labelled **20 MIN**. `SYNC`, `DAY`, `NIGHT`,
+  `DUSK` and `DAWN` are unchanged. The dial itself is untouched: only the rate
+  the clock advances differs, so the sky, shadows and light keep exactly the
+  same shape, stretched over three times as long.
+
 ## 0.9.1 - 2026-08-19
 
 - **Fixed: no head bob while running in first person.** Bundling Running Shoes

@@ -53,7 +53,14 @@ local DayNight = {}
 
 -- ------- the dial
 
-DayNight.CYCLE = 1200         -- seconds around the whole dial
+DayNight.CYCLE = 1200         -- dial units around the whole circle
+
+-- Real seconds a full circle takes, per running mode. The dial itself stays
+-- 1200 units wide so every arc, blend and palette key below is unchanged --
+-- only the rate the clock is advanced at differs, so "1 HOUR" is the same sky
+-- taking three times as long rather than a second set of timings to keep in
+-- step.
+DayNight.PERIOD = { cycle = 1200, hour = 3600 }
 DayNight.DAY_LEN = 600        -- the sun's half; the moon has the rest
 DayNight.BLEND = 75           -- seconds of palette blend either side of a twilight
 
@@ -68,9 +75,9 @@ DayNight.LABEL = "DAYTIME"
 -- and forceSync below reaches for it by the same position.
 DayNight.setting = ModSetting.new(DayNight.KEY, DayNight.LABEL,
                                   { "sync", "day", "night", "dusk",
-                                    "dawn", "cycle" },
+                                    "dawn", "cycle", "hour" },
                                   { "SYNC", "DAY", "NIGHT", "DUSK",
-                                    "DAWN", "CYCLE" })
+                                    "DAWN", "20 MIN", "1 HOUR" })
 
 -- The one writer for the FULL pin. While VOXEL sits on FULL the DAYTIME
 -- row is off the menu with the rest of the rows the preset owns, and the
@@ -344,9 +351,12 @@ end
 
 -- The effective time: the pin, the running clock under CYCLE, or the wall
 -- clock under SYNC.
+-- Both running modes read the same dial; only the rate they advance differs.
+local function isRunning(m) return m == "cycle" or m == "hour" end
+
 function DayNight.time()
   local m = mode()
-  if m == "cycle" then return DayNight.clock end
+  if isRunning(m) then return DayNight.clock end
   if m == "sync" then return DayNight.syncTime() end
   return DayNight.T[m] or DayNight.T.day
 end
@@ -359,7 +369,7 @@ end
 function DayNight.update(dt)
   local m = mode()
   if m ~= lastMode then
-    if m == "cycle" then
+    if isRunning(m) then
       -- from a pin, its time; from SYNC, wherever the real sky already was
       DayNight.clock = DayNight.T[lastMode]
                        or (lastMode == "sync" and DayNight.syncTime())
@@ -367,8 +377,10 @@ function DayNight.update(dt)
     end
     lastMode = m
   end
-  if m == "cycle" and dt and dt > 0 then
-    DayNight.clock = (DayNight.clock + dt) % DayNight.CYCLE
+  if isRunning(m) and dt and dt > 0 then
+    local period = DayNight.PERIOD[m] or DayNight.PERIOD.cycle
+    DayNight.clock = (DayNight.clock + dt * (DayNight.CYCLE / period))
+      % DayNight.CYCLE
   end
 end
 

@@ -608,9 +608,9 @@ local SETTINGS = {
     when = function() return stagedBattles() end, full = true },
   { DayNight.setting,
     "What time it is outdoors: pin the sky to DAY, NIGHT, DUSK or DAWN, "
-    .. "let CYCLE run it -- ten minutes of sun, ten of moon, with the "
-    .. "shadows, the sky and the light following -- or SYNC it to the "
-    .. "clock on the wall, so Kanto's evening falls when yours does." },
+    .. "let it run at 20 MIN or 1 HOUR a full day -- with the shadows, the "
+    .. "sky and the light following -- or SYNC it to the clock on the wall, "
+    .. "so Kanto's evening falls when yours does." },
   -- ------- 1.66 UI backplates (see lib/UiBackplates.lua) -------
   { UiBackplates.spriteLight,
     "SHADED lets the mons receive the world's day tint and cast shadows; "
