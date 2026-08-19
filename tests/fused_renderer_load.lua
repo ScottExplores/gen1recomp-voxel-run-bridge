@@ -78,6 +78,17 @@ T.eq(exports.version, "1.9.3", "vendored renderer reports its own version")
 -- pages back, and no setting is dropped by either.
 local sm = exports.settingsMenu
 T.check(type(sm) == "table", "settings menu exported")
+
+-- The renderer must see the bundled sprite pack. It asks the engine for
+-- companions by id, and the engine cannot see a bundled mod, so without the
+-- hosted handle it concluded Crystal was absent while Crystal was running and
+-- already owned sprite drawing -- which left no Pokemon drawn anywhere.
+local SpriteMenu = exports.lib.require("SpriteMenu")
+local spriteMenu = SpriteMenu.new()
+T.check(spriteMenu:crystalHandle() ~= nil,
+  "the renderer can see the bundled Crystal sprite pack")
+T.check(spriteMenu:crystalReady(), "bundled Crystal reports ready")
+T.eq(sm.activePack and sm.activePack(), "crystal", "Crystal is the active sprite pack")
 local cats = {}
 for _, c in ipairs(sm and sm.categories or {}) do cats[c.id] = c end
 for _, id in ipairs({ "quick", "world", "player", "sprites", "battles" }) do
@@ -116,7 +127,7 @@ for _, id in ipairs(vend and vend.loaded or {}) do loadedSet[id] = true end
 for _, id in ipairs({
   "overworld_wild_spawns", "free_fly", "choose_lead",
   "all_pokemon_catchable_151_mod", "unique_menu_icons", "Dynamic_Scaling",
-  "running_shoes", "crystal_animated_sprites_with_shiny_visuals",
+  "crystal_animated_sprites_with_shiny_visuals",
 }) do
   T.check(loadedSet[id], "bundled mod loaded: " .. id
     .. (vend and vend.failed and vend.failed[id] and (" -- " .. tostring(vend.failed[id])) or ""))

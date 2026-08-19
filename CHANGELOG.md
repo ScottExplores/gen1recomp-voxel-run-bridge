@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.10.1 - 2026-08-19
+
+- **Fixed: no Pokemon sprites anywhere, including the party menu.** The renderer
+  asks the engine for companion mods by id, and the engine cannot see a bundled
+  one, so `SpriteMenu` concluded Crystal Animated Sprites was absent while
+  Crystal was in fact running and had already taken sprite ownership -- leaving
+  nothing drawn. The renderer is now given a mod handle whose `find` sees the
+  bundled mods, the same one they already had. `PACK` reports `CRYSTAL 2.0`
+  again. Followers depended on the same handshake.
+- **Fixed: running only worked in first person.** Running Shoes 1.7.0 carries
+  its own `RUN SPEED` option and its own trigger, so once it was bundled it
+  owned the speed and the B button only reached Scott's Tweaks' first-person
+  bridge -- bob but no speed anywhere else. Scott's Tweaks owns B-running again
+  through the engine's `movement.speed` hook, which applies in 2D, third person
+  and first person alike. Running Shoes is no longer installed from the bundle;
+  its source stays under `vendor/running_shoes` and a **separately installed**
+  copy still takes over.
+- `RUN SPEED` gains **2.5X**, **3X** and **4X**.
+- `BOB INTENSITY` gains **0.1X** and **0.15X** below the old 0.25X floor.
+
 ## 0.10.0 - 2026-08-19
 
 - **Settings are reorganised and default to SIMPLE.** The main screen is now

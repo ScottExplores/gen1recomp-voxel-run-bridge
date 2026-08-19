@@ -27,7 +27,13 @@ VendorHost.MODS = {
   { dir = "catchable151",      id = "all_pokemon_catchable_151_mod", priority = 100 },
   { dir = "unique_menu_icons", id = "unique_menu_icons",      priority = 100 },
   { dir = "dynamic_scaling",   id = "Dynamic_Scaling",        priority = 120 },
-  { dir = "running_shoes",     id = "running_shoes",          priority = 150 },
+  -- Running Shoes is deliberately NOT installed from the bundle. Scott's
+  -- Tweaks already provides B-running through the engine's movement.speed
+  -- hook, which applies in 2D, third person and first person alike, and adds
+  -- the camera bob Running Shoes has no equivalent for. Running both put the
+  -- speed behind Running Shoes' own trigger and left B doing nothing outside
+  -- first person. The source stays in vendor/running_shoes for reference, and
+  -- a separately installed copy still takes over -- see running.lua.
   { dir = "crystal",           id = "crystal_animated_sprites_with_shiny_visuals", priority = 980,
     siblings = { "species_map", "animation_data", "dimensions", "options_screen" } },
 }

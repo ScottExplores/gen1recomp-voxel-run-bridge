@@ -48,7 +48,7 @@ local GAPPED_LAND_CELL = 64
 -- Native terrain and Flora's detailed apron occupy roughly y=-2..-37.
 -- Keep the broad procedural ground below both so it only fills the void.
 local GAPPED_LAND_Y = -40
-local RELEASE_VERSION = "0.10.0"
+local RELEASE_VERSION = "0.10.1"
 
 local OPTION_DEFAULTS = {
   hm_without_badges = true,
@@ -463,13 +463,34 @@ end
 
 -- The fused renderer publishes on this mod's own exports, so it is answered
 -- before any external provider is probed.
-local function installVendoredMods(mod)
+-- The vendor host is built before the renderer so the renderer can be handed a
+-- handle that sees the bundled mods. Battle Art asks the engine for companions
+-- by id -- SpriteMenu looks up Crystal that way to decide who owns sprite
+-- drawing -- and the engine cannot see a bundled mod, so without this the
+-- renderer concluded Crystal was absent while Crystal was running and had
+-- already taken sprite ownership, leaving no Pokemon drawn anywhere.
+local function newVendorHost(mod)
   local VendorHost, err = loadOwn(mod, "modules/vendor_host.lua")
   if type(VendorHost) ~= "table" or type(VendorHost.new) ~= "function" then
     mod.exports.vendored = { installed = false, reason = tostring(err or "unavailable") }
-    return
+    return nil
   end
-  local host = VendorHost.new(mod):installAll()
+  return VendorHost.new(mod)
+end
+
+-- Same mod, same exports table -- only `find` differs. Lookups are lazy, so a
+-- handle made before the bundled mods are installed still resolves them later.
+local function hostedHandle(mod, host)
+  if not host then return mod end
+  local proxy = setmetatable({}, { __index = mod })
+  proxy.exports = mod.exports
+  proxy.find = function(first, second) return host:_find(first, second) end
+  return proxy
+end
+
+local function installVendoredMods(mod, host)
+  if not host then return end
+  host:installAll()
   mod.exports.vendorHost = host
   mod.exports.vendored = host:status()
 end
@@ -630,7 +651,8 @@ local function defineOptions(mod)
       type = "choice",
       label = "RUN SPEED",
       default = 1.5,
-      choices = { { "1.25X", 1.25 }, { "1.5X", 1.5 }, { "2X", 2 } },
+      choices = { { "1.25X", 1.25 }, { "1.5X", 1.5 }, { "2X", 2 },
+                  { "2.5X", 2.5 }, { "3X", 3 }, { "4X", 4 } },
       help = "Choose the held-B walking multiplier.",
     },
     {
@@ -645,7 +667,8 @@ local function defineOptions(mod)
       type = "choice",
       label = "BOB INTENSITY",
       default = 0.5,
-      choices = { { "0.25X", 0.25 }, { "0.5X", 0.5 }, { "0.75X", 0.75 }, { "1X", 1 } },
+      choices = { { "0.1X", 0.1 }, { "0.15X", 0.15 }, { "0.25X", 0.25 },
+                  { "0.5X", 0.5 }, { "0.75X", 0.75 }, { "1X", 1 } },
       help = "Scale the subtle running camera motion. The default is 0.5X.",
     },
     {
@@ -1945,8 +1968,9 @@ end
 return function(mod)
   -- The fused renderer registers render pipelines and must be up before any
   -- option definition or feature module consults it.
-  installBattleArt(mod)
-  installVendoredMods(mod)
+  local vendorHost = newVendorHost(mod)
+  installBattleArt(hostedHandle(mod, vendorHost))
+  installVendoredMods(mod, vendorHost)
   defineOptions(mod)
   installFeatureModules(mod)
   -- These are ordinary bag/battle features and must remain available even
