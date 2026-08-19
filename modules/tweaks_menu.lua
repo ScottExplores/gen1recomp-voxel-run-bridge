@@ -8,6 +8,17 @@ local SCREEN_MOVEMENT = "ScottsTweaksMovementOptions"
 local SCREEN_FIELD = "ScottsTweaksFieldOptions"
 local SCREEN_DISPLAY = "ScottsTweaksDisplayOptions"
 local SCREEN_GEN2 = "ScottsTweaksPokegearOptions"
+local SCREEN_MODS = "ScottsTweaksModsOptions"
+
+-- Every bundled mod keeps its own settings screen. Rather than restate their
+-- rows here -- which would drift the moment one of them is updated -- the MODS
+-- page links to each, so one entry point reaches all of them.
+local MOD_SCREENS = {
+  { label = "BATTLE ART",   screen = "BattleArtSettingsOptions" },
+  { label = "WILDS OF KANTO", screen = "overworld_wild_spawns:wilds_menu" },
+  { label = "FOLLOWERS",    screen = "overworld_wild_spawns:followers_ex_menu" },
+  { label = "CRYSTAL SPRITES", screen = "CrystalSpriteOptions" },
+}
 
 return function(mod, context)
   local OptionScreen, screenErr = context.loadOwn("modules/option_screen.lua")
@@ -95,12 +106,15 @@ return function(mod, context)
       end
     end
   end
+  -- These must stay in step with the option definitions in main.lua; the menu
+  -- keeps its own copies so it can label them.
   local speedChoices = {
     { "1.25X", 1.25 }, { "1.5X", 1.5 }, { "2X", 2 },
+    { "2.5X", 2.5 }, { "3X", 3 }, { "4X", 4 },
   }
   local bobChoices = {
-    { "0.25X", 0.25 }, { "0.5X", 0.5 },
-    { "0.75X", 0.75 }, { "1X", 1 },
+    { "0.1X", 0.1 }, { "0.15X", 0.15 }, { "0.25X", 0.25 },
+    { "0.5X", 0.5 }, { "0.75X", 0.75 }, { "1X", 1 },
   }
   local expChoices = {
     { "VANILLA", "vanilla" }, { "LEAD ONLY", "lead" },
@@ -108,15 +122,46 @@ return function(mod, context)
   }
   local growthChoices = { { "OFF", "off" }, { "GENTLE", "gentle" } }
 
+  -- SIMPLE is the default and keeps this page short. ALL adds the pages that
+  -- are only visited to tune something. Hiding a page never changes a value,
+  -- so switching back finds every setting as it was left.
+  local function simpleMode()
+    local ok, value = pcall(mod.options.get, mod.options, "simple_menu")
+    if ok and value ~= nil then return value and true or false end
+    return true
+  end
+
+  local function modsRows()
+    local rows = {}
+    for _, entry in ipairs(MOD_SCREENS) do
+      rows[#rows + 1] = {
+        label = entry.label,
+        value = function() return "OPEN" end,
+        activate = function(game) pcall(push, game, entry.screen) end,
+      }
+    end
+    return rows
+  end
+
   local function mainRows()
-    return {
+    local rows = {
+      category("MODS", SCREEN_MODS),
       category("BAG & EXPERIENCE", SCREEN_INVENTORY),
       category("TRAINERS & OAK", SCREEN_TRAINERS),
       category("RUNNING", SCREEN_MOVEMENT),
-      category("FIELD MOVES", SCREEN_FIELD),
-      category("DISPLAY & THOR", SCREEN_DISPLAY),
       category("PACK + POKéGEAR", SCREEN_GEN2),
     }
+    if not simpleMode() then
+      rows[#rows + 1] = category("FIELD MOVES", SCREEN_FIELD)
+      rows[#rows + 1] = category("DISPLAY & THOR", SCREEN_DISPLAY)
+    end
+    rows[#rows + 1] = {
+      label = "SETTINGS",
+      value = function() return simpleMode() and "SIMPLE" or "ALL" end,
+      activate = function(game) return set(game, "simple_menu", not simpleMode()) end,
+      step = function(game) return set(game, "simple_menu", not simpleMode()) end,
+    }
+    return rows
   end
   local function inventoryRows()
     local rows = {}
@@ -175,6 +220,8 @@ return function(mod, context)
   end
   mod.content.screens:register(SCREEN_MAIN,
     screen("SCOTT'S TWEAKS", mainRows))
+  mod.content.screens:register(SCREEN_MODS,
+    screen("MODS", modsRows))
   mod.content.screens:register(SCREEN_INVENTORY,
     screen("BAG & EXPERIENCE", inventoryRows))
   mod.content.screens:register(SCREEN_TRAINERS,

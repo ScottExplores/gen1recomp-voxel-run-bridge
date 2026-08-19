@@ -48,7 +48,7 @@ local GAPPED_LAND_CELL = 64
 -- Native terrain and Flora's detailed apron occupy roughly y=-2..-37.
 -- Keep the broad procedural ground below both so it only fills the void.
 local GAPPED_LAND_Y = -40
-local RELEASE_VERSION = "0.10.1"
+local RELEASE_VERSION = "0.11.0"
 
 local OPTION_DEFAULTS = {
   hm_without_badges = true,
@@ -65,6 +65,7 @@ local OPTION_DEFAULTS = {
   oak_spare_starter = true,
   running_enabled = true,
   running_speed = 1.5,
+  simple_menu = true,
   running_view_bob = true,
   running_bob_intensity = 0.5,
   dual_screen = false,

@@ -64,6 +64,18 @@ T.check(dexGap > 0, "fixture dex gap accounted for (" .. dexGap .. " references)
 T.check(run.mod ~= nil, "loader selected the fused mod")
 T.eq(run.mod and run.mod.manifest.id, "voxel_run_bridge", "updater identity retained")
 
+-- Never declare a conflict with a mod this one bundles. Loader:_enforceConflicts
+-- fails the DECLARING mod, so a player who still has the standalone copy
+-- installed loses Scott's Tweaks entirely rather than the duplicate. Coexistence
+-- is handled at runtime instead: the fused renderer stands down and the vendor
+-- host skips any mod with a standalone copy.
+for _, spec in ipairs((run.mod and run.mod.manifest.conflictSpecs) or {}) do
+  T.check(spec.id ~= "BATTLE_ART_VOXEL_FORK",
+    "no self-defeating conflict with the bundled renderer")
+end
+T.eq(#((run.mod and run.mod.manifest.conflictSpecs) or {}), 0,
+  "no manifest conflicts: coexistence is resolved at runtime")
+
 local exports = run.loader.exports.voxel_run_bridge
 T.check(type(exports) == "table", "fused mod publishes exports")
 T.check(type(exports.fusedRenderer) == "table", "fused renderer reported its state")

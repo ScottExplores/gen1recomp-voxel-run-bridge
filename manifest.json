@@ -1,7 +1,7 @@
 {
   "id": "voxel_run_bridge",
   "name": "Scott's Tweaks",
-  "version": "0.10.1",
+  "version": "0.11.0",
   "github": "ScottExplores/gen1recomp-voxel-run-bridge",
   "api": 2,
   "entry": "main.lua",
@@ -25,7 +25,7 @@
     "DRAMALESS_SHAPE",
     "potato_voxel"
   ],
-  "conflicts": ["BATTLE_ART_VOXEL_FORK"],
+  "conflicts": [],
   "incompatible": [],
   "games": ["gen1"],
   "experimental": false,

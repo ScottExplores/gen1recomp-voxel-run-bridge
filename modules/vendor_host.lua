@@ -65,17 +65,21 @@ end
 function VendorHost:_find(first, second)
   local wanted = resolveId(first, second)
   if wanted == nil then return nil end
+  -- A separately installed copy always wins, so the real loader is asked
+  -- first. The synthetic answers below must never mask a mod the player
+  -- actually chose to install -- doing so hid a standalone renderer from the
+  -- stand-down check and started a second copy on top of it.
+  local realFind = self.mod.find
+  if type(realFind) == "function" and wanted ~= self.mod.id then
+    local ok, found = pcall(realFind, wanted)
+    if ok and found then return found end
+  end
+  local hit = self.loaded[wanted]
+  if hit then return hit end
   if wanted == VendorHost.HOST_ID or wanted == self.mod.id then
     -- Battle Art publishes onto the host mod's exports.
     return { id = wanted, version = self.mod.exports and self.mod.exports.version,
              exports = self.mod.exports }
-  end
-  local hit = self.loaded[wanted]
-  if hit then return hit end
-  local realFind = self.mod.find
-  if type(realFind) == "function" then
-    local ok, found = pcall(realFind, wanted)
-    if ok and found then return found end
   end
   return nil
 end

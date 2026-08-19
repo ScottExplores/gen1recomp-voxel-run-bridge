@@ -28,3 +28,4 @@ tests/love_stub.lua
 vendor/*/tests/
 vendor/*/docs/
 vendor/*/.github/
+tests/coexist_standalone.lua

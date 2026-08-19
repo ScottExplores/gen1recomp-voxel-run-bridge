@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.11.0 - 2026-08-19
+
+- **Fixed: Scott's Tweaks would not load at all** for anyone who still had the
+  standalone Scott's Battle Art Kanto installed. 0.9.0 declared a manifest
+  conflict with `BATTLE_ART_VOXEL_FORK`, and `Loader:_enforceConflicts` fails
+  the **declaring** mod -- so Scott's Tweaks disabled itself and none of the
+  bundled mods, menus or fixes ran. The conflict is removed; coexistence was
+  already handled at runtime, where the bundled renderer stands down and the
+  vendor host skips any mod with a standalone copy. New
+  `tests/coexist_standalone.lua` loads it beside a standalone renderer and
+  asserts both.
+- **Fixed: the bundled renderer started on top of a standalone one.** The
+  handle given to the renderer answered for `BATTLE_ART_VOXEL_FORK` before
+  consulting the real loader, hiding an installed copy from the stand-down
+  check. The real loader is asked first now -- a separately installed mod
+  always wins.
+- **The SCOTT'S TWEAKS menu is reorganised.** This is the screen reached from
+  START, and the 0.10.0 reorganisation only touched Battle Art's separate
+  settings screen, so nothing appeared to change. It now opens on **MODS**,
+  BAG & EXPERIENCE, TRAINERS & OAK, RUNNING and PACK + POKéGEAR, with
+  FIELD MOVES and DISPLAY & THOR behind a **SETTINGS: SIMPLE / ALL** row.
+- **New MODS page** links straight to Battle Art, Wilds of Kanto, Followers and
+  Crystal Sprites, so every bundled mod's settings are reachable from one
+  place instead of hunting through START.
+- `RUN SPEED` and `BOB INTENSITY` show their new ranges here too. The menu
+  keeps its own copies of those lists and they had not been updated, so 0.10.1's
+  wider ranges were invisible on this screen.
+
 ## 0.10.1 - 2026-08-19
 
 - **Fixed: no Pokemon sprites anywhere, including the party menu.** The renderer
