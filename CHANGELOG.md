@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.9.1 - 2026-08-19
+
+- **Fixed: no head bob while running in first person.** Bundling Running Shoes
+  in 0.9.0 caused it. `modules/running.lua` stood down entirely whenever it
+  found `running_shoes` -- correct when that was a separate install, since the
+  run multiplier must not be applied twice, but it took the camera bob down
+  with it and Running Shoes ships no bob of its own. Speed and bob are now
+  separate concerns: Running Shoes keeps the multiplier, Scott's Tweaks keeps
+  the bob. `RUN HEAD BOB` and `BOB INTENSITY` work again.
+- **Fixed: bundled mods were invisible to feature detection.** `findMod` now
+  answers for the fused Battle Art renderer and every bundled mod, so anything
+  that used to locate a companion by id keeps working. This is what left the
+  bob reporting `no_supported_voxel_mod` even with the renderer running.
+- `mod.exports.running` reports `speedDelegated` and `speedProvider` in place
+  of the old all-or-nothing `delegated` / `provider`.
+
 ## 0.9.0 - 2026-08-19
 
 **Eight community mods are now bundled.** Each runs from `vendor/<dir>/` with

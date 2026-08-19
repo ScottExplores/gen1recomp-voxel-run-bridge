@@ -48,7 +48,7 @@ local GAPPED_LAND_CELL = 64
 -- Native terrain and Flora's detailed apron occupy roughly y=-2..-37.
 -- Keep the broad procedural ground below both so it only fills the void.
 local GAPPED_LAND_Y = -40
-local RELEASE_VERSION = "0.9.0"
+local RELEASE_VERSION = "0.9.1"
 
 local OPTION_DEFAULTS = {
   hm_without_badges = true,
@@ -237,6 +237,20 @@ local function runningShoesOwnsFreeMove(FreeMove)
 end
 
 findMod = function(mod, id)
+  -- Battle Art and the bundled community mods no longer exist as separate mods,
+  -- so the engine's find cannot see them. Every feature that used to detect a
+  -- companion by id -- the run head bob asking the voxel renderer for FreeMove
+  -- and FirstPerson, Gapped Land, the movement bridge -- looks them up through
+  -- here, so answering centrally keeps those features working unchanged.
+  local exports = mod.exports
+  if (id == "BATTLE_ART_VOXEL_FORK" or id == mod.id)
+      and type(exports) == "table" and type(exports.lib) == "table" then
+    return { id = id, version = exports.version, exports = exports }
+  end
+  local host = exports and exports.vendorHost
+  if host and host.loaded and host.loaded[id] then
+    return host.loaded[id]
+  end
   if type(mod.find) ~= "function" then return nil end
   local ok, found = pcall(mod.find, id)
   if not ok then ok, found = pcall(mod.find, mod, id) end

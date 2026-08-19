@@ -150,12 +150,17 @@ files[shoesManifestPath] = delegateManifest("running_shoes")
 files[shoesEntryPath] = delegateEntry
 local run3 = loadEntry()
 local running3 = run3.loader.exports.voxel_run_bridge.running
-T.eq(running3 and running3.provider, "running_shoes",
-  "enabling standalone Running Shoes delegates the feature")
-T.eq(running3 and running3.priorDispatcherSuspended, true,
-  "delegation suspends the retained camera dispatcher")
-T.eq(tickRecord.state.active, false,
-  "delegated entry leaves the shared bob state inactive")
+-- Running Shoes takes the run multiplier so it is never applied twice, but it
+-- ships no camera bob, so the bob stays live. Bundling Running Shoes used to
+-- take the bob down with the speed hook and left first-person running flat.
+T.eq(running3 and running3.speedProvider, "running_shoes",
+  "enabling standalone Running Shoes delegates run speed")
+T.eq(running3 and running3.speedDelegated, true,
+  "run speed is delegated")
+T.eq(running3 and running3.installed, true,
+  "the camera bob stays installed")
+T.eq(tickRecord.state.active, true,
+  "the shared bob state stays active alongside Running Shoes")
 local delegatedPlayer = {
   px = 0, py = 0, stepFrames = 16, moving = false,
   inputLocked = false, surfing = false, lift = 9,
@@ -164,8 +169,8 @@ local delegatedBaseBefore = baseCalls
 FreeMove.tick({ player = delegatedPlayer })
 T.eq(baseCalls, delegatedBaseBefore + 1,
   "delegated camera dispatcher reaches the voxel tick once")
-T.eq(FirstPerson.frame(delegatedPlayer), 9,
-  "delegated camera dispatcher adds no head bob")
+T.check(FirstPerson.frame(delegatedPlayer) ~= 9,
+  "camera dispatcher still applies the head bob under Running Shoes")
 
 files[shoesManifestPath] = nil
 files[shoesEntryPath] = nil

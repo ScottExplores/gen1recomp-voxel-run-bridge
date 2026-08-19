@@ -152,7 +152,7 @@ return function(mod, context)
     suspendWorldPatch(mod)
     local delegated = {
       installed = false, delegated = true, provider = "trainer_forfeit",
-      reason = "standalone_mod_active", version = "0.9.0",
+      reason = "standalone_mod_active", version = "0.9.1",
     }
     mod.exports.trainerForfeit = delegated
     if mod.log and mod.log.info then
@@ -175,7 +175,7 @@ return function(mod, context)
   end
 
   local feature = {
-    installed = true, version = "0.9.0", sourceVersion = "0.3.0", cost = COST,
+    installed = true, version = "0.9.1", sourceVersion = "0.3.0", cost = COST,
     rematches = true, gymLeaders = true, dialogue = false,
     optionDefaults = {
       trainer_forfeit_enabled = DEFAULT_OPTIONS.trainer_forfeit_enabled,

@@ -79,18 +79,13 @@ local function currentGeneration(state)
 end
 
 return function(mod, context)
-  local standalone = context and context.findMod
-    and context.findMod("running_shoes") or nil
-  if standalone then
-    local suspended = suspendOwnedBob(mod, context)
-    local delegated = {
-      installed = false, delegated = true, provider = "running_shoes",
-      reason = "standalone_mod_active",
-      priorDispatcherSuspended = suspended,
-    }
-    mod.exports.running = delegated
-    return delegated
-  end
+  -- Running Shoes owns the run multiplier wherever it is present, so the speed
+  -- hook stands down to avoid applying it twice. The camera bob is a different
+  -- feature and Running Shoes does not provide one, so it is installed either
+  -- way -- bundling Running Shoes used to take the bob down with the speed hook
+  -- and left first-person running with no bob at all.
+  local speedDelegated = (context and context.findMod
+    and context.findMod("running_shoes")) and true or false
 
   local settings = context and context.settings
   local function option(key, fallback)
@@ -114,11 +109,13 @@ return function(mod, context)
     return math.max(1, finite(option("running_speed", 1.5), 1.5))
   end
 
-  mod.hooks:wrap("movement.speed", function(nextFn, frames, ctx)
-    local value = finite(nextFn(frames, ctx), frames)
-    if not wantsRun(ctx) then return value end
-    return math.max(1, math.floor(value / multiplier() + 0.5))
-  end, 100)
+  if not speedDelegated then
+    mod.hooks:wrap("movement.speed", function(nextFn, frames, ctx)
+      local value = finite(nextFn(frames, ctx), frames)
+      if not wantsRun(ctx) then return value end
+      return math.max(1, math.floor(value / multiplier() + 0.5))
+    end, 100)
+  end
 
   local bobState = {
     active = true, phase = 0, offset = 0,
@@ -242,8 +239,10 @@ return function(mod, context)
 
   local feature = {
     installed = true,
-    version = context and context.releaseVersion or "0.9.0",
+    version = context and context.releaseVersion or "0.9.1",
     alwaysAvailable = true,
+    speedDelegated = speedDelegated,
+    speedProvider = speedDelegated and "running_shoes" or mod.id,
     bob = bobStatus,
     isRunning = function(ctx) return wantsRun(ctx) end,
     bobOffset = function() return bobState.offset end,

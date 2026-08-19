@@ -362,8 +362,14 @@ local runningInstall = assert(loadfile("modules/running.lua"))()
 local runningDelegated = runningInstall(runningMod, {
   findMod = function(id) return id == "running_shoes" and {} or nil end,
 })
-eq(runningDelegated.provider, "running_shoes",
-  "standalone Running Shoes receives running ownership")
+-- Running Shoes owns the run multiplier, but not the camera bob -- it has no
+-- bob of its own, so Scott's Tweaks keeps providing that either way.
+eq(runningDelegated.speedProvider, "running_shoes",
+  "standalone Running Shoes receives run-speed ownership")
+eq(runningDelegated.speedDelegated, true,
+  "run speed is delegated to Running Shoes")
+eq(runningDelegated.installed, true,
+  "the head bob feature stays installed alongside Running Shoes")
 eq(runningHooks, 0,
   "running delegation installs neither producer nor camera wrapper")
 
