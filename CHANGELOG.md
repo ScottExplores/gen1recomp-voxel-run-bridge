@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.8.0 - 2026-08-19
+
+- **Scott's Battle Art Kanto is now built in.** The renderer that previously
+  had to be installed and updated as a separate mod ships inside Scott's
+  Tweaks, so one launcher update carries both. Battle Art's own module loader
+  reads `lib/` and `data/` relative to the mod root and runs unmodified; only
+  its mod handle changed.
+- The fused renderer **stands down automatically** when another voxel provider
+  (Pokemon Final, Dramatic Shape, Dramaless, Potato, or a standalone Battle
+  Art) is already active. Scott's Tweaks then behaves exactly as it did in
+  0.7.0, compat layers included. Its state is readable at
+  `mod.exports.fusedRenderer`.
+- Gapped Land and the movement-speed bridge now recognise the built-in
+  renderer through the same public `exports.lib` seam they used for external
+  providers, so no feature had to be special-cased.
+- Declares a conflict with a standalone `BATTLE_ART_VOXEL_FORK` install: two
+  copies of the same renderer must never drive one map. Disable the separate
+  Scott's Battle Art Kanto mod after updating.
+- New `tests/fused_renderer_load.lua` loads the real vendored tree through the
+  production API-2 loader and asserts the renderer actually initialises; the
+  existing memfs fixtures deliberately omit it and exercise the stand-down
+  path instead.
+
 ## 0.7.0 - 2026-08-16
 
 - Replaced the Gold-ROM import with a built-in, ROM-free **PACK + POKéGEAR**

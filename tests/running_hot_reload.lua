@@ -67,6 +67,14 @@ local files = {
   ["mods/oak_spare_starter/main.lua"] = delegateEntry,
 }
 for _, relative in ipairs({
+  -- The fused renderer's asset transform is validated by the loader before
+
+  -- the entry runs, so the fixture must carry it even when the vendored lib/
+
+  -- tree is absent and installBattleArt stands down.
+
+  "transform_birds.lua",
+
   "modules/settings.lua", "modules/migrations.lua",
   "modules/trainer_forfeit.lua", "modules/trainer_dialogue.lua",
   "modules/oak_spare_starter.lua", "modules/running.lua",

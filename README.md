@@ -1,5 +1,11 @@
 # Scott's Tweaks
 
+**0.8.0 bundles Scott's Battle Art Kanto.** The 3D voxel Kanto renderer,
+staged overworld battles and first-person movement are now part of this mod,
+so a single launcher update carries them. If you still have the standalone
+Scott's Battle Art Kanto installed, disable it -- the two must not both drive
+the map, and the manifest declares the conflict.
+
 Scott's Tweaks is the next version of **Voxel Run Bridge**. The display name
 is broader, but its internal mod ID remains `voxel_run_bridge`. Existing
 installations therefore update in place, keep their settings, and do not

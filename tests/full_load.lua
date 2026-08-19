@@ -140,6 +140,14 @@ local modFiles = {
   [pokemonFinalPrefix .. "main.lua"] = pokemonFinalEntry,
 }
 for _, relative in ipairs({
+  -- The fused renderer's asset transform is validated by the loader before
+
+  -- the entry runs, so the fixture must carry it even when the vendored lib/
+
+  -- tree is absent and installBattleArt stands down.
+
+  "transform_birds.lua",
+
   "modules/settings.lua",
   "modules/migrations.lua",
   "modules/trainer_forfeit.lua",
@@ -167,8 +175,8 @@ T.eq(run.mod and run.mod.manifest.id, "voxel_run_bridge",
   "stable updater identity is retained")
 T.eq(run.mod and run.mod.manifest.name, "Scott's Tweaks",
   "new display name is loaded")
-T.eq(run.mod and run.mod.manifest.version, "0.7.0",
-  "loader selected version 0.7.0")
+T.eq(run.mod and run.mod.manifest.version, "0.8.0",
+  "loader selected version 0.8.0")
 T.eq(run.mod and run.mod.manifest.affects_link, false,
   "inventory conveniences do not alter link rules")
 local thorApi = run.loader.exports.voxel_run_bridge.thorDualScreen
@@ -643,7 +651,7 @@ T.check(type(pokemonFinalExports) == "table",
   "Pokemon Final test-double exports are published")
 T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.owner, "voxel_run_bridge",
   "Pokemon Final FreeMove receives Scott's bridge marker")
-T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.7.0",
+T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.8.0",
   "Pokemon Final bridge marker carries the update version")
 T.eq(type(exported.hmWithoutBadges), "function",
   "live HM option accessor is published")

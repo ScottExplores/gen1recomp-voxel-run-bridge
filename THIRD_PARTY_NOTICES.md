@@ -40,3 +40,43 @@ The following MIT terms apply to each work and copyright notice listed above:
 
 Scott's Tweaks itself remains licensed under the repository's root
 [`LICENSE`](LICENSE).
+
+---
+
+## Built-in Scott's Battle Art Kanto renderer
+
+From 0.8.0 the Battle Art Kanto renderer is bundled inside this mod.
+Its upstream notices follow verbatim.
+
+# Third-party notices
+
+The categorized `OptionRows` navigation and sprite-provider coordination in
+`lib/OptionScreen.lua`, `lib/SpriteMenu.lua`, and `lib/SettingsMenu.lua` adapt
+Scott's Sprite Menu 0.2.2. Those adapter sources are licensed as follows:
+
+MIT License
+
+Copyright (c) 2026 Scott and contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+No Pokemon, trainer, menu-icon, font, or other art from a provider is copied
+by this adaptation. Crystal Animated Sprites, FireRed sprites, Battle Art
+assets, and every separately installed provider retain their own provenance
+and terms.

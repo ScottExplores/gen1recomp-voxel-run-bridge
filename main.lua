@@ -48,7 +48,7 @@ local GAPPED_LAND_CELL = 64
 -- Native terrain and Flora's detailed apron occupy roughly y=-2..-37.
 -- Keep the broad procedural ground below both so it only fills the void.
 local GAPPED_LAND_Y = -40
-local RELEASE_VERSION = "0.7.0"
+local RELEASE_VERSION = "0.8.0"
 
 local OPTION_DEFAULTS = {
   hm_without_badges = true,
@@ -399,7 +399,67 @@ local function installPokemonFinalCacheCompatibility(mod)
   return status
 end
 
+-- Scott's Battle Art Kanto is fused into this build rather than shipped as a
+-- separate mod, so one Scott's Tweaks update carries the renderer too. Battle
+-- Art's own loader reads lib/ and data/ relative to the mod root -- which is
+-- this mod's root now -- so it runs unmodified and only needs the mod handle.
+-- It publishes its module table on mod.exports.lib exactly as the standalone
+-- build did, which is the seam the voxel lookups below already understand.
+local function installBattleArt(mod)
+  -- Two voxel renderers must never drive the same map. If the player already
+  -- runs one -- including a standalone copy of Battle Art -- the fused one
+  -- stands down and Scott's Tweaks behaves exactly as it did before the
+  -- fusion, compat layers and all.
+  for _, id in ipairs(VOXEL_IDS) do
+    local found = mod.find(id)
+    if found and found.exports and type(found.exports.lib) == "table" then
+      -- Recorded rather than logged: standing down is the ordinary outcome for
+      -- anyone running another renderer, and this path must not add per-load
+      -- log noise to the bridge's warn-once accounting.
+      mod.exports.fusedRenderer = { installed = false, reason = "external_voxel", provider = id }
+      return false
+    end
+  end
+  if type(mod.read) ~= "function" then
+    mod.log:warn("path-scoped reader unavailable; fused renderer not installed")
+    return false
+  end
+  local okRead, source = pcall(mod.read, mod, "battle_art_main.lua")
+  if not okRead or type(source) ~= "string" then
+    mod.log:warn("battle_art_main.lua is missing; fused renderer not installed")
+    return false
+  end
+  local compile = loadstring or load
+  local chunk, err = compile(source,
+    "@" .. tostring(mod.path or mod.id) .. "/battle_art_main.lua")
+  if not chunk then
+    mod.log:warn("battle_art_main.lua did not compile: %s", tostring(err))
+    return false
+  end
+  -- xpcall with trailing arguments is a 5.2 extension; a closure keeps this
+  -- working on plain 5.1 as well as LuaJIT.
+  local okRun, runErr = xpcall(function() return chunk(mod) end, traceback)
+  if not okRun then
+    mod.log:warn("fused renderer failed to start: %s", tostring(runErr))
+    return false
+  end
+  mod.exports.fusedRenderer = { installed = true, provider = "BATTLE_ART_VOXEL_FORK" }
+  return true
+end
+
+-- The fused renderer publishes on this mod's own exports, so it is answered
+-- before any external provider is probed.
+local function findOwnVoxel(mod)
+  local lib = mod.exports and mod.exports.lib
+  if type(lib) == "table" and type(lib.require) == "function" then
+    return "BATTLE_ART_VOXEL_FORK", mod, lib
+  end
+  return nil
+end
+
 local function findVoxelMod(mod)
+  local ownId, ownHandle, ownLib = findOwnVoxel(mod)
+  if ownId then return ownId, ownHandle, ownLib end
   for _, id in ipairs(VOXEL_IDS) do
     local found = mod.find(id)
     local lib = found and found.exports and found.exports.lib
@@ -1176,6 +1236,8 @@ end
 -- own tiny procedural texture and mesh; no voxel source, map data, collision,
 -- connection, or disk-cache input is copied or changed.
 local function findGappedLandVoxel(mod)
+  local ownId, ownHandle, ownLib = findOwnVoxel(mod)
+  if ownId then return ownId, ownHandle, ownLib end
   local sawSupportedId = false
   for _, id in ipairs(GAPPED_LAND_VOXEL_IDS) do
     local handle = findMod(mod, id)
@@ -1856,6 +1918,9 @@ local function resolvedFrames(player, onBike)
 end
 
 return function(mod)
+  -- The fused renderer registers render pipelines and must be up before any
+  -- option definition or feature module consults it.
+  installBattleArt(mod)
   defineOptions(mod)
   installFeatureModules(mod)
   -- These are ordinary bag/battle features and must remain available even
