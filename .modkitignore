@@ -25,3 +25,6 @@ tests/fused_renderer_load.lua
 tests/run_fused.ps1
 tests/modkit/
 tests/love_stub.lua
+vendor/*/tests/
+vendor/*/docs/
+vendor/*/.github/

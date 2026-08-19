@@ -1,0 +1,15 @@
+{
+  "id": "unique_menu_icons",
+  "name": "Unique Menu Icons",
+  "version": "1.5.0",
+  "description": "Unique party/menu icons for all 251 Gen 1 and Gen 2 Pokemon, with ORIGINAL, GBC RED, and UNIQUE COLORS modes. Supports Red, Blue, Yellow, and Gold. When PokePCFollowers is enabled, this mod loads after it and owns the party-menu icons while PokePC continues to provide overworld followers.",
+  "entry": "main.lua",
+  "github": "menyas/unique-menu-icons",
+  "games": ["gen1", "gen2"],
+  "permissions": ["engine_internals"],
+  "optional_dependencies": ["PokePCFollowers_VoxelMerge", "Kanto-Reforged", "trainer_rematch", "CRYSTAL_251"],
+  "api": 2
+}
+
+
+

@@ -1,0 +1,305 @@
+return function(mod)
+  mod.log:info("Dynamic Level Scaling, Randomizer & Hard Mode Mod Loaded")
+
+  local BattleState = require("src.battle.BattleState")
+
+  -- =====================================================================
+  -- GLOBAL SETTINGS & OPTIONS MENU INTEGRATION
+  -- =====================================================================
+  local C = _G.__DYNAMIC_SCALING or {}
+  _G.__DYNAMIC_SCALING = C
+  C.randomize = C.randomize or "off"
+  C.hard_mode = C.hard_mode == nil and false or C.hard_mode
+
+  if mod.options and mod.options.define then
+    mod.options:define({
+      {
+        key = "randomize", type = "choice", label = "Trainer Randomizer",
+        choices = {
+          { "Off (Vanilla Teams)", "off" },
+          { "Chaos (Any Pokemon)", "chaos" },
+          { "Themed (Class-based)", "themed" }
+        },
+        default = "off"
+      },
+      {
+        key = "hard_mode", type = "choice", label = "Hard Mode (+10 Lv, 6 Mons)",
+        choices = {
+          { "Off", false },
+          { "On", true }
+        },
+        default = false
+      }
+    })
+  end
+
+  local function refreshOptions()
+    if mod.options and mod.options.get then
+      pcall(function() C.randomize = mod.options:get("randomize") or "off" end)
+      pcall(function() C.hard_mode = mod.options:get("hard_mode") end)
+    end
+  end
+  refreshOptions()
+
+  mod.events:on("mod.options_changed", function(p)
+    if p and p.mod == mod.id then
+      if p.key == "randomize" then C.randomize = p.value end
+      if p.key == "hard_mode" then C.hard_mode = p.value end
+    end
+  end)
+
+  local ROW_RNDM = { { "off", "OFF" }, { "chaos", "CHAOS" }, { "themed", "THEMED" } }
+  local ROW_HARD = { { false, "OFF" }, { true, "ON" } }
+
+  local function getModeIndex(val, list)
+    for i, m in ipairs(list) do if m[1] == val then return i end end
+    return 1
+  end
+
+  local function persistOpt(game, key, val)
+    local id = mod.id
+    local opts = game and game.save and game.save.options
+    if opts then
+      opts.modOptions = opts.modOptions or {}
+      opts.modOptions[id] = opts.modOptions[id] or {}
+      opts.modOptions[id][key] = val
+    end
+    local loader = game and game.mods
+    if loader then
+      loader.modOptions = loader.modOptions or {}
+      loader.modOptions[id] = loader.modOptions[id] or {}
+      loader.modOptions[id][key] = val
+    end
+    if game and game.writeOptions then pcall(game.writeOptions, game) end
+  end
+
+  mod.hooks:wrap("ui.options.rows", function(nextFn, game, rows)
+    local out = nextFn(game, rows)
+    if type(out) ~= "table" then return out end
+    
+    out[#out + 1] = {
+      id = mod.id .. ":randomize",
+      label = "TRAINERS",
+      value = function() return ROW_RNDM[getModeIndex(C.randomize, ROW_RNDM)][2] end,
+      step = function(g, dir) 
+        local n = #ROW_RNDM
+        local i = ((getModeIndex(C.randomize, ROW_RNDM) - 1 + dir) % n + n) % n + 1
+        C.randomize = ROW_RNDM[i][1]
+        persistOpt(g, "randomize", C.randomize)
+        return true
+      end,
+    }
+
+    out[#out + 1] = {
+      id = mod.id .. ":hard_mode",
+      label = "HARD MODE",
+      value = function() return ROW_HARD[getModeIndex(C.hard_mode, ROW_HARD)][2] end,
+      step = function(g, dir) 
+        local n = #ROW_HARD
+        local i = ((getModeIndex(C.hard_mode, ROW_HARD) - 1 + dir) % n + n) % n + 1
+        C.hard_mode = ROW_HARD[i][1]
+        persistOpt(g, "hard_mode", C.hard_mode)
+        return true
+      end,
+    }
+    return out
+  end)
+
+  -- =====================================================================
+  -- DICTIONARIES: THEMES, CLASSES & ULTIMATE MOVES
+  -- =====================================================================
+  local ULTIMATE_MOVES = {
+    ARCANINE   = { "FLAMETHROWER", "FIRE_BLAST" },
+    NINETALES  = { "FLAMETHROWER", "FIRE_SPIN" },
+    RAICHU     = { "THUNDERBOLT", "THUNDER" },
+    CLEFABLE   = { "METRONOME" },
+    WIGGLYTUFF = { "METRONOME" },
+    NIDOKING   = { "SLUDGE", "EARTHQUAKE" },
+    NIDOQUEEN  = { "SLUDGE", "EARTHQUAKE" },
+    EXEGGUTOR  = { "EGG_BOMB", "PSYCHIC_M", "PSYCHIC" }, 
+    STARMIE    = { "HYDRO_PUMP", "PSYCHIC_M", "PSYCHIC" }
+  }
+
+  local THEME_POOLS = {
+    BUG_FOREST = {"CATERPIE","WEEDLE","ODDISH","PARAS","VENONAT","BELLSPROUT","SCYTHER","PINSIR","TANGELA","BULBASAUR","EXEGGCUTE"},
+    WATER_ICE = {"SQUIRTLE","PSYDUCK","POLIWAG","TENTACOOL","SLOWPOKE","SEEL","SHELLDER","KRABBY","HORSEA","GOLDEEN","STARYU","MAGIKARP","LAPRAS","OMANYTE","KABUTO","ARTICUNO"},
+    ROCK_FIGHT = {"MANKEY","MACHOP","GEODUDE","ONIX","CUBONE","HITMONLEE","HITMONCHAN","RHYHORN","AERODACTYL"},
+    FIRE_POISON = {"CHARMANDER","VULPIX","GROWLITHE","PONYTA","MAGMAR","MOLTRES","EKANS","NIDORAN_F","NIDORAN_M","ZUBAT","GRIMER","KOFFING"},
+    ELEC_PSY_GHOST = {"PIKACHU","VOLTORB","ELECTABUZZ","ZAPDOS","MAGNEMITE","ABRA","DROWZEE","MR_MIME","JYNX","MEWTWO","MEW","GASTLY"},
+    NORMAL_BIRD = {"PIDGEY","RATTATA","SPEAROW","CLEFAIRY","JIGGLYPUFF","MEOWTH","FARFETCHD","DODUO","LICKITUNG","CHANSEY","KANGASKHAN","TAUROS","DITTO","EEVEE","PORYGON","SNORLAX"}
+  }
+
+  local CLASS_THEMES = {
+    BUG_CATCHER = "BUG_FOREST", JR_TRAINER_F = "BUG_FOREST", ERIKA = "BUG_FOREST",
+    SAILOR = "WATER_ICE", FISHERMAN = "WATER_ICE", SWIMMER = "WATER_ICE", BEAUTY = "WATER_ICE", MISTY = "WATER_ICE", LORELEI = "WATER_ICE",
+    HIKER = "ROCK_FIGHT", CUE_BALL = "ROCK_FIGHT", BLACKBELT = "ROCK_FIGHT", JR_TRAINER_M = "ROCK_FIGHT", BROCK = "ROCK_FIGHT", BRUNO = "ROCK_FIGHT", GIOVANNI = "ROCK_FIGHT",
+    POKEMANIAC = "FIRE_POISON", SUPER_NERD = "FIRE_POISON", BIKER = "FIRE_POISON", BURGLAR = "FIRE_POISON", TAMER = "FIRE_POISON", SCIENTIST = "FIRE_POISON", KOGA = "FIRE_POISON", BLAINE = "FIRE_POISON",
+    ENGINEER = "ELEC_PSY_GHOST", GAMER = "ELEC_PSY_GHOST", PSYCHIC_TR = "ELEC_PSY_GHOST", ROCKER = "ELEC_PSY_GHOST", JUGGLER = "ELEC_PSY_GHOST", CHANNELER = "ELEC_PSY_GHOST", LT_SURGE = "ELEC_PSY_GHOST", SABRINA = "ELEC_PSY_GHOST", AGATHA = "ELEC_PSY_GHOST",
+    LASS = "NORMAL_BIRD", BIRD_KEEPER = "NORMAL_BIRD", LANCE = "NORMAL_BIRD"
+  }
+
+  -- =====================================================================
+  -- ENGINE LOGIC
+  -- =====================================================================
+  local function getEvolvedSpecies(game, species, currentLevel)
+    local def = game.data.pokemon[species]
+    if not def or not def.evolutions then return species end
+    for _, evo in ipairs(def.evolutions) do
+      local shouldEvolve = false
+      if evo.method == "LEVEL" and currentLevel >= evo.level then shouldEvolve = true
+      elseif (evo.method == "TRADE" or (evo.method == "ITEM" and species ~= "EEVEE")) and currentLevel >= 30 then shouldEvolve = true end
+      if shouldEvolve then return getEvolvedSpecies(game, evo.species, currentLevel) end
+    end
+    return species
+  end
+
+  local fullPokedexCache = nil
+
+  if not BattleState.__dynamic_scaling_wrapped then
+    BattleState.__dynamic_scaling_wrapped = true
+    local orig_newTrainer = BattleState.newTrainer
+    
+    BattleState.newTrainer = function(game, trainerId, partyIndex, ...)
+      
+      local trainerDef = game.data.trainers[trainerId]
+      local origAiMods = trainerDef and trainerDef.aiMods
+      
+      -- Temporarily force smartest AI prior to battle generation
+      if trainerDef and C.hard_mode then
+         trainerDef.aiMods = {1, 2, 3}
+      end
+
+      -- 1. Let the engine create the base battle! 
+      local battle = orig_newTrainer(game, trainerId, partyIndex, ...)
+      
+      if not battle or not battle.enemyParty then 
+         if trainerDef then trainerDef.aiMods = origAiMods end
+         return battle 
+      end
+
+      -- 2. Calculate Player Party Average
+      local totalLevel, count = 0, 0
+      if game.save and game.save.party then
+        for _, mon in ipairs(game.save.party) do
+          totalLevel = totalLevel + mon.level
+          count = count + 1
+        end
+      end
+      local avgLevel = count > 0 and math.floor(totalLevel / count) or 5
+
+      -- 3. Calculate Original Max Level to preserve boss offsets
+      local origMax = 0
+      for _, mon in ipairs(battle.enemyParty) do
+        if mon.level > origMax then origMax = mon.level end
+      end
+
+      -- 4. Build Pokedex Cache
+      if not fullPokedexCache then
+        fullPokedexCache = {}
+        for key, def in pairs(game.data.pokemon) do
+          if type(def.dex) == "number" and def.dex >= 1 and def.dex <= 151 then
+            table.insert(fullPokedexCache, key)
+          end
+        end
+      end
+
+      -- 5. Determine active Randomizer Pool
+      local activePool = fullPokedexCache
+      if C.randomize == "themed" then
+         local themeName = CLASS_THEMES[trainerId]
+         if themeName and THEME_POOLS[themeName] then
+            activePool = THEME_POOLS[themeName]
+         end
+      end
+
+      -- 6. Dynamically rebuild the enemy party!
+      local Pokemon = require("src.pokemon.Pokemon")
+      local Stats = require("src.pokemon.Stats")
+      local targetSize = C.hard_mode and 6 or #battle.enemyParty
+      local newEnemyParty = {}
+
+      for i = 1, targetSize do
+        -- Determine if this is a "filler" slot created by Hard Mode
+        local isFiller = (i > #battle.enemyParty)
+        
+        local referenceMon = battle.enemyParty[i] or battle.enemyParty[#battle.enemyParty]
+        
+        -- Scale Level
+        local newLevel
+        if C.hard_mode then
+          newLevel = math.min(100, avgLevel + 10)
+        else
+          local levelOffset = referenceMon.level - origMax
+          newLevel = math.min(100, math.max(2, (avgLevel + levelOffset) + 2))
+        end
+
+        -- Determine Species
+        local baseSpecies
+        if C.randomize ~= "off" or isFiller then
+          baseSpecies = activePool[math.random(#activePool)]
+        else
+          baseSpecies = referenceMon.species
+        end
+
+        -- Evolve
+        local newSpecies = getEvolvedSpecies(game, baseSpecies, newLevel)
+
+        -- Generate a completely fresh, safe Pokemon object
+        local newMon = Pokemon.new(game.data, newSpecies, newLevel)
+
+        -- Inject Hard Mode Stats
+        if C.hard_mode then
+          newMon.dvs = { attack = 15, defense = 15, speed = 15, special = 15, hp = 15 }
+          newMon.statExp = { attack = 65535, defense = 65535, speed = 65535, special = 65535, hp = 65535 }
+          newMon.stats = Stats.calc(game.data.pokemon[newSpecies], newLevel, newMon.dvs, newMon.statExp)
+          newMon.hp = newMon.stats.hp
+        end
+
+        -- Inject Ultimate Moves
+        if ULTIMATE_MOVES[newSpecies] then
+          for _, moveId in ipairs(ULTIMATE_MOVES[newSpecies]) do
+            local mdef = game.data.moves[moveId]
+            if mdef then
+              local hasMove = false
+              for _, m in ipairs(newMon.moves) do 
+                  if m.id == moveId then hasMove = true end 
+              end
+              if not hasMove then
+                table.insert(newMon.moves, 1, { id = moveId, pp = mdef.pp })
+                if #newMon.moves > 4 then table.remove(newMon.moves) end
+              end
+            end
+          end
+        end
+
+        newEnemyParty[i] = newMon
+      end
+
+      -- 7. Apply the new scaled party back to the battle
+      battle.enemyParty = newEnemyParty
+      
+      -- THE FIX: Comprehensively sync all cached battle variables for the new lead Pokemon!
+      if battle.enemy and newEnemyParty[1] then
+        local lead = newEnemyParty[1]
+        local def = game.data.pokemon[lead.species]
+        
+        battle.enemy.mon = lead
+        battle.enemy.species = lead.species
+        battle.enemy.name = def.name
+        battle.enemy.level = lead.level
+        battle.enemy.types = def.types
+        battle.enemy.moves = lead.moves
+        battle.enemy.stats = lead.stats
+        battle.enemy.curStats = lead.stats
+        battle.enemy.hp = lead.hp
+        battle.enemy.maxHP = lead.stats.hp
+        battle.enemy.shownHP = lead.hp
+      end
+
+      -- 8. Clean up
+      if trainerDef then trainerDef.aiMods = origAiMods end
+
+      return battle
+    end
+  end
+end

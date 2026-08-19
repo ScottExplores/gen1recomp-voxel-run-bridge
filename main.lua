@@ -48,7 +48,7 @@ local GAPPED_LAND_CELL = 64
 -- Native terrain and Flora's detailed apron occupy roughly y=-2..-37.
 -- Keep the broad procedural ground below both so it only fills the void.
 local GAPPED_LAND_Y = -40
-local RELEASE_VERSION = "0.8.0"
+local RELEASE_VERSION = "0.9.0"
 
 local OPTION_DEFAULTS = {
   hm_without_badges = true,
@@ -449,6 +449,17 @@ end
 
 -- The fused renderer publishes on this mod's own exports, so it is answered
 -- before any external provider is probed.
+local function installVendoredMods(mod)
+  local VendorHost, err = loadOwn(mod, "modules/vendor_host.lua")
+  if type(VendorHost) ~= "table" or type(VendorHost.new) ~= "function" then
+    mod.exports.vendored = { installed = false, reason = tostring(err or "unavailable") }
+    return
+  end
+  local host = VendorHost.new(mod):installAll()
+  mod.exports.vendorHost = host
+  mod.exports.vendored = host:status()
+end
+
 local function findOwnVoxel(mod)
   local lib = mod.exports and mod.exports.lib
   if type(lib) == "table" and type(lib.require) == "function" then
@@ -1921,6 +1932,7 @@ return function(mod)
   -- The fused renderer registers render pipelines and must be up before any
   -- option definition or feature module consults it.
   installBattleArt(mod)
+  installVendoredMods(mod)
   defineOptions(mod)
   installFeatureModules(mod)
   -- These are ordinary bag/battle features and must remain available even

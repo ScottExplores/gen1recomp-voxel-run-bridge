@@ -175,10 +175,14 @@ T.eq(run.mod and run.mod.manifest.id, "voxel_run_bridge",
   "stable updater identity is retained")
 T.eq(run.mod and run.mod.manifest.name, "Scott's Tweaks",
   "new display name is loaded")
-T.eq(run.mod and run.mod.manifest.version, "0.8.0",
-  "loader selected version 0.8.0")
-T.eq(run.mod and run.mod.manifest.affects_link, false,
-  "inventory conveniences do not alter link rules")
+T.eq(run.mod and run.mod.manifest.version, "0.9.0",
+  "loader selected version 0.9.0")
+-- 0.9.0 bundles All Pokemon Catchable 151 and Dynamic Scaling, which repatch
+-- encounter tables and pokemon records. The loader warns when a mod writes to
+-- pokemon while claiming otherwise, and a link partner must know, so the flag
+-- is now honestly true.
+T.eq(run.mod and run.mod.manifest.affects_link, true,
+  "bundled encounter and stat changes are declared to link partners")
 local thorApi = run.loader.exports.voxel_run_bridge.thorDualScreen
 T.check(type(thorApi) == "table",
   "main orchestrator installs the physical-Thor presenter")
@@ -651,7 +655,7 @@ T.check(type(pokemonFinalExports) == "table",
   "Pokemon Final test-double exports are published")
 T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.owner, "voxel_run_bridge",
   "Pokemon Final FreeMove receives Scott's bridge marker")
-T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.8.0",
+T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.9.0",
   "Pokemon Final bridge marker carries the update version")
 T.eq(type(exported.hmWithoutBadges), "function",
   "live HM option accessor is published")

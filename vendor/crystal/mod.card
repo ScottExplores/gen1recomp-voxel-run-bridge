@@ -1,0 +1,28 @@
+return {
+  summary = "Crystal animations plus Gen 2-style shiny visual and audio effects.",
+  author = "Community mod",
+  tags = {
+    "visual", "audio", "sprites", "crystal",
+    "animated", "shiny", "sparkles"
+  },
+  compat = {
+    engine = ">=0.1.33 <2.0.0",
+    modApi = 2,
+  },
+  differences = {
+    added = {
+      "Crystal animated normal and shiny front sprites",
+      "PNG frame animation (assets/front/normal/<dex>/NNN.png)",
+      "Crystal normal and shiny back sprites",
+      "Gen 2-style sparkle animation and sound",
+      "enemy cry after the sparkle sound",
+    },
+    changed = {
+      "battle Pokémon artwork and shiny entrance sequence",
+    },
+    known = {
+      "does not make Pokémon shiny",
+      "disable the two original standalone mods",
+    },
+  },
+}

@@ -1,0 +1,57 @@
+-- Sharing metadata. Read by tooling and the manager detail pane;
+-- never by the loader's merge.
+return {
+  summary = "Visible and reactive wild Pokemon for the Gen 1 overworld. Roaming, hidden and aggressive encounters across grass, caves and water. Does not change the player spawn.",
+  author = "YoDrehDenSwagAuf",
+  contact = "https://github.com/YoDrehDenSwagAuf/overworld-spawn-mod",
+  tags = { "overworld", "encounters", "gameplay", "voxel-compatible", "diagnostics" },
+  differences = {
+    changed = {
+      "spawn count scales with eligible encounter tiles and connected regions",
+      "wild entities use Idle, Wander, Aggressive, or Hidden behaviour",
+      "vanilla grass rolls are suppressed only after visible spawns initialize successfully",
+      "wild Pokemon render via native SpriteRenderer sheets (same contract as trainers)",
+    },
+    added = {
+      "data-driven overworld wild Pokemon entities on grass, cave, and surf-water tiles",
+      "aggressive spotting with engine exclamation emote and chase",
+      "hidden grass shake / cave dust encounter markers",
+      "Mod Settings for Sprite Style, Spawn Amount, Random Enc, Water Mons, Dev Overlay",
+      "Test Spawn Pokemon selector (OPTIONS activate row)",
+      "cave reachability BFS so cave spawns stay in player-reachable cells",
+      "decentered visible water density with Manhattan spacing",
+      "follower Sprite Style + Swimming/Levitates water transitions",
+      "unified follower core (party selection, control modes, pack trailers)",
+      "standalone follower runtime (no Followers EX / PokePC required)",
+      "START -> OPTIONS submenus for Poke Followers EX and Wilds of Kanto",
+      "Sprite Color (Colored / Classic) and Sprite Fade (Solid / Faded)",
+      "peaceful Town / Ambient Pokemon in safe towns and interiors",
+      "build-time 16x96 Gen1Recomp SpriteRenderer sheets from follow-sprites",
+      "nearest-neighbor fitting into the trainer 16x16 billboard contract",
+      "fail-safe that keeps classic grass encounters if the spawn system is not ready",
+      "Dev Overlay with behaviour/facing labels and diagnostics HUD",
+      "Voxel-compatible: Dramatic Shape SpriteBillboards, First Person, depth, grass, shadows",
+    },
+    known = {
+      "species overworld sprites prefer assets/generated/followsprites_runtime/ "
+        .. "(16x96, frames=6, walker=true); legacy battle fronts remain as fallback",
+      "follow-sprite source PNGs stay in the package for rebuild / flat optional paths",
+      "when no real image is available, assets/fallback/pokemon_missing.png is used "
+        .. "(hidden behaviours draw no Pokemon sprite and stay out of ow.entities)",
+      "sprite identity uses numeric speciesId/dex only; localized names are display-only",
+      "spawns are runtime-only and reset when you leave and re-enter a map",
+      "visible Water Mons may use Surf + Old/Good/Super Rod pools with shore-distance zones",
+      "Dramatic Shape overworld battles cull non-player entities from the arena shot",
+      "Right-facing uses SpriteRenderer left-frame mirroring (trainer contract); "
+        .. "source follow-sprites may contain artistically distinct right frames",
+      "runtime Gen1 shiny selection is not available; preview may force shiny sheets",
+      "classic fishing, surf vanilla rolls, static, scripted, and trainer encounters stay available",
+    },
+  },
+  credits = {
+    { who = "bryanthaboi/gen1recomp", for_ = "mod API, encounter tables, WorldAPI" },
+    { who = "DramaticShape/DramaticShapeVoxelMod",
+      for_ = "entity pose()/draw() dual-mode rendering contract" },
+  },
+  compat = { engine = "0.0.0-dev || >=0.1.0 <2.0.0", modApi = 2 },
+}

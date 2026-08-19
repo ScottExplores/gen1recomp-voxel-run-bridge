@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.9.0 - 2026-08-19
+
+**Eight community mods are now bundled.** Each runs from `vendor/<dir>/` with
+its upstream source intact, so one Scott's Tweaks update carries the whole
+stack and every setting lives in one place.
+
+| Mod | Version |
+| --- | --- |
+| Wilds of Kanto | 2.1.7 |
+| Free Fly | 1.8.0 |
+| Trainers Let You Choose Lead Pokemon | 2.0.1 |
+| All Pokemon Catchable 151 | 0.3.3-beta |
+| Unique Menu Icons | 1.5.0 |
+| Dynamic Scaling | 1.0.4 |
+| Running Shoes | 1.7.0 |
+| Crystal Animated Sprites with Shiny Visuals | 2.0.1 |
+
+- **Fixed: wild Pokemon were invisible in grass.** Wilds' `Grass View` defaulted
+  to `immersed`, which returns a downward tuck and depends on Dramatic Shape's
+  native grass mesh redrawing over the sprite's feet. Under the bundled Battle
+  Art voxel renderer the grass is real geometry, so a tucked sprite was occluded
+  outright — while town and ambient Pokemon, standing on no grass mesh, stayed
+  visible. The default is now `above`, which applies a lift instead. Both values
+  remain selectable under Wilds' settings.
+- New `modules/vendor_host.lua` runs the bundled mods. Each is handed a proxy
+  mod handle whose `path` and `read` are rooted at its own vendor directory, so
+  upstream code resolves its assets and libraries exactly as it did standalone.
+  `find` is shimmed so the mods still discover one another by id after fusing.
+- A separately installed copy of any bundled mod always wins: the player chose
+  it, and two copies must never both run. Status is readable at
+  `mod.exports.vendored`.
+- `affects_link` is now **true**. All Pokemon Catchable 151 repatches encounter
+  tables and Dynamic Scaling rewrites stats, so a link partner has to be told.
+
 ## 0.8.0 - 2026-08-19
 
 - **Scott's Battle Art Kanto is now built in.** The renderer that previously

@@ -1,0 +1,7 @@
+{
+  "id": "Dynamic_Scaling",
+  "name": "Dynamic Scaling",
+  "version": "1.0.4",
+  "entry": "main.lua",
+  "api": 2
+}

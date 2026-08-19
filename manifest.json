@@ -1,7 +1,7 @@
 {
   "id": "voxel_run_bridge",
   "name": "Scott's Tweaks",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "github": "ScottExplores/gen1recomp-voxel-run-bridge",
   "api": 2,
   "entry": "main.lua",
@@ -29,7 +29,7 @@
   "incompatible": [],
   "games": ["gen1"],
   "experimental": false,
-  "affects_link": false,
+  "affects_link": true,
   "permissions": ["engine_internals"],
   "description": "Scott's organized gameplay menu: built-in Pack/Pokegear navigation, bag pockets, EXP modes, Trade Stone, trainer forfeits and rematches, Oak's spare starter, B-button running with light head bob, badge-free field moves, gapped land, physical-Thor dual-screen control, and the built-in Scott's Battle Art Kanto voxel renderer: 3D Kanto, staged overworld battles, first-person movement, ceilings, horizons and weather."
 }

@@ -1,0 +1,24 @@
+{
+  "id": "crystal_animated_sprites_with_shiny_visuals",
+  "name": "Crystal Animated Sprites with Shiny Visuals",
+  "version": "2.0.1",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "category": "VISUAL",
+  "games": ["gen1", "gen2"],
+  "game_version": ">=0.1.33 <2.0.0",
+  "priority": 980,
+  "permissions": [
+    "engine_internals"
+  ],
+  "dependencies": [],
+  "optional_dependencies": [],
+  "conflicts": [
+    "crystal_animated_sprites",
+    "gen2_shiny_visuals",
+    "shiny_visuals"
+  ],
+  "description": "Crystal animated normal and shiny sprites combined with Gen 2-style shiny sparkles, sound, and delayed enemy cry.",
+  "github": "distilledorion-sketch/crystal_animated_sprites_with_shiny_visuals"
+}

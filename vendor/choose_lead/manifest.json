@@ -1,0 +1,23 @@
+{
+  "id": "choose_lead",
+  "name": "Trainers Let You Choose Lead Pokemon",
+  "version": "2.0.1",
+  "github": "ZyranCZ/Trainers-Let-You-Choose-Lead-Pokemon",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "games": [
+    "gen1",
+    "gen2"
+  ],
+  "category": "TWEAK",
+  "priority": 100,
+  "affects_link": false,
+  "permissions": [
+    "engine_internals"
+  ],
+  "dependencies": [],
+  "optional_dependencies": [],
+  "conflicts": [],
+  "description": "Asks which Pokemon to send out once the opposing one is on screen, instead of always leading with party slot 1."
+}

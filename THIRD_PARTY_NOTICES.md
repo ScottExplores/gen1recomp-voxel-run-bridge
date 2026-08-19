@@ -80,3 +80,47 @@ No Pokemon, trainer, menu-icon, font, or other art from a provider is copied
 by this adaptation. Crystal Animated Sprites, FireRed sprites, Battle Art
 assets, and every separately installed provider retain their own provenance
 and terms.
+
+---
+
+## Bundled community mods (0.9.0)
+
+Each mod below is included under `vendor/<dir>/` with its upstream source
+unmodified except where a `VENDORED CHANGE` comment marks an edit. Copyright
+remains with its author; inclusion here is not a relicensing.
+
+| Mod | Version | Upstream | Licence |
+| --- | --- | --- | --- |
+| Wilds of Kanto | 2.1.7 | YoDrehDenSwagAuf/overworld-spawn-mod | MIT (code and original assets only) |
+| Running Shoes | 1.7.0 | MadeinTaly/gen1recomp-running-shoes | MIT |
+| All Pokemon Catchable 151 | 0.3.3-beta | Wowabox (Darklinkduck) | MIT |
+| Free Fly | 1.8.0 | shanehudson-gen1recomp-mods/free_fly | no licence file |
+| Trainers Let You Choose Lead Pokemon | 2.0.1 | ZyranCZ/Trainers-Let-You-Choose-Lead-Pokemon | no licence file |
+| Unique Menu Icons | 1.5.0 | menyas/unique-menu-icons | no licence file |
+| Crystal Animated Sprites with Shiny Visuals | 2.0.1 | distilledorion-sketch/crystal_animated_sprites_with_shiny_visuals | no licence file |
+| Dynamic Scaling | 1.0.4 | (no public repository found) | no licence file |
+
+**Wilds of Kanto asset carve-out.** Its MIT licence covers the original source
+and original project assets only. The follow-sprite and overworld art under
+`vendor/wilds/assets/enhanced_overworld/`, including the built-in Poke Followers
+/ GSC sheets and the generated runtime sheets derived from them, remains under
+the licences of its original authors — the Followers EX / PokePC /
+ShockSlayer (Pokemon Crystal Clear) lineage — and is not relicensed here. See
+`vendor/wilds/THIRD_PARTY_NOTICES.md`.
+
+**Mods with no licence file** are included at the request of this repository's
+owner, who states he has the authors' permission. Absent a licence file the
+default position is all rights reserved, so anyone forking this repository
+should obtain their own permission rather than relying on its presence here.
+
+### Vendored changes
+
+- `vendor/crystal/main.lua` — three `require("mods.<id>.<file>")` calls replaced
+  with a `loadSibling` helper. The mod sandbox removes `setfenv` and resolves
+  `package.path` against the engine's real mods directory, neither of which
+  exists for a bundled copy. Behaviour is identical.
+- `vendor/wilds/lib/config.lua`, `vendor/wilds/options.lua` — the default for
+  `pokemon_grass_render_mode` changed from `immersed` to `above`. Immersed
+  returns a downward tuck that relies on Dramatic Shape's native grass mesh;
+  under the bundled Battle Art voxel renderer the grass is real geometry and a
+  tucked sprite is hidden outright. Both values remain selectable in the menu.
