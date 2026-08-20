@@ -175,8 +175,8 @@ T.eq(run.mod and run.mod.manifest.id, "voxel_run_bridge",
   "stable updater identity is retained")
 T.eq(run.mod and run.mod.manifest.name, "Scott's Tweaks",
   "new display name is loaded")
-T.eq(run.mod and run.mod.manifest.version, "0.12.1",
-  "loader selected version 0.12.1")
+T.eq(run.mod and run.mod.manifest.version, "0.12.2",
+  "loader selected version 0.12.2")
 -- The consolidated build bundles All Pokemon Catchable 151 and Dynamic Scaling, which repatch
 -- encounter tables and pokemon records. The loader warns when a mod writes to
 -- pokemon while claiming otherwise, and a link partner must know, so the flag
@@ -395,8 +395,8 @@ end
 T.eq(organizedCount, #schema,
   "categorized screens retain every Mod Manager setting")
 run.loader.modOptions.voxel_run_bridge.simple_menu = true
-T.eq(organized.gen2_menus.value(), "OFF",
-  "built-in PACK + Pokegear needs no external import")
+T.eq(organized.gen2_menus.value(), "ON",
+  "Crystal-style PACK + Pokegear defaults on without an external import")
 run.loader.modOptions.voxel_run_bridge =
   run.loader.modOptions.voxel_run_bridge or {}
 run.loader.modOptions.voxel_run_bridge.gen2_menus = true
@@ -415,17 +415,22 @@ T.eq(packRows[2].id, "scotts_tweaks.pokegear",
 T.eq(packRows[2].label, "POKéGEAR",
   "POKeGEAR uses its requested Start label")
 local gen2Api = run.loader.exports.voxel_run_bridge.gen2Ui
+T.eq(gen2Api.apiVersion, 3,
+  "real Pokegear publishes the four-card API")
 T.eq(gen2Api.getStatus().romImport, false,
   "built-in Pokegear has no ROM-import dependency")
 local pokegearScreen = buildScreen(gen2Api.screenIds.pokegear)
 T.check(type(pokegearScreen.items) == "table"
-    and #pokegearScreen.items == 2,
-  "real Pokegear screen exposes Clock and Kanto Map")
-T.check(type(pokegearScreen.items[1].label) == "string"
-    and pokegearScreen.items[1].label:match("^CLOCK ") ~= nil,
-  "real Pokegear screen renders a live clock row")
-T.eq(pokegearScreen.items[2].label, "KANTO MAP",
-  "real Pokegear screen routes to Red's Kanto Map")
+    and #pokegearScreen.items == 4,
+  "real Pokegear exposes Clock, Map, Phone and Radio cards")
+for index, id in ipairs({ "clock", "map", "phone", "radio" }) do
+  T.eq(pokegearScreen.items[index].id, id,
+    "real Pokegear keeps Crystal card order: " .. id)
+end
+T.eq(pokegearScreen.isOpaque, true,
+  "real Pokegear owns one crisp native-size canvas")
+T.eq(pokegearScreen:wantsFillScale(), true,
+  "real Pokegear requests native fill scaling")
 local goldInventoryMenu = buildScreen(menuApi.screenIds.inventory)
 local goldInventoryRows = {}
 for _, row in ipairs(goldInventoryMenu.rows or {}) do
@@ -689,7 +694,7 @@ T.check(type(pokemonFinalExports) == "table",
   "Pokemon Final test-double exports are published")
 T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.owner, "voxel_run_bridge",
   "Pokemon Final FreeMove receives Scott's bridge marker")
-T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.12.1",
+T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.12.2",
   "Pokemon Final bridge marker carries the update version")
 T.eq(type(exported.hmWithoutBadges), "function",
   "live HM option accessor is published")

@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.12.2 - 2026-08-20
+
+- **Added a Crystal-style Pack without importing ROM art.** PACK now uses the
+  original four-pocket order, five visible two-line item rows, quantities,
+  TM/HM move names, a persistent description box, scroll arrows, and separate
+  cursor/scroll memory for each pocket. Red's real inventory, item callbacks,
+  battle use, GIVE-compatible actions, shops, and saved item order remain the
+  authority.
+- **Expanded the built-in Pokégear to four useful cards.** CLOCK shows live
+  time, MAP opens Red's native Kanto map, PHONE summarizes Scott's existing
+  trainer/rematch history without inventing Gen II scripts, and RADIO plays
+  only songs present in the active Red data before restoring map music.
+  Everything is rendered from original primitives and needs no Gold/Crystal
+  ROM or separate mod.
+- **Moved Free Fly's first-person rider and mount to the Thor's upper screen.**
+  The physical lower display no longer captures or duplicates Pidgeot while
+  the flight world remains above. Third-person and ordinary single-screen
+  Free Fly behavior are unchanged.
+- **Made PACK + POKéGEAR the new-install default.** An existing explicitly
+  saved OFF choice remains respected.
+
 ## 0.12.1 - 2026-08-20
 
 - **Restored the complete settings surface.** Left/Right and A now switch

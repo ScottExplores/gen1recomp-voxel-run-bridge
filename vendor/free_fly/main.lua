@@ -909,22 +909,108 @@ return function(mod)
   -- bottom-center, back-facing, flapping, like a cockpit view
   local hudQuads = {}
   local hudLogged = false
+  local function cockpitFirstPerson(game)
+    -- Resolved once, not per frame. hidePlayer() is true exactly when the
+    -- first-person eye hides the player's world card -- the one situation a
+    -- rider needs a cockpit composite. Third person already has the full
+    -- rider/mount in worldCanvas and must not receive a duplicate overlay.
+    if state.fpRef == nil then
+      state.fpRef = false
+      local V = voxelLib(game)
+      local okFP, fp = pcall(function()
+        return V and V.require("FirstPerson")
+      end)
+      if okFP and fp then state.fpRef = fp end
+    end
+    local FP = state.fpRef
+    local visible = FP and type(FP.hidePlayer) == "function"
+      and FP.hidePlayer() == true
+    return visible, FP
+  end
+
+  local function hudQuad(img, frame, height)
+    height = height or 16
+    local key = tostring(img) .. "#" .. tostring(frame)
+      .. "#" .. tostring(height)
+    if not hudQuads[key] then
+      local iw, ih = img:getDimensions()
+      hudQuads[key] = love.graphics.newQuad(0, frame * 16, 16, height,
+        iw, ih)
+    end
+    return hudQuads[key]
+  end
+
+  local cockpitOverlay = {
+    apiVersion = 1,
+    kind = "player_mount",
+  }
+  local function resolvedSpriteImage(renderer)
+    if type(renderer) ~= "table" then return nil end
+    if type(renderer.resolveImage) == "function" then
+      local ok, image = pcall(renderer.resolveImage, renderer)
+      if ok and image then return image end
+    end
+    return renderer.image
+  end
+  cockpitOverlay.draw = function(game, vp, opts)
+    if not flying() or type(vp) ~= "table" then return false end
+    local Player = require("src.world.Player")
+    local mount = Player.__freeFlyMount or Player.__freeFlyBird
+    -- Gen I overworld sheets do not carry real alpha. SpriteRenderer's public
+    -- resolver applies the active OBJ palette and keys color 0 transparent;
+    -- a raw blit would leave an opaque box around the top-screen cockpit.
+    local img = resolvedSpriteImage(mount)
+    if not img then return false end
+    local SR = require("src.render.SpriteRenderer")
+    local t = love.timer.getTime()
+    local frame = (math.floor(t * 6) % 2 == 0)
+      and SR.STAND.up or SR.WALK.up
+    local mountScale = Player.__freeFlyMountScale or 1
+    local cockpitScale = (vp.scale or 4) * 2.2
+    local scaledMount = mountScale * sizeMult()
+    local mountDrawScale = cockpitScale * scaledMount
+    local centerX = vp.gameX + vp.gameWidth / 2
+    local x = centerX - 8 * mountDrawScale
+    local y = vp.gameY + vp.gameHeight - 10 * mountDrawScale
+      + math.sin(t * 3) * 3
+    love.graphics.setColor(1, 1, 1, 1)
+
+    -- On a physical split, this is the only visible first-person player card.
+    -- Draw the stashed walking sheet first and tuck it behind the mount exactly
+    -- like the ordinary world composite. Standalone/single-screen Free Fly
+    -- keeps its historical mount-only cockpit unless a presenter explicitly
+    -- requests the complete composition.
+    if type(opts) == "table" and opts.fullComposite == true then
+      local ow = game and game.overworld
+      local p = ow and ow.player
+      local walk = (p and p.freeFlyWalkSprite) or state.walkSprite
+      local walkImg = resolvedSpriteImage(walk)
+      if walkImg and walkImg ~= img then
+        -- Match the world composite's transform hierarchy: the species/dex
+        -- multiplier enlarges only the mount. Red remains one native actor
+        -- under the cockpit magnification, centered on the same anchor and
+        -- wearing only his top eight rows behind the bird. The seat offset is
+        -- measured in native world pixels before that common magnification.
+        local seat = 1 + 2 * scaledMount
+        local riderX = centerX - 8 * cockpitScale
+        local mountAnchorY = y + 16 * mountDrawScale
+        local riderY = mountAnchorY - (16 + seat) * cockpitScale
+        love.graphics.draw(walkImg, hudQuad(walkImg, SR.STAND.up, 8),
+          riderX, riderY, 0, cockpitScale, cockpitScale)
+      end
+    end
+    love.graphics.draw(img, hudQuad(img, frame), x, y, 0,
+      mountDrawScale, mountDrawScale)
+    return true
+  end
+  mod.exports.cockpitOverlay = cockpitOverlay
+
   mod.hooks:wrap("render.hud", function(next, game, vp)
     local out = next(game, vp)
     if not flying() then return out end
     local ok, err = pcall(function()
-      -- resolved once, not per frame
-      if state.fpRef == nil then
-        state.fpRef = false
-        local V = voxelLib(game)
-        local okFP, fp = pcall(function() return V and V.require("FirstPerson") end)
-        if okFP and fp then state.fpRef = fp end
-      end
-      local FP = state.fpRef
-      -- hidePlayer() is true exactly when the first-person eye hides the
-      -- player's card -- the one situation a rider needs a cockpit view
-      -- (third person keeps showing the mount card itself)
-      if not (FP and FP.hidePlayer and FP.hidePlayer()) then
+      local visible, FP = cockpitFirstPerson(game)
+      if not visible then
         if not hudLogged then
           hudLogged = true
           mod.log:info("cockpit idle (%s)",
@@ -937,24 +1023,19 @@ return function(mod)
         hudLogged = true
         mod.log:info("cockpit view active")
       end
-      local Player = require("src.world.Player")
-      local mount = Player.__freeFlyMount or Player.__freeFlyBird
-      local img = mount and mount.image
-      if not img then return end
-      local SR = require("src.render.SpriteRenderer")
-      local t = love.timer.getTime()
-      local frame = (math.floor(t * 6) % 2 == 0) and SR.STAND.up or SR.WALK.up
-      local key = tostring(img) .. "#" .. frame
-      if not hudQuads[key] then
-        local iw, ih = img:getDimensions()
-        hudQuads[key] = love.graphics.newQuad(0, frame * 16, 16, 16, iw, ih)
+
+      -- Scott's physical-Thor presenter places this frame-local callback only
+      -- on its private lower viewport. Queueing means the player/mount draws
+      -- once on the primary after the lower HUD capture, never into the lower
+      -- canvas. With no Thor (or after unplug/OFF), the callback is absent and
+      -- Free Fly follows its unchanged single-screen HUD path.
+      local route = type(vp) == "table"
+        and vp._scottsTweaksThorRouteWorldOverlay or nil
+      if type(route) == "function" then
+        local routed, accepted = pcall(route, cockpitOverlay, mod.id)
+        if routed and accepted == true then return end
       end
-      local s = (vp.scale or 4) * 2.2 * (Player.__freeFlyMountScale or 1)
-                * sizeMult()
-      local x = vp.gameX + vp.gameWidth / 2 - 8 * s
-      local y = vp.gameY + vp.gameHeight - 10 * s + math.sin(t * 3) * 3
-      love.graphics.setColor(1, 1, 1, 1)
-      love.graphics.draw(img, hudQuads[key], x, y, 0, s, s)
+      cockpitOverlay.draw(game, vp)
     end)
     if not ok and not hudLogged then
       hudLogged = true

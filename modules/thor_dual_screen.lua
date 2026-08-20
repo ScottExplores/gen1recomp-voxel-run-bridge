@@ -25,6 +25,12 @@ local ThorDualScreen = {
 local BRIDGE_RECORD_KEY = "_scottsTweaksThorPresentation"
 local HOOK_RECORD_KEY = "_scottsTweaksThorHookDispatch"
 local EVENT_RECORD_KEY = "_scottsTweaksThorEventDispatch"
+local WORLD_OVERLAY_ROUTE_KEY = "_scottsTweaksThorRouteWorldOverlay"
+local PRIMARY_WORLD_OVERLAY_OPTIONS = {
+  target = "primary",
+  presentation = "ayn_thor",
+  fullComposite = true,
+}
 
 local unpackValues = table.unpack or unpack
 
@@ -238,6 +244,18 @@ local function validStageApi(stage)
     and type(stage.animationSurface) == "function"
 end
 
+-- A HUD contributor can use this tiny provider shape to identify something
+-- that is visually part of the world/player rather than lower-screen UI. The
+-- route itself is frame-local and lives only on Thor's private lower viewport;
+-- an ordinary engine viewport never exposes it, so non-Thor drawing is
+-- unchanged. Free Fly uses this for its first-person rider/mount cockpit.
+local function validWorldOverlay(provider)
+  return type(provider) == "table"
+    and tonumber(provider.apiVersion) == 1
+    and provider.kind == "player_mount"
+    and type(provider.draw) == "function"
+end
+
 local function stageApi(mod)
   -- In Scott's Tweaks, Battle Art is fused into this same loader entry and
   -- publishes its compatibility seam directly on the root mod exports. A
@@ -358,6 +376,11 @@ function ThorDualScreen.install(mod, opts)
     lastPushAt = nil,
     splitRequested = nil,
     warned = {},
+    worldOverlayRouteLive = false,
+    worldOverlayRouteGeneration = nil,
+    worldOverlayRouteBridge = nil,
+    worldOverlayProvider = nil,
+    worldOverlayOwner = nil,
   }
 
   local function requestBattleSplit(on)
@@ -390,6 +413,11 @@ function ThorDualScreen.install(mod, opts)
     runtime.topWidth, runtime.topHeight = nil, nil
     runtime.topValid, runtime.topSource = false, nil
     runtime.lastPushAt = nil
+    runtime.worldOverlayRouteLive = false
+    runtime.worldOverlayRouteGeneration = nil
+    runtime.worldOverlayRouteBridge = nil
+    runtime.worldOverlayProvider = nil
+    runtime.worldOverlayOwner = nil
   end
 
   local function ownsBridgeRecord()
@@ -774,6 +802,44 @@ function ThorDualScreen.install(mod, opts)
     return true
   end
 
+  local function routeWorldOverlay(provider, owner)
+    if not runtime.worldOverlayRouteLive or runtime.retired
+        or not runtime.active
+        or runtime.generation ~= runtime.worldOverlayRouteGeneration
+        or runtime.bridge ~= runtime.worldOverlayRouteBridge
+        or not validWorldOverlay(provider) then
+      return false
+    end
+    if runtime.worldOverlayProvider ~= nil
+        and runtime.worldOverlayProvider ~= provider then
+      return false
+    end
+    runtime.worldOverlayProvider = provider
+    runtime.worldOverlayOwner = type(owner) == "string"
+      and owner or "world overlay"
+    return true
+  end
+
+  local function drawWorldOverlay(game, viewport, provider, owner)
+    if not validWorldOverlay(provider) then return true end
+    local ok, err = graphicsGuard(graphics, function()
+      if type(graphics.setCanvas) == "function" then graphics.setCanvas() end
+      neutralGraphics(graphics)
+      -- Validate again at the consumption boundary: an F5-capable provider
+      -- may replace its export while the downstream HUD chain is running.
+      if validWorldOverlay(provider) then
+        local drew, drawError = pcall(provider.draw, game, viewport,
+          PRIMARY_WORLD_OVERLAY_OPTIONS)
+        if not drew then
+          warnOnce("world-overlay:" .. tostring(owner),
+            tostring(owner) .. " upper overlay failed: "
+              .. tostring(drawError))
+        end
+      end
+    end)
+    return ok, err
+  end
+
   local composeHook = function(nextFn, renderer, ctx)
     if runtime.retired then return nextFn(renderer, ctx) end
     runtime.pending = nil
@@ -876,18 +942,43 @@ function ThorDualScreen.install(mod, opts)
       runtime.active = false
       return nextFn(game, viewport)
     end
+    -- HUD hooks run against the lower canvas, but a small subset of their
+    -- output can semantically belong to the player/world. Give those hooks a
+    -- one-frame deferred route. The callback closes over this presenter
+    -- generation and is invalidated immediately after the downstream chain,
+    -- so landing, unplug, OFF, quit and F5 can never replay a stale mount.
+    runtime.worldOverlayRouteLive = true
+    runtime.worldOverlayRouteGeneration = runtime.generation
+    runtime.worldOverlayRouteBridge = pending.bridge
+    runtime.worldOverlayProvider = nil
+    runtime.worldOverlayOwner = nil
+    pending.viewport[WORLD_OVERLAY_ROUTE_KEY] = routeWorldOverlay
     local downstream
     local captured, captureError = graphicsGuard(graphics, function()
       graphics.setCanvas(runtime.lowerCanvas)
       neutralGraphics(graphics)
       downstream = pack(nextFn(game, pending.viewport))
     end)
+    runtime.worldOverlayRouteLive = false
+    runtime.worldOverlayRouteGeneration = nil
+    runtime.worldOverlayRouteBridge = nil
+    pending.viewport[WORLD_OVERLAY_ROUTE_KEY] = nil
+    local overlayProvider = runtime.worldOverlayProvider
+    local overlayOwner = runtime.worldOverlayOwner
+    runtime.worldOverlayProvider = nil
+    runtime.worldOverlayOwner = nil
     if not captured then
       setFault("lower HUD capture failed: " .. tostring(captureError))
       -- nextFn may already have run before a post-draw graphics error.  Never
       -- run a stateful HUD chain twice in one frame.
       if downstream then return unpackValues(downstream, 1, downstream.n) end
       return nextFn(game, viewport)
+    end
+    local overlaid, overlayError = drawWorldOverlay(game, viewport,
+      overlayProvider, overlayOwner)
+    if not overlaid then
+      warnOnce("world-overlay-presentation",
+        "upper world overlay presentation failed: " .. tostring(overlayError))
     end
     local pushed, pushError = pushLower()
     if not pushed then setFault(pushError) end

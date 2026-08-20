@@ -107,9 +107,11 @@ capability checks, outdoor first-/third-person gates, interior/canopy/sea-map
 exclusions, live disable path, generated-geometry cleanup, gameplay-state
 isolation, and the safe no-provider fallback.
 
-`inventory_ui.lua` is the focused 392-check bag/shop suite. Its v0.1.75 and
-v0.1.83 doubles verify four-pocket classification, Left/Right navigation,
-per-pocket cursor memory, ID-based global reordering, option-off passthrough,
+`inventory_ui.lua` is the focused 1,124-check bag/shop suite. Its modeled
+v0.1.75, v0.1.83, v0.1.88, and v0.1.96 surfaces verify four-pocket
+classification, Crystal-style 20×18 Pack drawing, two-line rows, quantities,
+descriptions, Left/Right navigation, per-pocket cursor and scroll memory,
+ID-based global reordering, option-off passthrough, preserved Red callbacks,
 lower screen-factory composition, copied/idempotent Trade Stone stock, and a
 live BUY BAG count without mutating stock or inventory.
 
@@ -174,7 +176,7 @@ public render/display seams in both 0.1.88 and 0.1.96, stock single-screen
 fallthrough, physical lower-display routing, frozen upper/live lower menu
 composition, scaling, fault recovery, legacy `gen1recomp_ds` delegation,
 same-facade identity, and two real API-2 Loader entries. Select each fixture
-as the live Loader once; every invocation contains 200 checks and runs under
+as the live Loader once; every invocation contains 250 checks and runs under
 both LuaJIT and Lua 5.1:
 
 ```powershell
@@ -189,7 +191,7 @@ API-2 loader, verifies the stable ID/new display name, the new content and
 settings rows, checks the gapped-land compatibility status, invokes both HM
 hooks alongside Free Fly and a Pokemon Final provider, and runs the real
 priority-sorted HUD chain to prove only the cockpit picture is suppressed.
-Its current matrix contains 187 checks per supported engine fixture. Pass `compat` for the
+Its current matrix contains 192 checks per supported engine fixture. Pass `compat` for the
 v0.1.75 fixture and `native` for v0.1.83+ to assert the exact Trade Stone
 dispatcher. Run it from an engine
 checkout with:
@@ -198,11 +200,13 @@ checkout with:
 luajit C:\path\to\mod\tests\full_load.lua C:\path\to\mod C:\path\to\engine native
 ```
 
-`gen2_ui.lua` verifies the built-in, ROM-free PACK + POKeGEAR flow: Red's
-ITEM/ITEMS callback remains authoritative, source descriptors are not mutated,
-Pokegear follows ITEM/ITEMS/PACK spellings, the clock uses the public formatter,
-Kanto Map opens through Red's native screen, the option-off list is exact, and
-a second Loader entry safely refreshes the screen factory.
+`gen2_ui.lua` contains 132 checks for the built-in, ROM-free PACK + POKeGEAR
+flow: Red's ITEM/ITEMS callback remains authoritative, source descriptors are
+not mutated, Pokegear follows ITEM/ITEMS/PACK spellings, all four cards retain
+Crystal order, the clock is live, Kanto Map opens through Red's native screen,
+Phone reads trainer history without writes, Radio uses only available Red
+songs and restores map music, missing capabilities remain honest, and a second
+Loader entry safely refreshes the screen factory.
 
 ```powershell
 luajit tests\gen2_ui.lua <mod-root>

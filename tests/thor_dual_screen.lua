@@ -189,6 +189,9 @@ local function fakeGraphics()
     return canvas(width, height, opts, false,
       ("owned-%d-%dx%d"):format(#graphics.canvases + 1, width, height))
   end
+  function graphics.newQuad(...)
+    return { kind = "quad", args = pack(...) }
+  end
   function graphics.push(mode)
     graphics.stack[#graphics.stack + 1] = {
       canvas = graphics.state.canvas,
@@ -222,11 +225,18 @@ local function fakeGraphics()
   function graphics.setScissor(...)
     graphics.state.scissor = select("#", ...) == 0 and nil or { ... }
   end
-  function graphics.draw(source, x, y, rotation, sx, sy)
+  function graphics.draw(source, ...)
     if graphics.failDrawSource == source then error("injected draw failure", 0) end
+    local args = pack(...)
+    local offset, quad = 0, nil
+    if type(args[1]) == "table" and args[1].kind == "quad" then
+      quad, offset = args[1], 1
+    end
     local draw = {
-      source = source, x = x, y = y, rotation = rotation,
-      sx = sx, sy = sy, target = graphics.state.canvas,
+      source = source, quad = quad,
+      x = args[1 + offset], y = args[2 + offset],
+      rotation = args[3 + offset], sx = args[4 + offset],
+      sy = args[5 + offset], target = graphics.state.canvas,
     }
     local target = graphics.state.canvas
     if target then
@@ -405,6 +415,47 @@ local function installFixture(fixture, Thor)
   fixture.controller = controller
   fixture.addProviders()
   return controller
+end
+
+-- Mirrors the production Free Fly cockpitOverlay export and its HUD routing
+-- decision without replacing either presenter's implementation. The provider
+-- draws distinct rider/mount markers so ownership of both halves is visible.
+local function installFreeFlyProbe(fixture)
+  local state = {
+    airborne = true,
+    firstPerson = true,
+    calls = 0,
+  }
+  local rider = { name = "free-fly-rider" }
+  local mount = { name = "free-fly-mount" }
+  local provider = {
+    apiVersion = 1,
+    kind = "player_mount",
+  }
+  provider.draw = function(game, viewport, opts)
+    state.calls = state.calls + 1
+    state.lastGame = game
+    state.lastViewport = viewport
+    state.lastOptions = opts
+    if opts and opts.fullComposite == true then
+      fixture.graphics.draw(rider, 300, 200, 0, 1, 1)
+    end
+    fixture.graphics.draw(mount, 300, 220, 0, 1, 1)
+    return true
+  end
+  fixture.hooks:wrap("render.hud", function(nextFn, game, viewport)
+    local results = pack(nextFn(game, viewport))
+    state.routedViewport = viewport
+    if state.airborne and state.firstPerson then
+      local route = viewport
+        and viewport._scottsTweaksThorRouteWorldOverlay
+      local accepted = type(route) == "function"
+        and route(provider, "free_fly") == true
+      if not accepted then provider.draw(game, viewport) end
+    end
+    return unpackValues(results, 1, results.n)
+  end, 0, "free_fly")
+  return state, provider, rider, mount
 end
 
 local Thor = loadThor()
@@ -592,6 +643,72 @@ local classicTop = classic.graphics.screenDraws[1]
 check(classicTop and #classicTop.blits == 1
     and classicTop.blits[1].source == classicCtx.worldCanvas,
   "stock worldCanvas uses the renderer's palette-aware blit")
+
+-- Free Fly's first-person cockpit is a world/player composite even though its
+-- compatibility hook runs during render.hud. Under the physical split, defer
+-- it out of the lower HUD capture and paint rider+mount exactly once on top.
+local flight = makeFixture()
+installFixture(flight, loadThor())
+local flightState, flightProvider, flightRider, flightMount =
+  installFreeFlyProbe(flight)
+local flightCtx = flight.context("classic")
+local flightFrame = flight.frame(flightCtx)
+eq(flightFrame.handled, true,
+  "airborne Thor frame owns the physical presentation")
+eq(flightState.calls, 1,
+  "first-person Free Fly provider draws exactly once")
+eq(flightState.lastOptions and flightState.lastOptions.target, "primary",
+  "Free Fly overlay target is the physical primary")
+eq(flightState.lastOptions and flightState.lastOptions.presentation,
+  "ayn_thor", "Free Fly overlay receives Thor presentation identity")
+eq(flightState.lastOptions and flightState.lastOptions.fullComposite, true,
+  "Thor requests the complete rider and mount composite")
+local flightLower = flight.bridge.pushes[1].source
+check(findDraw(flightLower.draws, flightRider) == nil,
+  "rider is absent from the physical lower display")
+check(findDraw(flightLower.draws, flightMount) == nil,
+  "mount is absent from the physical lower display")
+check(findDraw(flight.graphics.screenDraws, flightRider) ~= nil,
+  "first-person rider is drawn on the physical primary")
+check(findDraw(flight.graphics.screenDraws, flightMount) ~= nil,
+  "first-person mount is drawn on the physical primary")
+eq(flightState.routedViewport._scottsTweaksThorRouteWorldOverlay, nil,
+  "one-frame world-overlay route is consumed and removed")
+
+-- Third person already carries the full composite in worldCanvas. It neither
+-- queues nor duplicates the cockpit, and a subsequent landing cannot replay
+-- the prior frame's provider.
+flightState.firstPerson = false
+flight.clock.value = 1
+flight.frame(flightCtx)
+eq(flightState.calls, 1,
+  "third person does not duplicate the world-space rider or mount")
+check(findDraw(flight.graphics.screenDraws, flightRider) == nil
+    and findDraw(flight.graphics.screenDraws, flightMount) == nil,
+  "third-person primary contains no extra cockpit overlay")
+flightState.firstPerson = true
+flightState.airborne = false
+flight.clock.value = 2
+flight.frame(flightCtx)
+eq(flightState.calls, 1,
+  "landing clears the frame-local cockpit route")
+
+-- A physical unplug falls through to the exact ordinary HUD path: Free Fly
+-- still draws its historical mount-only cockpit on the single active screen.
+flightState.airborne = true
+flight.bridge.availableFlag = false
+flight.clock.value = 3
+local flightUnplugged = flight.frame(flightCtx)
+eq(flightUnplugged.handled, false,
+  "airborne hot-unplug restores stock single-screen composition")
+eq(flightState.calls, 2,
+  "unplugged Free Fly draws once through its ordinary HUD path")
+check(findDraw(flight.graphics.screenDraws, flightRider) == nil,
+  "non-Thor cockpit retains its historical mount-only presentation")
+check(findDraw(flight.graphics.screenDraws, flightMount) ~= nil,
+  "non-Thor cockpit remains visible on the active screen")
+eq(flightProvider.kind, "player_mount",
+  "probe uses the production Free Fly provider kind")
 
 local offBoot = makeFixture({ optionValues = { dual_screen = false } })
 installFixture(offBoot, loadThor())
@@ -898,7 +1015,7 @@ local function realLoaderRegression(engineRoot)
   local files = {
     [prefix .. "manifest.json"] = [[{
       "id":"voxel_run_bridge","name":"Scott's Tweaks Thor Loader Test",
-      "version":"0.12.1","api":2,"entry":"main.lua",
+      "version":"0.12.2","api":2,"entry":"main.lua",
       "profile":"content","priority":200,"dependencies":[],
       "optional_dependencies":[],"conflicts":[],"games":["gen1"],
       "permissions":[]
@@ -1047,8 +1164,280 @@ local function realLoaderRegression(engineRoot)
   _G.love = previousLove
 end
 
+-- Load the production VendorHost, production Free Fly 1.8.0 entry and
+-- production Thor presenter as one API-2 mod. This is the shipping ownership
+-- shape (Free Fly's public export is nested in the fused host), not a second
+-- standalone bridge or an invented render callback.
+local function realFusedFreeFlyRegression(engineRoot)
+  package.path = engineRoot .. "/?.lua;" .. engineRoot .. "/?/init.lua;"
+    .. package.path
+  local previousLove = rawget(_G, "love")
+  local previousPlayer = package.loaded["src.world.Player"]
+  local previousSpriteRenderer = package.loaded["src.render.SpriteRenderer"]
+  local graphics = fakeGraphics()
+  local bridge = fakeBridge()
+  local clock = { value = 0 }
+  _G.love = {
+    graphics = graphics,
+    timer = { getTime = function() return clock.value end },
+  }
+
+  local Player = {}
+  package.loaded["src.world.Player"] = Player
+  package.loaded["src.render.SpriteRenderer"] = {
+    STAND = { down = 0, up = 1, left = 2, right = 2 },
+    WALK = { down = 3, up = 4, left = 5, right = 5 },
+  }
+
+  local T = require("tests.modkit")
+  local fixtures = require("tests.modkit.fixtures")
+  local prefix = "mods/voxel_run_bridge/"
+  local files = {
+    [prefix .. "manifest.json"] = [[{
+      "id":"voxel_run_bridge","name":"Scott's Tweaks Fused Flight Test",
+      "version":"0.12.2","api":2,"entry":"main.lua",
+      "profile":"content","priority":200,"dependencies":[],
+      "optional_dependencies":[],"conflicts":[],"games":["gen1"],
+      "permissions":["engine_internals"]
+    }]],
+    [prefix .. "main.lua"] = [[return function(mod)
+      local compile = loadstring or load
+      local function own(path)
+        return assert(compile(assert(mod:read(path)),
+          "@voxel_run_bridge/" .. path))()
+      end
+      local FirstPerson = { hidden = true }
+      function FirstPerson.hidePlayer() return FirstPerson.hidden end
+      local VoxelState = {}
+      mod.exports.lib = { require = function(name)
+        if name == "FirstPerson" then return FirstPerson end
+        if name == "VoxelState" then return VoxelState end
+      end }
+      mod.exports.testFirstPerson = FirstPerson
+
+      local VendorHost = own("modules/vendor_host.lua")
+      local host = VendorHost.new(mod)
+      local freeFly
+      for _, entry in ipairs(VendorHost.MODS) do
+        if entry.id == "free_fly" then freeFly = entry break end
+      end
+      assert(freeFly and host:install(freeFly),
+        host.failures.free_fly or "bundled Free Fly failed")
+      mod.exports.vendorHost = host
+      mod.exports.testFreeFly = assert(host.loaded.free_fly).exports
+
+      local schema = {
+        { key = "dual_screen", type = "toggle", default = true },
+      }
+      for _, row in ipairs(host:mergedSchema()) do
+        schema[#schema + 1] = row
+      end
+      mod.options:define(schema)
+      local Thor = own("modules/thor_dual_screen.lua")
+      Thor.install(mod, { optionKey = "dual_screen" })
+    end]],
+    [prefix .. "modules/thor_dual_screen.lua"] = assert(read(modulePath)),
+    [prefix .. "modules/vendor_host.lua"] = assert(read(
+      sourceRoot .. "/modules/vendor_host.lua")),
+    [prefix .. "vendor/free_fly/main.lua"] = assert(read(
+      sourceRoot .. "/vendor/free_fly/main.lua")),
+    [prefix .. "vendor/free_fly/lib/FlightInput.lua"] = assert(read(
+      sourceRoot .. "/vendor/free_fly/lib/FlightInput.lua")),
+    [prefix .. "vendor/free_fly/lib/VoxelProvider.lua"] = assert(read(
+      sourceRoot .. "/vendor/free_fly/lib/VoxelProvider.lua")),
+    [prefix .. "vendor/free_fly/lib/FollowerLanding.lua"] = assert(read(
+      sourceRoot .. "/vendor/free_fly/lib/FollowerLanding.lua")),
+    [prefix .. "vendor/free_fly/lib/shared/skylib.lua"] = assert(read(
+      sourceRoot .. "/vendor/free_fly/lib/shared/skylib.lua")),
+  }
+  local run = T.sdk.loadMod("mods/voxel_run_bridge", {
+    data = fixtures.fresh(), fs = T.sdk.memfs(files), generation = 1,
+  })
+  eq(#run.errors, 0,
+    "real fused Free Fly and Thor load through one API-2 entry")
+  local rootExports = assert(run.loader.exports.voxel_run_bridge,
+    "fused root exports missing")
+  local freeFly = assert(rootExports.testFreeFly,
+    "fused Free Fly exports missing")
+  local cockpit = freeFly.cockpitOverlay
+  eq(type(cockpit), "table",
+    "production bundled Free Fly publishes its cockpit provider")
+  eq(cockpit and cockpit.apiVersion, 1,
+    "production cockpit provider API version is recognized")
+  eq(cockpit and cockpit.kind, "player_mount",
+    "production cockpit provider identifies a player/mount overlay")
+  eq(type(cockpit and cockpit.draw), "function",
+    "production cockpit provider publishes its renderer")
+
+  local function upvalue(fn, wanted)
+    if type(debug) ~= "table" or type(debug.getupvalue) ~= "function" then
+      return nil
+    end
+    for index = 1, 64 do
+      local name, value = debug.getupvalue(fn, index)
+      if not name then break end
+      if name == wanted then return value end
+    end
+    return nil
+  end
+  local flying = upvalue(freeFly.isFlying, "flying")
+  local flightState = upvalue(flying, "state")
+  check(type(flightState) == "table" and flightState.phase == "idle",
+    "production flight export closes over the real state machine")
+
+  local mountRaw = graphics.external(16, 96, "raw-pidgeot-cockpit")
+  local riderRaw = graphics.external(16, 96, "raw-player-rider")
+  local mountImage = graphics.external(16, 96, "resolved-pidgeot-cockpit")
+  local riderImage = graphics.external(16, 96, "resolved-player-rider")
+  local mountResolves, riderResolves = 0, 0
+  Player.__freeFlyMount = {
+    image = mountRaw,
+    resolveImage = function()
+      mountResolves = mountResolves + 1
+      return mountImage
+    end,
+  }
+  -- Pidgeot is 4'11": this is production Sky.dexScale's exact ladder value.
+  local pidgeotScale = 0.75 + (4 + 11 / 12) * 0.14
+  Player.__freeFlyMountScale = pidgeotScale
+  flightState.phase = "cruise"
+  flightState.walkSprite = {
+    image = riderRaw,
+    resolveImage = function()
+      riderResolves = riderResolves + 1
+      return riderImage
+    end,
+  }
+
+  local renderer = {}
+  function renderer:blitCanvas(source, ...)
+    local target = graphics.state.canvas
+    local call = { source = source, target = target, args = pack(...) }
+    if target then target.blits[#target.blits + 1] = call end
+  end
+  local function context()
+    return {
+      renderer = renderer,
+      worldCanvas = graphics.external(160, 144, "real-flight-world"),
+      uiCanvas = graphics.external(160, 144, "real-flight-ui"),
+      worldActive = true, zones = {}, worldZones = {},
+      ww = 800, wh = 480, pw = 800, ph = 480,
+      uiw = 160, uih = 144, dpiX = 1, dpiY = 1,
+      secondScreen = bridge,
+    }
+  end
+  local game = {
+    mods = { exports = run.loader.exports },
+    overworld = { player = { freeFlyWalkSprite = flightState.walkSprite } },
+  }
+  local viewport = {
+    width = 800, height = 480, scale = 3,
+    gameX = 0, gameY = 0, gameWidth = 800, gameHeight = 480,
+  }
+  local function countDraw(draws, source)
+    local count = 0
+    for _, draw in ipairs(draws or {}) do
+      if draw.source == source then count = count + 1 end
+    end
+    return count
+  end
+  local function frame()
+    graphics.resetFrame()
+    local handled = run.loader.hooks:call("render.compose",
+      function() return false end, renderer, context())
+    run.loader.hooks:call("render.hud", function() return "hud" end,
+      game, viewport)
+    return handled
+  end
+
+  eq(frame(), true,
+    "real fused airborne frame uses the Thor split presenter")
+  eq(#bridge.pushes, 1,
+    "real fused airborne frame pushes one completed lower surface")
+  local lower = bridge.pushes[1].source
+  eq(countDraw(lower.draws, mountImage), 0,
+    "real Pidgeot sprite is absent from the lower display")
+  eq(countDraw(lower.draws, riderImage), 0,
+    "real rider sprite is absent from the lower display")
+  eq(countDraw(graphics.screenDraws, mountRaw), 0,
+    "raw opaque Pidgeot sheet is never blitted to the primary")
+  eq(countDraw(graphics.screenDraws, riderRaw), 0,
+    "raw opaque rider sheet is never blitted to the primary")
+  eq(countDraw(graphics.screenDraws, mountImage), 1,
+    "real Pidgeot sprite draws exactly once on the primary")
+  eq(countDraw(graphics.screenDraws, riderImage), 1,
+    "real rider sprite draws exactly once on the primary")
+  eq(mountResolves, 1,
+    "top-screen Pidgeot uses SpriteRenderer transparency resolution")
+  eq(riderResolves, 1,
+    "top-screen rider uses SpriteRenderer transparency resolution")
+  local mountDraw = assert(findDraw(graphics.screenDraws, mountImage),
+    "real Pidgeot draw missing")
+  local riderDraw = assert(findDraw(graphics.screenDraws, riderImage),
+    "real rider draw missing")
+  local cockpitScale = viewport.scale * 2.2
+  local scaledPidgeot = pidgeotScale * 1.15 -- NORMAL Free Fly size
+  local expectedMountScale = cockpitScale * scaledPidgeot
+  local expectedMountX = viewport.gameWidth / 2 - 8 * expectedMountScale
+  local expectedMountY = viewport.gameHeight - 10 * expectedMountScale
+  local expectedSeat = 1 + 2 * scaledPidgeot
+  local expectedRiderX = viewport.gameWidth / 2 - 8 * cockpitScale
+  local expectedRiderY = expectedMountY + 16 * expectedMountScale
+    - (16 + expectedSeat) * cockpitScale
+  near(mountDraw.sx, expectedMountScale,
+    "Pidgeot keeps its dex and Free Fly size multipliers")
+  near(mountDraw.sy, expectedMountScale,
+    "Pidgeot keeps uniform authored cockpit scaling")
+  near(riderDraw.sx, cockpitScale,
+    "rider scale is independent of Pidgeot's species size")
+  near(riderDraw.sy, cockpitScale,
+    "rider keeps uniform base cockpit scaling")
+  near(mountDraw.x, expectedMountX,
+    "Pidgeot remains horizontally centered at its enlarged size")
+  near(riderDraw.x, expectedRiderX,
+    "rider is independently centered on the same flight anchor")
+  near(mountDraw.y, expectedMountY,
+    "Pidgeot retains its established cockpit vertical placement")
+  near(riderDraw.y, expectedRiderY,
+    "rider uses the production seat offset behind Pidgeot")
+  near(mountDraw.x + 8 * mountDraw.sx,
+    riderDraw.x + 8 * riderDraw.sx,
+    "rider and Pidgeot share one horizontal anchor")
+  eq(riderDraw.quad and riderDraw.quad.args[4], 8,
+    "cockpit rider uses the same top-half crop as the world composite")
+
+  rootExports.testFirstPerson.hidden = false
+  clock.value = 1
+  eq(frame(), true,
+    "real fused third-person flight keeps the Thor split active")
+  eq(countDraw(graphics.screenDraws, mountImage), 0,
+    "third person does not duplicate the world-space mount")
+  eq(countDraw(graphics.screenDraws, riderImage), 0,
+    "third person does not duplicate the world-space rider")
+
+  rootExports.testFirstPerson.hidden = true
+  run.loader.modOptions.voxel_run_bridge =
+    run.loader.modOptions.voxel_run_bridge or {}
+  run.loader.modOptions.voxel_run_bridge.dual_screen = false
+  clock.value = 2
+  eq(frame(), false,
+    "real fused Thor OFF frame falls through to stock composition")
+  eq(countDraw(graphics.screenDraws, mountImage), 1,
+    "non-Thor Free Fly retains its mount-only cockpit")
+  eq(countDraw(graphics.screenDraws, riderImage), 0,
+    "non-Thor Free Fly does not adopt Thor's full-composite policy")
+
+  run.release()
+  Player.__freeFlyMount, Player.__freeFlyMountScale = nil, nil
+  package.loaded["src.world.Player"] = previousPlayer
+  package.loaded["src.render.SpriteRenderer"] = previousSpriteRenderer
+  _G.love = previousLove
+end
+
 if argv[4] and argv[4] ~= "" then
-  realLoaderRegression(tostring(argv[4]):gsub("\\", "/"))
+  local liveEngine = tostring(argv[4]):gsub("\\", "/")
+  realLoaderRegression(liveEngine)
+  realFusedFreeFlyRegression(liveEngine)
 end
 
 print(("thor_dual_screen: %d checks passed (.88/.96 public seams)")

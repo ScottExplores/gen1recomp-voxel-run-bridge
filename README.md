@@ -1,7 +1,8 @@
 # Scott's Tweaks
 
-**0.12.1 is the handheld/runtime repair for the single Scott's Tweaks
-package.** The 3D voxel Kanto renderer, visible wild Pokemon, followers,
+**0.12.2 adds a Crystal-style Pack and four-card Pokégear, and moves Free
+Fly's first-person mount to the Thor's upper display.** The 3D voxel Kanto
+renderer, visible wild Pokemon, followers,
 animated battle sprites, menu
 icons, Free Fly integration, and Scott's gameplay tweaks are bundled so one
 launcher update carries the full set. Separately installed copies are no
@@ -13,13 +14,13 @@ is broader, but its internal mod ID remains `voxel_run_bridge`. Existing
 installations therefore update in place, keep their settings, and do not
 become a duplicate mod.
 
-Version 0.12.1 keeps the existing updater identity and provides one categorized
+Version 0.12.2 keeps the existing updater identity and provides one categorized
 **START > MOD MENUS > MOD SETTINGS** home for all of its settings. Its
 features are:
 
-- **Built-in Pack and Pokegear:** Red's ITEM row can appear as PACK, followed
-  by a separate POKéGEAR with a live clock and Red's native Kanto Map. It is
-  entirely built in and never asks for a Pokemon Gold ROM.
+- **Built-in Pack and Pokegear:** Red's ITEM row appears as a Crystal-style
+  four-pocket PACK, followed by CLOCK, MAP, PHONE, and RADIO Pokégear cards
+  adapted to Red. It is entirely built in and never asks for a Gold ROM.
 - **Classic bag pockets:** press D-pad Left or Right to move in Gold order
   through ITEMS, BALLS, KEY ITEMS, and TM/HM while keeping the original Gen 1
   inventory underneath.
@@ -45,9 +46,9 @@ features are:
   first- and third-person views. This presentation option is on by default.
 - **Free Fly Now:** Free Fly can take off immediately without the Thunder
   Badge. This compatibility option is on by default.
-- **Free Fly cockpit control:** the default-off **FLY COCKPIT** setting keeps
-  Free Fly's extra Pokemon picture out of first-person view without changing
-  the mount, third-person presentation, movement, or landing.
+- **Free Fly cockpit control:** **FLY COCKPIT** shows the rider and mount in
+  first-person. On a physical Thor they now appear only on the upper gameplay
+  display; the default-off setting can still hide that picture entirely.
 - **Badge-free HMs:** use Cut, Fly, Surf, Strength, and Flash without their
   badge. A party Pokemon must still actually know the move. Normal map,
   terrain, and story restrictions remain in effect.
@@ -140,15 +141,22 @@ prices or stock supplied by other mods.
 
 ## Built-in Pack and Pokegear
 
-**PACK + POKéGEAR** is default OFF and needs no external file. When enabled,
-the native Red ITEM/ITEMS row is presented as **PACK** with the exact same bag
-callback. The four-pocket Red inventory view remains underneath, in the order
-ITEMS, BALLS, KEY ITEMS, and TM/HM.
+**PACK + POKéGEAR** defaults ON for new installs and needs no external file.
+An existing explicitly saved OFF choice remains OFF. The native Red ITEM/ITEMS
+callback is still used, but PACK presents it in a ROM-free Crystal-inspired
+20×18 layout: ITEMS, BALLS, KEY ITEMS, and TM/HM; five visible two-line rows;
+quantities where meaningful; TM/HM move names; scroll arrows; and a persistent
+description box. Each pocket remembers its own cursor and scroll position for
+the current session. Item use, battle actions, GIVE-compatible callbacks,
+shops, saving, and Red's real inventory limits are unchanged.
 
-A separate **POKéGEAR** row appears immediately after PACK. It opens a small
-native screen containing the current clock and Red's existing Kanto Map. This
-does not copy or imitate Pokemon Gold artwork, and it deliberately omits fake
-Phone/Radio systems that Red does not have.
+A separate **POKéGEAR** row appears immediately after PACK. Its four cards are
+**CLOCK**, **MAP**, **PHONE**, and **RADIO**. CLOCK uses live time; MAP opens
+Red's native Kanto Map; PHONE reads Scott's existing trainer/rematch history
+without creating fake Gen II calls; and RADIO uses only songs already present
+in the active Red data, restoring map music when it closes or retunes. Missing
+capabilities explain themselves instead of becoming dead buttons. The chrome
+is drawn from original primitives and imports no Gold/Crystal screen art.
 
 Gen 1 Modern UI should stay installed. It can present the native Bag, Kanto
 Map, and all of its other supported screens normally. Scott's Thor presenter
@@ -199,7 +207,7 @@ special canopy scenery so it does not flatten places that are supposed to be
 enclosed or water-covered.
 
 The renderer is selected by its stable mod ID and then checked for the required
-capabilities rather than trusted by display name alone. Version 0.12.1 targets
+capabilities rather than trusted by display name alone. Version 0.12.2 targets
 Pokemon Final, the verified Dramatic Shape 1.8.0-1.8.2 renderer contract, and
 Battle Art Voxel Fork's published renderer modules.
 If an active voxel provider does not expose the required renderer modules,
@@ -234,14 +242,17 @@ third-person flight support also finds Pokemon Final. If a standalone Free Fly
 copy is intentionally enabled, it remains the owner; use 1.6.1 or newer for
 Pokemon Final compatibility.
 
-Free Fly draws a separate mount picture at the bottom of its first-person HUD.
-Scott's Tweaks exposes that presentation choice as **FLY
-COCKPIT**. It defaults to **OFF** for a clear view. Turn it **ON** to restore
-Free Fly's original cockpit picture. The adapter runs only during the HUD
-pass and only while Free Fly's public state says flight is active, so the
-world-space mount remains visible in third person and all flight rules remain
-owned by Free Fly. The adapter covers the verified 1.6.2 and bundled 1.8.0 HUD
-contracts; unknown standalone versions stand aside safely.
+Free Fly can draw a separate mount picture at the bottom of an ordinary
+single-screen first-person HUD. Scott's Tweaks exposes that choice as **FLY
+COCKPIT**. It defaults to **OFF** for a clear view. When it is ON on a physical
+Thor, Scott's presenter removes that copy from the lower UI and draws the
+properly scaled rider and mount once on the upper gameplay display instead.
+Third-person keeps its normal world-space composite, and disconnecting or
+turning Thor mode off restores the ordinary single-screen behavior. Routing
+runs only while Free Fly's public state says flight is active, so all movement,
+eligibility, and landing rules remain owned by Free Fly. The adapter covers
+the verified 1.6.2 and bundled 1.8.0 HUD contracts; unknown standalone
+versions stand aside safely.
 
 ## Pokemon Final cache result compatibility
 
@@ -356,27 +367,28 @@ Scott's Tweaks choice was already saved.
 ## Install or update
 
 If Voxel Run Bridge or any earlier Scott's Tweaks release is installed, open
-Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.12.1
+Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.12.2
 update. It will appear as **Scott's Tweaks** afterward without creating a
 second entry.
 
 For a first installation:
 
 1. Open **MODS -> Import mod .zip** and choose
-   `voxel_run_bridge-0.12.1.zip`.
+   `voxel_run_bridge-0.12.2.zip`.
 2. Enable **Scott's Tweaks**, then restart the game if the manager asks.
 3. Open **START > MOD MENUS > MOD SETTINGS**. Classic bag pockets, trainer
    features, Oak's starter, B running, light run bob, gapped land, badge-free
    HMs, Free Fly Now, visible wild Pokemon, and one follower default on.
    Classic random battles and hidden encounter markers default off. EXP
-   defaults to Vanilla; Fly Cockpit, Thor Second Screen, and Pack + Pokegear
-   default off; run speed defaults to 1.5X and bob to 0.5X.
+   defaults to Vanilla; Fly Cockpit and Thor Second Screen default off;
+   Crystal-style Pack + Pokegear defaults on; run speed defaults to 1.5X and
+   bob to 0.5X.
 4. Use the bundled Free Fly for free-roaming flight; no separate mod is needed.
 5. For 1ST/3RD running, enable one supported voxel provider; no separate
    running mod is required.
-6. To use PACK and POKéGEAR, open **START > MOD MENUS > MOD SETTINGS >
-   MENUS & DEVICE** and switch **PACK + POKéGEAR** ON. No imported file or app
-   replacement is required.
+6. If an older save retained PACK as OFF, open **START > MOD MENUS > MOD
+   SETTINGS > MENUS & DEVICE** and switch **PACK + POKéGEAR** ON. No imported
+   file, Gold ROM, or app replacement is required.
 
 The manager will ask for the `engine_internals` permission. Scott's Tweaks
 uses Gen1Recomp's official content, screen, battle, field-move, and party-menu
@@ -435,17 +447,17 @@ Use the `dev` branch of
 ```powershell
 python tools/modkit.py validate C:\path\to\voxel_run_bridge --strict --base fixture
 python tools/modkit.py lint C:\path\to\voxel_run_bridge
-python tools/modkit.py pack C:\path\to\voxel_run_bridge -o C:\path\to\dist\voxel_run_bridge-0.12.1.zip --base fixture
+python tools/modkit.py pack C:\path\to\voxel_run_bridge -o C:\path\to\dist\voxel_run_bridge-0.12.2.zip --base fixture
 ```
 
 The archive keeps `manifest.json`, `main.lua`, `LICENSE`, notices, and the
 `modules/` directory at its root. Gen1Recomp's importer mounts those paths
 unchanged; development tests and unrelated workspace files are excluded.
 
-Version 0.12.1 is configured for Gen1Recomp's built-in GitHub update checks via
+Version 0.12.2 is configured for Gen1Recomp's built-in GitHub update checks via
 `ScottExplores/gen1recomp-voxel-run-bridge`.
 
-The download is deliberately named `voxel_run_bridge-0.12.1.zip` so the
+The download is deliberately named `voxel_run_bridge-0.12.2.zip` so the
 launcher selects it first from the matching GitHub release. Its internal ID
 remains `voxel_run_bridge`, so existing installs and saved settings update in
 place rather than appearing as a second mod.

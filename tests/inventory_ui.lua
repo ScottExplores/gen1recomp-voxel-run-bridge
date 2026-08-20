@@ -1,6 +1,6 @@
 -- Focused, ROM-free contract test for Scott's Tweaks' Gen 1 bag pockets and
--- shop-owned-count adapters.  The two fixtures model the ListMenu shape used
--- by Gen1Recomp v0.1.75 and v0.1.83.
+-- shop-owned-count adapters.  The fixtures exercise the compatible ListMenu
+-- contract across Gen1Recomp v0.1.75, .83, .88 and .96.
 --
 -- Run from the mod root with a Lua 5.1-compatible runtime:
 --   lua tests/inventory_ui.lua
@@ -63,6 +63,22 @@ local function countId(list, wanted)
   return count
 end
 
+local function clearDraws(ctx)
+  ctx.draws = {}
+end
+
+local function drawnText(ctx)
+  local result = {}
+  for _, call in ipairs(ctx.draws or {}) do
+    if call.kind == "text" then result[#result + 1] = call.text end
+  end
+  return table.concat(result, "\n")
+end
+
+local function textWasDrawn(ctx, wanted)
+  return drawnText(ctx):find(wanted, 1, true) ~= nil
+end
+
 local Runtime = {}
 function Runtime.wantsHook() return false end
 function Runtime.call(_, vanilla, value, ctx) return vanilla(value, ctx) end
@@ -80,6 +96,51 @@ local FieldDefaults = {}
 function FieldDefaults.field() return {} end
 
 local activeFixture
+
+local Font = {}
+function Font.width(text) return #tostring(text or "") * 8 end
+function Font.draw(text, x, y)
+  if activeFixture then
+    activeFixture.draws[#activeFixture.draws + 1] = {
+      kind = "text", text = tostring(text), x = x, y = y,
+    }
+  end
+end
+function Font.drawBox(tx, ty, tw, th)
+  if activeFixture then
+    activeFixture.draws[#activeFixture.draws + 1] = {
+      kind = "box", tx = tx, ty = ty, tw = tw, th = th,
+    }
+  end
+end
+
+local graphics = {}
+function graphics.setColor() end
+function graphics.newShader(source) return { source = source } end
+function graphics.setShader(shader) graphics.shader = shader end
+function graphics.getShader() return graphics.shader end
+function graphics.print(text, x, y)
+  if activeFixture then
+    activeFixture.draws[#activeFixture.draws + 1] = {
+      kind = "system_text", text = tostring(text), x = x, y = y,
+    }
+  end
+end
+function graphics.rectangle(mode, x, y, w, h)
+  if activeFixture then
+    activeFixture.draws[#activeFixture.draws + 1] = {
+      kind = "rectangle", mode = mode, x = x, y = y, w = w, h = h,
+    }
+  end
+end
+function graphics.polygon(mode, ...)
+  if activeFixture then
+    activeFixture.draws[#activeFixture.draws + 1] = {
+      kind = "polygon", mode = mode, points = { ... },
+    }
+  end
+end
+_G.love = { graphics = graphics }
 
 local ItemEffects = {}
 function ItemEffects.isBall(id)
@@ -141,6 +202,7 @@ package.preload["src.inventory.Bag"] = function() return Bag end
 package.preload["src.ui.BagMenu"] = function() return BuiltinBag end
 package.preload["src.ui.ShopMenu"] = function() return BuiltinShop end
 package.preload["src.core.Sound"] = function() return Sound end
+package.preload["src.render.Font"] = function() return Font end
 
 local scriptSource = debug.getinfo(1, "S").source
 local scriptPath = scriptSource:sub(1, 1) == "@" and scriptSource:sub(2)
@@ -232,6 +294,14 @@ local function makeBaseBagList(game, version)
     elseif input:wasPressed("a") then
       return self.onChoose(self.items[self.index])
     end
+    local rows = self.rows or 7
+    if self.index - (self.scroll or 0) > rows then
+      self.scroll = self.index - rows
+    elseif self.index - (self.scroll or 0) < 1 then
+      self.scroll = self.index - 1
+    end
+    self.scroll = math.max(0, math.min(self.scroll or 0,
+      math.max(0, #self.items - rows)))
     return "base-update", self.index
   end
   list.draw = function(self)
@@ -247,6 +317,7 @@ local function fixture(version, config)
   local ctx = {
     version = version,
     sounds = {},
+    draws = {},
     bagCalls = {},
     shopCalls = {},
     buyDrawTitles = {},
@@ -295,6 +366,14 @@ local function fixture(version, config)
       },
       -- MYSTERY deliberately has no definition: unknown/custom save ids must
       -- remain visible in the ordinary Items pocket.
+    },
+    moves = {
+      THUNDERBOLT = {
+        id = "THUNDERBOLT",
+        name = "THUNDERBOLT",
+        description = "A STRONG ELECTRIC ATTACK.",
+      },
+      FLY = { id = "FLY", name = "FLY" },
     },
     pokemon = {},
     text = {},
@@ -460,16 +539,24 @@ local function pressAndUpdate(ctx, list, key)
 end
 
 local function testEnabledBag(version)
-  local ctx = fixture(version, { bagPockets = true })
+  local ctx = fixture(version, { bagPockets = true, gen2Menus = false })
   local inventoryBefore = copyMap(ctx.game.save.inventory)
   local orderBefore = copySequence(ctx.game.save.bagOrder)
   local list = openBag(ctx)
 
   check(type(rawget(list, "_scottsTweaksPocketLayer")) == "table",
     version .. " pocket decorator marker")
+  eq(rawget(list, "_scottsTweaksPocketLayer").visual, "classic_pockets",
+    version .. " CLASSIC POCKETS alone retains the simpler native skin")
   eq(list.title, "< ITEMS >", version .. " initial Items title")
   sequenceEq(rowIds(list), { "POTION", "MYSTERY" },
     version .. " Items classification and order")
+  clearDraws(ctx)
+  list:draw()
+  eq(list.baseDraws, 1,
+    version .. " classic pockets preserve the native ListMenu renderer")
+  check(not textWasDrawn(ctx, "POCKET"),
+    version .. " classic pockets do not force the Crystal skin")
 
   list.index = 2
   list:update(0)
@@ -536,7 +623,7 @@ local function testEnabledBag(version)
 end
 
 local function testDisabledBag(version)
-  local ctx = fixture(version, { bagPockets = false })
+  local ctx = fixture(version, { bagPockets = false, gen2Menus = false })
   local list, lowerList = openBag(ctx)
   eq(list, lowerList, version .. " option-off returns lower BagMenu instance")
   eq(rawget(list, "_scottsTweaksPocketLayer"), nil,
@@ -552,6 +639,8 @@ local function testDisabledBag(version)
     version .. " option-off leaves order untouched")
   mapEq(ctx.game.save.inventory, inventoryBefore,
     version .. " option-off leaves save untouched")
+  list:draw()
+  eq(list.baseDraws, 1, version .. " option-off keeps native drawing")
 end
 
 local function testGoldForcesProjection(version)
@@ -563,9 +652,114 @@ local function testGoldForcesProjection(version)
     version .. " Gold keeps the required pocket projection with classic off")
   eq(list.title, "< ITEMS >",
     version .. " Gold-forced projection opens in Items")
+  local layer = rawget(list, "_scottsTweaksPocketLayer")
+  eq(layer.visual, "crystal_pack",
+    version .. " PACK + POKeGEAR selects Crystal Pack skin")
+  eq(list.rows, 5, version .. " Crystal Pack uses five two-line rows")
+
+  clearDraws(ctx)
+  local priorShader = { owner = "lower-ui" }
+  graphics.shader = priorShader
+  list:draw()
+  eq(graphics.shader, priorShader,
+    version .. " Crystal Pack restores the prior shader after recoloring ink")
+  graphics.shader = nil
+  eq(list.baseDraws, 0,
+    version .. " Crystal Pack replaces only the native drawing")
+  check(textWasDrawn(ctx, "POCKET"), version .. " Crystal Pack header")
+  check(textWasDrawn(ctx, "ITEMS"), version .. " Items pocket plaque")
+  check(textWasDrawn(ctx, "POTION"), version .. " Items list text")
+  check(textWasDrawn(ctx, "\195\1512"),
+    version .. " Items pocket shows quantity on second line")
+  check(textWasDrawn(ctx, "RESTORES 20 HP"),
+    version .. " Red-only data receives truthful Potion description")
+  check(textWasDrawn(ctx, "ONE POKéMON."),
+    version .. " description wraps into the bottom panel")
+  local sawDescriptionBox = false
+  for _, call in ipairs(ctx.draws) do
+    if call.kind == "box" and call.tx == 0 and call.ty == 12
+        and call.tw == 20 and call.th == 6 then
+      sawDescriptionBox = true
+    end
+  end
+  check(sawDescriptionBox, version .. " Crystal Pack bottom description box")
+
   pressAndUpdate(ctx, list, "right")
   eq(list.title, "< BALLS >",
     version .. " Gold-forced projection follows exact Gold order")
+  clearDraws(ctx)
+  list:draw()
+  check(textWasDrawn(ctx, "\195\1514"),
+    version .. " Balls pocket shows quantities")
+
+  pressAndUpdate(ctx, list, "right")
+  eq(list.title, "< KEY ITEMS >", version .. " Gold opens Key Items third")
+  list.index = 2 -- custom key item exercises the safe category fallback
+  clearDraws(ctx)
+  list:draw()
+  check(not textWasDrawn(ctx, "\195\1511"),
+    version .. " Key Items omit Crystal-inappropriate quantities")
+  check(textWasDrawn(ctx, "AN IMPORTANT ITEM"),
+    version .. " Key Item has a conservative description fallback")
+
+  pressAndUpdate(ctx, list, "right")
+  eq(list.title, "< TM/HM >", version .. " Gold opens TM/HM fourth")
+  clearDraws(ctx)
+  list:draw()
+  check(textWasDrawn(ctx, "THUNDERBOLT"),
+    version .. " TM row displays the taught move")
+  check(textWasDrawn(ctx, "A STRONG ELECTRIC"),
+    version .. " TM description prefers move data")
+  check(not textWasDrawn(ctx, "\195\1511"),
+    version .. " TM/HM rows omit quantities")
+
+  pressAndUpdate(ctx, list, "right")
+  eq(list.title, "< ITEMS >", version .. " Gold pocket order wraps")
+  list.index = 1
+  local first, second = pressAndUpdate(ctx, list, "a")
+  eq(first, "base-choice",
+    version .. " Crystal skin preserves native USE/action dispatch return #1")
+  eq(second, "POTION",
+    version .. " Crystal skin passes the exact selected id to native BagMenu")
+end
+
+local function testGoldPocketMemory(version)
+  local ctx = fixture(version, { bagPockets = false, gen2Menus = true })
+  for index = 1, 7 do
+    local id = "EXTRA_ITEM_" .. tostring(index)
+    ctx.game.data.items[id] = { id = id, name = "EXTRA " .. tostring(index) }
+    Bag.add(ctx.game.save, id, 1)
+  end
+  local orderBefore = copySequence(ctx.game.save.bagOrder)
+  local inventoryBefore = copyMap(ctx.game.save.inventory)
+  local list = openBag(ctx)
+
+  for _ = 1, 6 do pressAndUpdate(ctx, list, "down") end
+  eq(list.index, 7, version .. " long Items pocket cursor reaches row seven")
+  eq(list.scroll, 2, version .. " five-row Pack scrolls to row seven")
+  pressAndUpdate(ctx, list, "right")
+  list.index = 2
+  list.scroll = 0
+  list:update(0)
+  pressAndUpdate(ctx, list, "left")
+  eq(list.index, 7, version .. " Items cursor restores after pocket round trip")
+  eq(list.scroll, 2, version .. " Items scroll restores after pocket round trip")
+
+  pressAndUpdate(ctx, list, "right")
+  eq(list.index, 2, version .. " Balls cursor has independent memory")
+  local factory = ctx.screens:get("BagMenu")
+  local reopened = factory.new(ctx.game, { battle = false })
+  eq(#ctx.bagCalls, 2, version .. " reopening still constructs native BagMenu")
+  eq(reopened.title, "< BALLS >",
+    version .. " Crystal Pack remembers the last pocket for the session")
+  eq(reopened.index, 2,
+    version .. " reopened Pack restores that pocket's cursor")
+  eq(reopened.scroll, 0,
+    version .. " reopened Pack restores that pocket's scroll")
+  sequenceEq(ctx.game.save.bagOrder, orderBefore,
+    version .. " cursor memory never changes saved item ordering")
+  mapEq(ctx.game.save.inventory, inventoryBefore,
+    version .. " cursor memory never changes saved item quantities")
 end
 
 local function testShop(version)
@@ -630,12 +824,13 @@ local function testShop(version)
     version .. " existing-Trade-Stone stock remains unchanged")
 end
 
-for _, version in ipairs({ "0.1.75", "0.1.83" }) do
+for _, version in ipairs({ "0.1.75", "0.1.83", "0.1.88", "0.1.96" }) do
   testEnabledBag(version)
   testDisabledBag(version)
   testGoldForcesProjection(version)
+  testGoldPocketMemory(version)
   testShop(version)
 end
 
-print(("inventory UI: %d checks passed (v0.1.75 + v0.1.83 doubles)")
+print(("inventory UI: %d checks passed (v0.1.75/.83/.88/.96 doubles)")
   :format(checks))

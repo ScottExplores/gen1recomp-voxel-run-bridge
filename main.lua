@@ -48,7 +48,7 @@ local GAPPED_LAND_CELL = 64
 -- Native terrain and Flora's detailed apron occupy roughly y=-2..-37.
 -- Keep the broad procedural ground below both so it only fills the void.
 local GAPPED_LAND_Y = -40
-local RELEASE_VERSION = "0.12.1"
+local RELEASE_VERSION = "0.12.2"
 
 local OPTION_DEFAULTS = {
   hm_without_badges = true,
@@ -56,7 +56,7 @@ local OPTION_DEFAULTS = {
   free_fly_cockpit = false,
   gapped_land = true,
   bag_pockets = true,
-  gen2_menus = false,
+  gen2_menus = true,
   experience_mode = "vanilla",
   trainer_forfeit_enabled = true,
   trainer_rematches = true,
@@ -86,6 +86,77 @@ local BAG_POCKETS = {
   { id = "key", label = "KEY ITEMS" },
   { id = "machines", label = "TM/HM" },
 }
+
+-- Crystal's PACK fits five two-line entries beside the pocket picture.  The
+-- picture below is drawn from original primitives rather than copied ROM art;
+-- keeping the measurements on the same 20x18 tile grid preserves the useful
+-- part of the cartridge layout on every supported Gen1Recomp renderer.
+local GOLD_PACK_VISIBLE_ROWS = 5
+
+-- Red does not contain the item-description table that Gold/Crystal does.
+-- Prefer data supplied by the engine or another content mod, then cover the
+-- effects whose exact meaning is stable in Gen 1.  Everything else receives a
+-- deliberately conservative category description instead of a blank panel or
+-- a guessed mechanic.
+local GOLD_PACK_DESCRIPTIONS = {
+  POTION = "RESTORES 20 HP TO ONE POKéMON.",
+  SUPER_POTION = "RESTORES 50 HP TO ONE POKéMON.",
+  HYPER_POTION = "RESTORES 200 HP TO ONE POKéMON.",
+  MAX_POTION = "FULLY RESTORES ONE POKéMON'S HP.",
+  FULL_RESTORE = "FULLY RESTORES HP AND STATUS.",
+  REVIVE = "REVIVES A FAINTED POKéMON WITH HALF ITS HP.",
+  MAX_REVIVE = "FULLY REVIVES A FAINTED POKéMON.",
+  ANTIDOTE = "CURES POISON IN ONE POKéMON.",
+  BURN_HEAL = "HEALS A BURN ON ONE POKéMON.",
+  ICE_HEAL = "THAWS ONE FROZEN POKéMON.",
+  AWAKENING = "WAKES ONE SLEEPING POKéMON.",
+  PARLYZ_HEAL = "CURES PARALYSIS IN ONE POKéMON.",
+  FULL_HEAL = "CURES ALL STATUS PROBLEMS.",
+  ETHER = "RESTORES 10 PP TO ONE MOVE.",
+  MAX_ETHER = "FULLY RESTORES PP TO ONE MOVE.",
+  ELIXER = "RESTORES 10 PP TO ALL MOVES.",
+  MAX_ELIXER = "FULLY RESTORES PP TO ALL MOVES.",
+  PP_UP = "RAISES THE MAXIMUM PP OF ONE MOVE.",
+  RARE_CANDY = "RAISES A POKéMON BY ONE LEVEL.",
+  ESCAPE_ROPE = "ESCAPES FROM A CAVE OR DUNGEON.",
+  REPEL = "REPELS WEAK WILD POKéMON FOR 100 STEPS.",
+  SUPER_REPEL = "REPELS WEAK WILD POKéMON FOR 200 STEPS.",
+  MAX_REPEL = "REPELS WEAK WILD POKéMON FOR 250 STEPS.",
+  POKE_DOLL = "HELPS ESCAPE FROM A WILD POKéMON.",
+  FIRE_STONE = "MAKES CERTAIN POKéMON EVOLVE.",
+  THUNDER_STONE = "MAKES CERTAIN POKéMON EVOLVE.",
+  WATER_STONE = "MAKES CERTAIN POKéMON EVOLVE.",
+  LEAF_STONE = "MAKES CERTAIN POKéMON EVOLVE.",
+  MOON_STONE = "MAKES CERTAIN POKéMON EVOLVE.",
+  BICYCLE = "A FOLDING BICYCLE FOR FAST TRAVEL.",
+  TOWN_MAP = "A MAP OF THE KANTO REGION.",
+  ITEMFINDER = "CHECKS THE AREA FOR HIDDEN ITEMS.",
+  POKE_FLUTE = "A FLUTE THAT WAKES SLEEPING POKéMON.",
+  OLD_ROD = "USE BY WATER TO FISH FOR POKéMON.",
+  GOOD_ROD = "A GOOD ROD FOR FISHING FOR POKéMON.",
+  SUPER_ROD = "THE BEST ROD FOR FISHING FOR POKéMON.",
+  EXP_ALL = "SHARES BATTLE EXP WITH THE PARTY.",
+  [EXP_SHARE_ID] = "SHARES EXP WHEN EXP. MODE IS EXP.SHARE.",
+  [TRADE_STONE_ID] = "EVOLVES A POKéMON THAT NORMALLY EVOLVES BY TRADE.",
+}
+
+local goldPackInkShader
+local goldPackInkShaderAttempted = false
+
+local function getGoldPackInkShader(graphics)
+  if goldPackInkShaderAttempted then return goldPackInkShader end
+  goldPackInkShaderAttempted = true
+  if type(graphics.newShader) ~= "function" then return nil end
+  local ok, shader = pcall(graphics.newShader, [[
+    vec4 effect(vec4 color, Image texture, vec2 texture_coords,
+        vec2 screen_coords) {
+      vec4 source = Texel(texture, texture_coords);
+      return vec4(color.rgb, source.a * color.a);
+    }
+  ]])
+  if ok then goldPackInkShader = shader end
+  return goldPackInkShader
+end
 
 local GAPPED_LAND_VOXEL_IDS = {
   "POKEMON_FINAL",
@@ -581,7 +652,7 @@ local function defineOptions(mod, vendorHost)
       type = "toggle",
       label = "FLY COCKPIT",
       default = false,
-      help = "Show the flying Pokemon at the bottom of first-person view. OFF hides only that HUD picture; third-person flight is unchanged.",
+      help = "Show the rider and flying Pokemon in first-person. On a physical Thor they appear on the upper gameplay display; third-person flight is unchanged.",
     },
     {
       key = GAPPED_LAND_OPTION,
@@ -601,8 +672,8 @@ local function defineOptions(mod, vendorHost)
       key = GEN2_MENUS_OPTION,
       type = "toggle",
       label = "PACK + POKéGEAR",
-      default = false,
-      help = "Show PACK on Red's Start menu and add a built-in POKeGEAR with a live clock and Kanto map. No Gold ROM is required; Gen 1 Modern UI can stay on.",
+      default = true,
+      help = "Use the Crystal-style four-pocket PACK plus CLOCK, MAP, PHONE and RADIO cards adapted to Red. No Gold ROM is required; Gen 1 Modern UI can stay on.",
     },
     {
       key = EXPERIENCE_MODE_OPTION,
@@ -767,6 +838,225 @@ local function pocketForItem(id, def, ItemEffects)
     return "key"
   end
   return "items"
+end
+
+local function goldPackMove(game, def)
+  local machine = def and def.machine
+  local id = type(machine) == "table" and machine.move or nil
+  if not id then return nil, nil end
+  local move = game and game.data and game.data.moves
+    and game.data.moves[id]
+  local name = move and move.name or tostring(id):gsub("_", " ")
+  return id, name, move
+end
+
+local function goldPackDescription(game, id, def, pocketId)
+  local _, moveName, move = goldPackMove(game, def)
+  if move then
+    local description = move.description or move.desc
+    if type(description) == "string" and description ~= "" then
+      return description
+    end
+  end
+
+  local supplied = def and (def.description or def.desc)
+  if type(supplied) == "table" then
+    supplied = table.concat(supplied, "\n")
+  end
+  if type(supplied) == "string" and supplied ~= "" then return supplied end
+  if moveName then return "TEACHES " .. moveName .. " TO A POKéMON." end
+
+  local known = GOLD_PACK_DESCRIPTIONS[id]
+  if known then return known end
+  if pocketId == "balls" then
+    return "A BALL USED TO CATCH WILD POKéMON."
+  elseif pocketId == "key" then
+    return "AN IMPORTANT ITEM FOR YOUR ADVENTURE."
+  elseif pocketId == "machines" then
+    return "TEACHES A MOVE TO A POKéMON."
+  end
+  return "A USEFUL ITEM KEPT IN THE PACK."
+end
+
+local function goldPackTextLines(Font, text, maxWidth, maxLines)
+  text = tostring(text or "")
+    :gsub("<NEXT>", "\n")
+    :gsub("<LINE>", "\n")
+    :gsub("%s*\r%s*", "\n")
+  local lines = {}
+  local function width(value)
+    local ok, result = pcall(Font.width, value)
+    return ok and tonumber(result) or (#value * 8)
+  end
+  for segment in (text .. "\n"):gmatch("(.-)\n") do
+    local line
+    for word in segment:gmatch("%S+") do
+      local candidate = line and (line .. " " .. word) or word
+      if line and width(candidate) > maxWidth then
+        lines[#lines + 1] = line
+        line = word
+      else
+        line = candidate
+      end
+    end
+    if line then lines[#lines + 1] = line end
+    if #lines >= maxLines then break end
+  end
+  return lines
+end
+
+local function drawGoldPack(game, list, pocket, state)
+  local G = love and love.graphics
+  if type(G) ~= "table" or type(G.setColor) ~= "function"
+      or type(G.rectangle) ~= "function" then return false end
+  local okFont, Font = pcall(require, "src.render.Font")
+  if not okFont or type(Font) ~= "table" or type(Font.draw) ~= "function"
+      or type(Font.width) ~= "function" then return false end
+
+  local function color(r, g, b, a) G.setColor(r, g, b, a or 1) end
+  local function fill(r, g, b, x, y, w, h)
+    color(r, g, b)
+    G.rectangle("fill", x, y, w, h)
+  end
+  local function outline(r, g, b, x, y, w, h)
+    color(r, g, b)
+    G.rectangle("line", x, y, w, h)
+  end
+  local function text(value, x, y)
+    color(0.07, 0.06, 0.10)
+    Font.draw(value, x, y)
+  end
+  local function inkText(value, x, y, r, g, b)
+    local shader = getGoldPackInkShader(G)
+    if shader and type(G.setShader) == "function" then
+      local previous = type(G.getShader) == "function" and G.getShader() or nil
+      G.setShader(shader)
+      color(r, g, b)
+      local okDraw, drawResult = pcall(Font.draw, value, x, y)
+      local okRestore, restoreResult = pcall(G.setShader, previous)
+      if not okDraw then error(drawResult, 0) end
+      if not okRestore then error(restoreResult, 0) end
+      return
+    end
+    -- Shaderless renderers are not expected on supported LÖVE builds, but a
+    -- visible system-font label is preferable to black cartridge ink on the
+    -- black header if a minimal test/driver disables shaders.
+    if type(G.print) == "function" then
+      color(r, g, b)
+      G.print(value, x, y)
+    else
+      text(value, x, y)
+    end
+  end
+  local function triangle(mode, x, y, direction)
+    if type(G.polygon) ~= "function" then return end
+    if direction == "left" then
+      G.polygon(mode, x + 6, y, x, y + 4, x + 6, y + 8)
+    elseif direction == "up" then
+      G.polygon(mode, x, y + 6, x + 4, y, x + 8, y + 6)
+    elseif direction == "down" then
+      G.polygon(mode, x, y, x + 4, y + 6, x + 8, y)
+    else
+      G.polygon(mode, x, y, x + 6, y + 4, x, y + 8)
+    end
+  end
+
+  -- Pack_InitGFX's 20x18 panel: one header row, an eleven-row pocket/list
+  -- body and the six-row description box from Crystal's pack.asm.
+  fill(1, 1, 1, 0, 0, 160, 144)
+  fill(0.02, 0.02, 0.03, 0, 0, 160, 8)
+  fill(0.20, 0.43, 0.78, 0, 8, 40, 88)
+  for y = 8, 88, 8 do
+    fill(0.32, 0.58, 0.90, 0, y, 40, 3)
+    for x = (math.floor(y / 8) % 2) * 4, 36, 8 do
+      fill(0.12, 0.31, 0.65, x, y + 3, 4, 3)
+    end
+  end
+  fill(1, 1, 1, 40, 8, 120, 88)
+
+  color(1, 1, 1)
+  triangle("fill", 2, 0, "left")
+  triangle("fill", 11, 0, "right")
+  inkText("POCKET", 22, 0, 1, 1, 1)
+  local header = pocket.id == "balls" and "BALLS" or pocket.label
+  local headerWidth = Font.width(header)
+  inkText(header, math.max(80, 156 - headerWidth), 0, 0.95, 0.30, 0.82)
+
+  -- An original, ROM-free silhouette in the same 5x3-tile picture area.
+  fill(0.96, 1, 0.96, 4, 24, 32, 24)
+  outline(0.10, 0.48, 0.22, 7, 27, 26, 18)
+  outline(0.10, 0.48, 0.22, 12, 24, 16, 7)
+  outline(0.10, 0.48, 0.22, 13, 32, 14, 9)
+  fill(0.10, 0.48, 0.22, 5, 32, 3, 10)
+  fill(0.10, 0.48, 0.22, 33, 32, 3, 10)
+
+  fill(0.75, 0.04, 0.18, 2, 57, 36, 25)
+  fill(0.02, 0.02, 0.03, 5, 60, 30, 19)
+  local plaque = pocket.id == "machines" and "TMHM"
+    or (pocket.id == "key" and "KEY")
+    or (pocket.id == "balls" and "BALL" or "ITEM")
+  local plaqueWidth = Font.width(plaque)
+  inkText(plaque, 20 - math.floor(plaqueWidth / 2), 66, 1, 1, 1)
+
+  local rows = list.items or {}
+  if #rows == 0 then
+    text("NOTHING HERE.", 56, 48)
+  else
+    for visible = 1, GOLD_PACK_VISIBLE_ROWS do
+      local index = (list.scroll or 0) + visible
+      local row = rows[index]
+      if not row then break end
+      local y = 16 + (visible - 1) * 16
+      local selected = index == list.index
+      if selected then
+        color(0.78, 0.02, 0.16)
+        triangle("fill", 48, y, "right")
+      elseif list.swapIndex == index or state.swapId == row.value then
+        color(0.78, 0.02, 0.16)
+        triangle("line", 48, y, "right")
+      end
+      text(row.label, 56, y)
+      local def = game.data and game.data.items and game.data.items[row.value]
+      local _, moveName = goldPackMove(game, def)
+      if pocket.id == "machines" and moveName then
+        text(moveName, 64, y + 8)
+      elseif pocket.id == "items" or pocket.id == "balls" then
+        local count = game.save and game.save.inventory
+          and game.save.inventory[row.value] or 0
+        text("\195\151" .. tostring(count), 64, y + 8)
+      end
+    end
+  end
+
+  color(0.07, 0.06, 0.10)
+  if (list.scroll or 0) > 0 then triangle("fill", 148, 10, "up") end
+  if (list.scroll or 0) + GOLD_PACK_VISIBLE_ROWS < #rows then
+    triangle("fill", 148, 88, "down")
+  end
+
+  -- The selected item's explanation is always present.  Red's data does not
+  -- normally carry descriptions, so goldPackDescription supplies accurate,
+  -- effect-aware fallbacks rather than exposing an empty decorative box.
+  if type(Font.drawBox) == "function" then
+    color(1, 1, 1)
+    Font.drawBox(0, 12, 20, 6)
+  else
+    fill(1, 1, 1, 0, 96, 160, 48)
+    outline(0.07, 0.06, 0.10, 0, 96, 159, 47)
+  end
+  local current = rows[list.index]
+  local description
+  if current then
+    local def = game.data and game.data.items and game.data.items[current.value]
+    description = goldPackDescription(game, current.value, def, pocket.id)
+  else
+    description = "NO ITEMS IN THIS POCKET."
+  end
+  for index, line in ipairs(goldPackTextLines(Font, description, 144, 2)) do
+    text(line, 8, 104 + (index - 1) * 16)
+  end
+  color(1, 1, 1)
+  return true
 end
 
 local function installInventoryFeatures(mod)
@@ -953,14 +1243,29 @@ local function installInventoryFeatures(mod)
       return list
     end
 
+    local goldEnabled = optionEnabled(mod, GEN2_MENUS_OPTION, false)
+    local memory
+    if goldEnabled and type(game) == "table" then
+      memory = rawget(game, "_scottsTweaksGoldPackMemory")
+      if type(memory) ~= "table" then
+        memory = { pocket = 1, cursor = {}, scroll = {} }
+        rawset(game, "_scottsTweaksGoldPackMemory", memory)
+      end
+      if type(memory.cursor) ~= "table" then memory.cursor = {} end
+      if type(memory.scroll) ~= "table" then memory.scroll = {} end
+    end
     local state = {
-      pocket = 1,
-      cursor = {},
+      pocket = memory and math.max(1,
+        math.min(tonumber(memory.pocket) or 1, #BAG_POCKETS)) or 1,
+      cursor = memory and memory.cursor or {},
+      scroll = memory and memory.scroll or {},
+      memory = memory,
       swapId = nil,
     }
     local baseUpdate = list.update
     local baseDraw = list.draw
     local baseChoose = list.onChoose
+    local nativeRows = list.rows or 7
 
     local function currentId()
       local item = list.items and list.items[list.index]
@@ -983,27 +1288,36 @@ local function installInventoryFeatures(mod)
       return rows
     end
 
-    local function rebuild(preferredId)
+    local function rebuild(preferredId, restorePocket)
       local pocket = BAG_POCKETS[state.pocket]
-      local oldId = preferredId or currentId()
+      local oldId = preferredId
+      if oldId == nil and not restorePocket then oldId = currentId() end
       list.items = buildRows(pocket.id)
       list.title = "< " .. pocket.label .. " >"
-      local nextIndex = 1
+      list.rows = optionEnabled(mod, GEN2_MENUS_OPTION, false)
+        and GOLD_PACK_VISIBLE_ROWS or nativeRows
+      local nextIndex
       if oldId then
         for index, item in ipairs(list.items) do
           if item.value == oldId then nextIndex = index break end
         end
-      elseif state.cursor[pocket.id] then
-        nextIndex = state.cursor[pocket.id]
       end
+      nextIndex = nextIndex or state.cursor[pocket.id] or 1
       list.index = math.max(1, math.min(nextIndex, math.max(1, #list.items)))
-      local rows = list.rows or 7
-      list.scroll = math.max(0, math.min(list.scroll or 0,
+      local rows = list.rows or nativeRows
+      local wantedScroll = restorePocket and (state.scroll[pocket.id] or 0)
+        or (list.scroll or 0)
+      list.scroll = math.max(0, math.min(wantedScroll,
         math.max(0, #list.items - rows)))
       if list.index - list.scroll > rows then
         list.scroll = list.index - rows
       elseif list.index - list.scroll < 1 then
         list.scroll = list.index - 1
+      end
+      state.cursor[pocket.id] = list.index
+      state.scroll[pocket.id] = list.scroll
+      if state.memory then
+        state.memory.pocket = state.pocket
       end
     end
 
@@ -1059,35 +1373,50 @@ local function installInventoryFeatures(mod)
       if left or right then
         local pocket = BAG_POCKETS[state.pocket]
         state.cursor[pocket.id] = self.index
+        state.scroll[pocket.id] = self.scroll or 0
         state.swapId = nil
         self.swapIndex = nil
         state.pocket = ((state.pocket - 1 + (right and 1 or -1))
           % #BAG_POCKETS) + 1
+        if state.memory then state.memory.pocket = state.pocket end
         -- Do not carry the selected id from the old pocket into the new
         -- pocket.  Clearing the rendered rows lets rebuild restore that
         -- pocket's own remembered cursor instead.
         self.items = {}
-        rebuild()
+        self.scroll = state.scroll[BAG_POCKETS[state.pocket].id] or 0
+        rebuild(nil, true)
         playMenuSound(game)
         return
       end
       local result = pack(baseUpdate(self, dt))
       local active = BAG_POCKETS[state.pocket]
       state.cursor[active.id] = self.index
+      state.scroll[active.id] = self.scroll or 0
+      if state.memory then state.memory.pocket = state.pocket end
       return unpackValues(result, 1, result.n)
     end
 
     list.draw = function(self)
       rebuild(currentId())
+      if optionEnabled(mod, GEN2_MENUS_OPTION, false)
+          and not state.visualFailed then
+        local drawn
+        local ok, err = xpcall(function()
+          drawn = drawGoldPack(game, self, BAG_POCKETS[state.pocket], state)
+        end, traceback)
+        if ok and drawn then return end
+        if not ok then state.visualFailed = tostring(err) end
+      end
       return baseDraw(self)
     end
 
     rawset(list, "_scottsTweaksPocketLayer", {
       owner = mod.id,
       version = RELEASE_VERSION,
+      visual = goldEnabled and "crystal_pack" or "classic_pockets",
       state = state,
     })
-    rebuild()
+    rebuild(nil, true)
     return list
   end
 

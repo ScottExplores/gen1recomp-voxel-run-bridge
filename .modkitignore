@@ -44,6 +44,7 @@ dist/voxel_run_bridge-0.10.1.zip
 dist/voxel_run_bridge-0.11.0.zip
 dist/voxel_run_bridge-0.12.0.zip
 dist/voxel_run_bridge-0.12.1.zip
+dist/voxel_run_bridge-0.12.2.zip
 # Gen1Recomp 0.1.x reads this file as an exact-path set (no glob expansion),
 # so keep the explicit vendor entries below even though the patterns above
 # document the intended directory policy.

@@ -510,7 +510,7 @@ T.check(bagPockets ~= nil and packMenus ~= nil,
   "Menus & Device exposes both Classic Bag and PACK controls")
 T.eq(bagPockets.label, "CLASSIC POCKETS",
   "Classic pocket label fits the handheld row")
-T.eq(packMenus.step(game, 1), true, "PACK + Pokegear can be enabled")
+T.eq(packMenus.value(), "ON", "PACK + Pokegear uses its new-install default")
 local systemWithPack = mapIds(buildScreen(unified.screenIds.system).rows)
 local savedBagWithPack = systemWithPack["voxel_run_bridge:bag_pockets"]
 T.check(savedBagWithPack ~= nil,
