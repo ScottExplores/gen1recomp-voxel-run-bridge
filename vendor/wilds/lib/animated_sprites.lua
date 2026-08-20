@@ -1061,10 +1061,15 @@ function AnimatedSprites:getBillboardCard(speciesId, animName, direction, frameI
   local oy = card - dh
 
   local okBuild, imgOrErr = pcall(function()
-    local okC, canvas = pcall(love.graphics.newCanvas, card, card)
+    -- Logical sprite pixels must stay logical pixels on Android high-DPI
+    -- displays. Without dpiscale=1 a nominal 16x16 card can read back as
+    -- 44x44 on an AYN panel, then gets sampled as though it were 16x16.
+    local okC, canvas = pcall(love.graphics.newCanvas, card, card,
+      { dpiscale = 1 })
     if not okC or not canvas then
       error("newCanvas failed: " .. tostring(canvas))
     end
+    if canvas.setFilter then canvas:setFilter("nearest", "nearest") end
     local prevCanvas = love.graphics.getCanvas and love.graphics.getCanvas() or nil
     love.graphics.push("all")
     love.graphics.setCanvas(canvas)

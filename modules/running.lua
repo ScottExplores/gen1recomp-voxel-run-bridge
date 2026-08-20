@@ -276,7 +276,7 @@ return function(mod, context)
           if shared.wantsRun(runContext) and distance > 0 then
             shared.phase = (shared.phase + distance * TAU / STRIDE_DISTANCE) % TAU
             local strength = math.max(0,
-              finite(shared.option("running_bob_intensity", 0.5), 0.5))
+              finite(shared.option("running_bob_intensity", 0.125), 0.125))
             -- One soft rise and fall per measured stride; a small second
             -- harmonic keeps the movement from feeling mechanically uniform.
             shared.offset = BASE_AMPLITUDE * strength
@@ -324,7 +324,7 @@ return function(mod, context)
 
   local feature = {
     installed = true,
-    version = context and context.releaseVersion or "0.12.0",
+    version = context and context.releaseVersion or "0.12.1",
     alwaysAvailable = true,
     speedDelegated = speedDelegated,
     speedProvider = speedDelegated and "running_shoes" or mod.id,

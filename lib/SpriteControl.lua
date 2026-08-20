@@ -8,8 +8,9 @@ local V = ...
 
 local BattleArt = V.require("BattleArt")
 local AnimatedBattleArt = V.require("AnimatedBattleArt")
+local ModSetting = V.require("ModSetting")
 local SpriteControl = {}
-SpriteControl.API_VERSION = 1
+SpriteControl.API_VERSION = 2
 SpriteControl.SOURCE_MOD_ID = "BATTLE_ART_VOXEL_FORK"
 
 local definitions = {
@@ -29,6 +30,14 @@ local definitions = {
     setting = BattleArt.frontFlipSetting,
     values = { battle_art = true, default = true },
   },
+  opponentFlip = {
+    setting = BattleArt.opponentFlipSetting,
+    values = { authored = true, flipped = true },
+  },
+  backFlip = {
+    setting = BattleArt.backFlipSetting,
+    values = { authored = true, flipped = true },
+  },
 }
 
 local aliases = {
@@ -43,6 +52,11 @@ local aliases = {
   flip = "frontFlip",
   front_flip = "frontFlip",
   frontFlip = "frontFlip",
+  enemy_flip = "opponentFlip",
+  opponent_flip = "opponentFlip",
+  opponentFlip = "opponentFlip",
+  back_flip = "backFlip",
+  backFlip = "backFlip",
 }
 
 local function canonical(surface)
@@ -70,9 +84,10 @@ local function setChecked(name, value, game)
     return false, ("unsupported %s value: %s"):format(
       tostring(name), tostring(value))
   end
-  local ok, result = pcall(def.setting.setIndex, def.setting, index,
-                           liveGame(game))
+  local ok, result, detail = pcall(def.setting.setIndex, def.setting, index,
+                                   liveGame(game))
   if not ok then return false, tostring(result) end
+  if result == nil then return false, tostring(detail or "option write failed") end
   return true, result
 end
 
@@ -91,6 +106,8 @@ function SpriteControl.profile()
     opponentTrainer = BattleArt.opponentTrainerSourceSetting:get(),
     playerTrainer = BattleArt.playerTrainerSourceSetting:get(),
     frontFlip = BattleArt.frontFlipSetting:get(),
+    opponentFlip = BattleArt.opponentFlipSetting:get(),
+    backFlip = BattleArt.backFlipSetting:get(),
   }
 end
 
@@ -156,10 +173,16 @@ function SpriteControl.applyProfile(profile, game, battle)
     changes[#changes + 1] = { name = name, value = value }
   end
 
+  local transaction = {}
   for _, change in ipairs(changes) do
-    local ok, err = setChecked(change.name, change.value, game)
-    if not ok then return false, err end
+    local def = definitions[change.name]
+    transaction[#transaction + 1] = {
+      setting = def.setting,
+      index = indexFor(def, change.value),
+    }
   end
+  local ok, err = ModSetting.transaction(transaction, liveGame(game))
+  if not ok then return false, err end
   if battle then SpriteControl.refresh(battle) end
   return true, SpriteControl.profile()
 end

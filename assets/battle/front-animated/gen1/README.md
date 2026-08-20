@@ -15,7 +15,7 @@ slugs used across the battle-art folders (`bulbasaur.png`, `mr-mime.png`,
 Unlike the Gen 2–5 collections, these are ordinary single-frame PNGs rather
 than animation atlases: no Lua sidecar, frame grid, or timing metadata is
 required. They are used as the default `ANIM FRONT GEN: GEN 1` front set, and
-as the front fallback when `DUPLICATE FIX: MODDED` is selected and no shiny override
+as the front fallback when `POKEMON SOURCE: MODDED` is selected and no shiny override
 is present. Author opponent art facing left. Missing or malformed species fall
 back directly to the ROM front sprite rather than borrowing from another
 generation.

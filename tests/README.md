@@ -1,5 +1,86 @@
 # Tests
 
+`art_rendering.lua` locks the sprite repairs that are easy to miss on a
+desktop display: Crystal's authored transparency survives a developer F5,
+opponent/player-back orientation controls stay independent, and both Wilds
+sprite-card canvas paths use 1:1 DPI with nearest filtering for Android/AYN:
+
+```powershell
+luajit tests\art_rendering.lua <mod-root>
+```
+
+The suite currently contains 244 checks and also installs the real staged-battle
+wrappers: split mode must omit lower-screen Pokemon, trainer, and move OAM
+while preserving the upper animation surface and lower text/HUD. Its setting
+checks also prove one- and two-key sprite ownership edits roll back save, live,
+and cached values after a failed device write. The combined Crystal/Battle Art
+trainer, player-view, and Crystal-mode shortcuts likewise persist once and
+leave both providers untouched when that write fails. A stable 120-frame HUD
+draw also allocates only the two warm-up quads, with resize and invalidation
+rebuilding exactly the stale entries.
+
+`crystal_party_art.lua` drives the real fused Loader and Crystal provider with
+normal and shiny Gen 1 frames. It proves party/Summary lookup reaches the
+bundled exact-case assets, normal and shiny frames differ, authored alpha stays
+on the transparent path, and the resulting card uses 1:1 DPI with nearest
+sampling. The runner exercises both LuaJIT and Lua 5.1:
+
+```powershell
+.\tests\run_crystal_party_art.ps1 -ModRoot <mod-root> -EngineRoot <engine-root>
+```
+
+`run_fused.ps1` stages the complete fused code tree through a real Gen1Recomp
+loader. Its renderer/menu/Wilds assertions cover every canonical ALL row once,
+BASIC/ALL input, atomic encounter-mode migration, live current-map respawn,
+classic-roll suppression, AI-pipeline recovery, and insertion of revealed
+grass Pokemon into the Gen 1 draw list:
+
+```powershell
+.\tests\run_fused.ps1 -ModRoot <mod-root> -EngineRoot <engine-root>
+```
+
+`vendor_host_assets.lua` verifies Android-case asset rerooting and the hosted
+single-/multi-option writers. `unique_menu_icons_options.lua` verifies that an
+icon-mode change is saved for restart without mutating the frozen registry.
+`coexist_standalone.lua` proves a separately installed renderer remains the
+owner while Scott's Tweaks still loads:
+
+```powershell
+luajit tests\vendor_host_assets.lua <mod-root>
+luajit tests\unique_menu_icons_options.lua <mod-root>
+luajit tests\coexist_standalone.lua <mod-root> <engine-root> <file-list>
+```
+
+`wilds_follower_gold_seam.lua` loads the real 0.1.88 and 0.1.96 Gen 2 map
+implementations. It locks the engine's id-only neighbor shape, cross-map
+follower cell lookup, destination `mapId` rebinding, and guest retention after
+a world rebuild:
+
+```powershell
+luajit tests\wilds_follower_gold_seam.lua <mod-root> <engine-.88> <engine-.96>
+```
+
+`wilds_follower_gen1_walk.lua` uses the real Gen 1 Player, NPC, Collision, and
+SpriteRenderer modules. Four ordinary grid steps must leave the same follower
+exactly one vacated cell behind, attached to both native world containers,
+drawable, and backed by Scott's bundled six-frame GSC art. Run it once with
+each supported engine and Lua runtime:
+
+```powershell
+luajit tests\wilds_follower_gen1_walk.lua <mod-root> <engine-root>
+lua tests\wilds_follower_gen1_walk.lua <mod-root> <engine-root>
+```
+
+`wilds_behavior_tick_alloc.lua` protects the handheld Wilds hot path. It
+simulates 12 visible Pokemon for 600 rendered frames, verifies the fixed 30 Hz
+AI cadence, and keeps total Lua allocation below the cross-runtime 384 KiB
+budget with no per-entity allocation growth:
+
+```powershell
+luajit tests\wilds_behavior_tick_alloc.lua <mod-root>
+lua tests\wilds_behavior_tick_alloc.lua <mod-root>
+```
+
 `main.lua` uses fake engine and voxel modules to verify the adapter without a
 ROM. It covers foot and bike ratios, engine-style output clamping, invalid
 hook output, no-producer behavior, scripted-movement gating, error-safe
@@ -14,8 +95,9 @@ a voxel provider. The suite also feature-detects Free Fly's public flight
 state and real `badges` option, exercises the same live value its private
 takeoff gate reads, proves takeoff no longer returns the THUNDERBADGE error,
 and verifies FLY eligibility, story rules, inventory, and the player's saved
-Free Fly preference remain isolated. It also covers the exact Free Fly 1.6.2
-first-person HUD contract: hidden-by-default cockpit art, opt-in restoration,
+Free Fly preference remain isolated. It also covers the verified Free Fly
+1.6.2 and bundled 1.8.0 first-person HUD contract: hidden-by-default cockpit
+art, opt-in restoration,
 third-person pass-through, multiple returns, error-safe restoration, and
 refusal to patch an unverified future version. Pokemon Final cache-screen fixtures also
 lock the behavior probe, successful-state check, return/error preservation,
@@ -64,7 +146,9 @@ the leased raw-Overworld dispatcher across a two-entry hot reload.
 `migrations.lua` verifies the per-save one-time import, deep-copied trainer
 memory, explicit-new-value precedence, live/save option mirroring, one-write
 persistence, idempotence, preservation of every legacy namespace, and F5's
-save-first/fresh-Loader reconciliation with standard live option events. Both
+save-first/fresh-Loader reconciliation with standard live option events. It
+also proves thrown and explicit-false storage failures restore bucket identity
+and values without emitting a false live event. Both
 focused suites run under Lua 5.1 and LuaJIT:
 
 ```powershell
@@ -90,7 +174,7 @@ public render/display seams in both 0.1.88 and 0.1.96, stock single-screen
 fallthrough, physical lower-display routing, frozen upper/live lower menu
 composition, scaling, fault recovery, legacy `gen1recomp_ds` delegation,
 same-facade identity, and two real API-2 Loader entries. Select each fixture
-as the live Loader once; every invocation contains 178 checks and runs under
+as the live Loader once; every invocation contains 200 checks and runs under
 both LuaJIT and Lua 5.1:
 
 ```powershell

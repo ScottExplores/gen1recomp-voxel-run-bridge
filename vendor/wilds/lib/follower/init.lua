@@ -266,19 +266,20 @@ function Follower:_installPartyLeaderItems()
         out[#out + 1] = {
           label = "DISMISS",
           onSelect = function(selected, selectedGame)
+            local count, countErr = control:setFollowerCount(selectedGame, 0)
+            if type(count) ~= "number" then
+              logGen2(mod, "dismiss persistence failed: %s", tostring(countErr))
+              return
+            end
             if selection and selection.state then
               selection.state:clearSelection()
             end
             control:clearLeader(selectedGame)
-            -- Config.setOption is canonical (Gen1Recomp has no mod.options:set).
-            control:setFollowerCount(selectedGame, 0)
             if selectedGame and selectedGame.save then
               selectedGame.save.followerPartyIndex = nil
-              selectedGame.save.pokepcFollowerCount = 0
               selectedGame.save.followerPartyIndices = nil
               selectedGame.save.followerOrder = nil
             end
-            control._optCache.follower_count = 0
             control._pendingMapTrailerSync = true
 
             local GameCompat = V.require("game_compat")
@@ -312,10 +313,10 @@ function Follower:_installPartyLeaderItems()
           onSelect = function(selected, selectedGame)
             -- Ensure at least 1 follower is set if currently at 0
             if control:followerCount(selectedGame) <= 0 then
-              control:setFollowerCount(selectedGame, 1)
-              control._optCache.follower_count = 1
-              if selectedGame and selectedGame.save then
-                selectedGame.save.pokepcFollowerCount = 1
+              local count, countErr = control:setFollowerCount(selectedGame, 1)
+              if type(count) ~= "number" then
+                logGen2(mod, "follow persistence failed: %s", tostring(countErr))
+                return
               end
             end
 

@@ -43,7 +43,7 @@ local Voxel = {}
 -- rig owns the actual camera.
 Voxel.ANGLES_DEG = { 0, 35, 15, 35, 50, 75, 75, 75 }
 Voxel.ANGLE_LABELS = { "OFF", "FULL", "15", "35", "50", "75",
-                       "1ST", "3RD (EXPERIMENTAL)" }
+                       "1ST", "3RD EXPERIMENTAL" }
 Voxel.MAX_LEVEL = #Voxel.ANGLES_DEG - 1
 
 -- the rung FULL sits on, so nothing has to hunt for it by label

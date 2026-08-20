@@ -1,4 +1,4 @@
-﻿-- Overworld battles: one frame of the arena, as geometry.
+-- Overworld battles: a frame of the arena, as geometry.
 --
 -- The same world the free-roam mode draws, from a placed camera instead of
 -- the orbit, at the WINDOW's own pixel resolution -- not the GB's. The
@@ -175,12 +175,11 @@ end
 -- texture reports -- the column the pic was centred on and the row its feet
 -- were put on -- which is translated onto the cell before the card is stood
 -- up, so a mon of any size in any pose has its feet on the ground.
--- `mirror` flips the card about its own anchor column. Both mons wear their
--- FRONT pic, which is drawn facing out of the screen -- so dropped into the
--- world unaltered the pair stand back to back, both looking the same way past
--- each other. Mirroring the near one turns it to face the far one, which is
--- what a fight looks like; and because it is a flip about the pic's own
--- centre the feet do not move off the tile.
+-- `mirror` flips the card about its own anchor column. It is explicit metadata
+-- on each Pokemon card: the player-front path retains its historical default,
+-- while opponent and player-back cards have independent authored/flipped
+-- choices. Because the flip is about the pic's own centre, its feet do not
+-- move off the tile.
 --
 -- The player's TRAINER pic is the exception, and it is exempted below. That
 -- one is a BACK view -- the player seen from behind, already turned to face
@@ -215,8 +214,14 @@ local function monCards(arena, groundY, textures)
     local cell = (side == "player") and arena.player or arena.enemy
     if side == "player" and cap and cap.hidePlayer then tex = nil end
     if tex and tex.canvas and cell then
-      local mirror = (side == "player") and not tex.trainer
-                     and not tex.noMirror
+      local mirror = tex.mirror
+      if mirror == nil then
+        -- v2 texture records only described the historical player-front
+        -- mirror. Keep accepting them so a hot reload can finish a frame
+        -- assembled by the previous OverworldBattle entry.
+        mirror = (side == "player") and not tex.trainer
+                 and not tex.noMirror
+      end
       local model = monMatrix(tex, cell[1], groundY, cell[2], mirror)
       -- Pull the foe into the ball about its chest rather than its feet.
       if side == "enemy" and cap and cap.shrink then

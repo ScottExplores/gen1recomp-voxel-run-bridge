@@ -175,8 +175,8 @@ T.eq(run.mod and run.mod.manifest.id, "voxel_run_bridge",
   "stable updater identity is retained")
 T.eq(run.mod and run.mod.manifest.name, "Scott's Tweaks",
   "new display name is loaded")
-T.eq(run.mod and run.mod.manifest.version, "0.12.0",
-  "loader selected version 0.12.0")
+T.eq(run.mod and run.mod.manifest.version, "0.12.1",
+  "loader selected version 0.12.1")
 -- The consolidated build bundles All Pokemon Catchable 151 and Dynamic Scaling, which repatch
 -- encounter tables and pokemon records. The loader warns when a mod writes to
 -- pokemon while claiming otherwise, and a link partner must know, so the flag
@@ -208,7 +208,7 @@ for key, expected in pairs({
   running_enabled = true,
   running_speed = 1.5,
   running_view_bob = true,
-  running_bob_intensity = 0.5,
+  running_bob_intensity = 0.125,
   dual_screen = false,
 }) do
   T.check(type(schemaByKey[key]) == "table", key .. " is in central schema")
@@ -237,7 +237,7 @@ for _, row in ipairs(schema) do
 end
 T.eq(bagPocketsOption and bagPocketsOption.type, "toggle",
   "Bag Pockets uses a toggle")
-T.eq(bagPocketsOption and bagPocketsOption.label, "CLASSIC BAG POCKETS",
+T.eq(bagPocketsOption and bagPocketsOption.label, "CLASSIC POCKETS",
   "schema distinguishes classic pockets from PACK navigation")
 T.eq(bagPocketsOption and bagPocketsOption.default, true,
   "Bag Pockets defaults on")
@@ -433,8 +433,8 @@ for _, row in ipairs(goldInventoryMenu.rows or {}) do
     and row.id:match("^voxel_run_bridge:(.+)$") or nil
   if key then goldInventoryRows[key] = row end
 end
-T.eq(goldInventoryRows.bag_pockets, nil,
-  "organized menu hides redundant Classic Bag Pockets while PACK is enabled")
+T.check(type(goldInventoryRows.bag_pockets) == "table",
+  "organized menu keeps the saved Classic Pockets preference reachable while PACK is enabled")
 T.check(type(goldInventoryRows.experience_mode) == "table",
   "organized PACK inventory menu retains EXP mode")
 run.loader.modOptions.voxel_run_bridge.gen2_menus = false
@@ -689,7 +689,7 @@ T.check(type(pokemonFinalExports) == "table",
   "Pokemon Final test-double exports are published")
 T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.owner, "voxel_run_bridge",
   "Pokemon Final FreeMove receives Scott's bridge marker")
-T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.12.0",
+T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.12.1",
   "Pokemon Final bridge marker carries the update version")
 T.eq(type(exported.hmWithoutBadges), "function",
   "live HM option accessor is published")

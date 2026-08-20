@@ -481,15 +481,26 @@ end
 -- True when classic encounter RNG must be blocked (grass / cave / water).
 -- Active Safari sessions always suppress step encounters (independent of
 -- Random Enc) so visible Safari Pokémon can be approached safely.
--- Water Mons modes may override Random Enc for water / fishing only:
---   classic_encounters → never suppress water (even if Random Enc OFF)
+-- Water Mons modes may override Random Enc for water / fishing only while
+-- visible Wilds are enabled:
+--   classic_encounters → keep water encounters in VISIBLE mode
 --   disabled           → always suppress water
--- Land / cave remain gated solely by Random Enc (+ Safari).
+-- ENCOUNTER MODE=OFF remains global. Land / cave otherwise follow Random Enc
+-- (+ Safari).
 function SpawnLogic:shouldSuppressClassicEncounter(ctx)
   local game = gameOf(self.mod)
   local ow = GameCompat.liveOverworld(self.mod, game)
   local mapId = (ctx and ctx.mapId) or (ow and ow.map and ow.map.id) or self.activeMapId
   if SafariCompat.shouldSuppressClassicEncounters(game, ow, mapId) then
+    return true
+  end
+
+  -- ENCOUNTER MODE=OFF means no encounter source at all. Water Mons' explicit
+  -- classic mode may override VISIBLE's random-encounter preference, but it
+  -- must never punch through OFF merely because that older water setting was
+  -- left behind in the save.
+  local randomEnabled = Config.randomEncountersEnabled(self.mod)
+  if not Config.isEnabled(self.mod) and not randomEnabled then
     return true
   end
 
@@ -503,7 +514,7 @@ function SpawnLogic:shouldSuppressClassicEncounter(ctx)
     end
   end
 
-  return not Config.randomEncountersEnabled(self.mod)
+  return not randomEnabled
 end
 
 function SpawnLogic:_safariStatus(game, ow, mapId)
@@ -2820,10 +2831,108 @@ function SpawnLogic:onSaveLoaded()
   end
 end
 
+function SpawnLogic:behaviorOptionSnapshot(extra)
+  extra = extra or {}
+  return {
+    enable_idle = Config.get(self.mod, "enable_idle") ~= false,
+    enable_wander = Config.get(self.mod, "enable_wander") ~= false,
+    enable_aggressive = Config.get(self.mod, "enable_aggressive") ~= false,
+    enable_hidden = Config.get(self.mod, "enable_hidden") ~= false,
+    aggressive_frequency = Config.get(self.mod, "aggressive_frequency") or 1,
+    water_aggressive_chance = Config.get(self.mod, "water_aggressive_chance"),
+    safari = extra.safari == true,
+    hiddenCaveAvailable = extra.hiddenCaveAvailable,
+  }
+end
+
+-- One-shot live invalidation for existing wilds. Does not respawn, does not
+-- rebuild occupancy unless a hidden marker reveals/hides, and does not
+-- reconstruct SpriteRenderer unless presentation actually changes.
+function SpawnLogic:refreshBehaviorOptions()
+  local game = gameOf(self.mod)
+  local opts = self:behaviorOptionSnapshot()
+  local n = 0
+  local occupancy = self.occupancy
+  for id, entity in pairs(self.entities or {}) do
+    local record = self.spawns and self.spawns[id]
+    if entity and record and record.state == Config.STATE.AVAILABLE then
+      local safari = false
+      if self._safariActive then
+        safari = self:_safariActive(game, self:_ow(game),
+          record.mapId or self.activeMapId) == true
+      end
+      local entityOpts = {
+        enable_idle = opts.enable_idle,
+        enable_wander = opts.enable_wander,
+        enable_aggressive = opts.enable_aggressive,
+        enable_hidden = opts.enable_hidden,
+        aggressive_frequency = opts.aggressive_frequency,
+        water_aggressive_chance = opts.water_aggressive_chance,
+        safari = safari,
+        hiddenCaveAvailable = entity.surface == Surface.CAVE,
+      }
+      if entity.caveScenery then
+        entityOpts.enable_aggressive = false
+        entityOpts.enable_hidden = false
+      end
+      local changed, presentation = Behavior.resetForConfigChange(entity, entityOpts)
+      if occupancy and entity.movementReservationCancelled then
+        occupancy:cancelMove(entity)
+        entity.movementReservationCancelled = nil
+      end
+      if record then record.behavior = entity.behavior end
+      if presentation == "reveal" then
+        pcall(self._attach, self, entity)
+        if self.refreshEntitySprite then
+          pcall(self.refreshEntitySprite, self, entity, {
+            reason = "behavior_options",
+            game = game,
+            forcePresentationRefresh = true,
+          })
+        end
+      elseif presentation == "hide" then
+        pcall(self._detachFromWorld, self, entity)
+      end
+      if changed or presentation then n = n + 1 end
+      if GameCompat.ensureWildEntityUpdateOwner then
+        pcall(GameCompat.ensureWildEntityUpdateOwner, entity, game)
+      end
+    end
+  end
+  return n
+end
+
 function SpawnLogic:onOptionsChanged(payload)
   if not payload or payload.mod ~= self.mod.id then return end
+  -- OPTIONS / Pipelines.applyOptions can restore WILDS AI to OFF. Re-assert
+  -- on every live option write so existing entities keep their ~30 Hz cadence.
+  if self.behaviorTick and self.behaviorTick.ensurePipeline then
+    pcall(self.behaviorTick.ensurePipeline, self.behaviorTick)
+  elseif self.behaviorTick and self.behaviorTick.syncPipelineLevel then
+    pcall(self.behaviorTick.syncPipelineLevel, self.behaviorTick)
+  end
   local key = payload.key
-  if key == "enabled" and payload.value == false then
+  if key == "encounter_mode" then
+    -- The synthetic setting changes enabled/random/hidden together. Rebuild
+    -- this map once from the committed snapshot, instead of replaying three
+    -- callbacks against partly transitioned state. Grass pop-in entities are
+    -- recreated with the visible behavior configuration and the WILDS AI
+    -- pipeline above will attach them when their reveal animation completes.
+    self:clearAll()
+    if Config.isEnabled(self.mod) then
+      local ow = self:_ow()
+      if ow and ow.map and ow.map.id then
+        self:onMapEntered({ mapId = ow.map.id, map = ow.map })
+      end
+    end
+    return
+  elseif key == "enable_idle" or key == "enable_wander"
+      or key == "enable_aggressive" or key == "enable_hidden" then
+    local n = self:refreshBehaviorOptions()
+    self:_log("behavior option %s -> %s; revalidated %d existing entities (no respawn)",
+              tostring(key), tostring(payload.value), n)
+    return
+  elseif key == "enabled" and payload.value == false then
     self:clearAll()
   elseif key == "enabled" and payload.value == true then
     local ow = self:_ow()
@@ -2969,6 +3078,26 @@ function SpawnLogic:_spawnAt(x, y)
   return nil
 end
 
+-- A visible-mode battle may only start from a body the player can actually
+-- see. SpawnFx's wall-clock fail-safe can finish while the behavior pipeline
+-- is disabled; in that case the body is battleable but the usual reveal event
+-- never inserted it into the world list. Repair membership and defer the
+-- battle for one frame/input so Android cannot produce an invisible contact.
+-- Explicit hidden encounters retain their intentional marker behavior.
+function SpawnLogic:_battlePresentationReady(entity)
+  if not entity or entity.hiddenEncounter == true then return true end
+  if not SpawnFx.canBattle(entity) then return false end
+  if entity.hiddenBody == true or entity.visibleSprite == false then return false end
+  local game = gameOf(self.mod)
+  local ow = self:_ow(game)
+  if not ow then return false end
+  if not self:_isEntityActuallyAttached(entity, ow, game) then
+    pcall(self._attach, self, entity)
+    return false
+  end
+  return true
+end
+
 function SpawnLogic:_startBattle(record)
   if not record or record.state ~= Config.STATE.AVAILABLE then
     return false
@@ -2994,6 +3123,9 @@ function SpawnLogic:_startBattle(record)
                  or entity.wildsCatchPending
                  or entity.wildsCatchState == "capturing"
                  or entity.wildsCatchState == "pending") then
+    return false
+  end
+  if entity and not self:_battlePresentationReady(entity) then
     return false
   end
 

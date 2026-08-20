@@ -53,6 +53,11 @@ local DIR_DELTA = {
   right = { 1, 0 }, left = { -1, 0 }, down = { 0, 1 }, up = { 0, -1 },
 }
 
+-- Shared no-op for Wilds-owned trailer NPCs. ControlEngine owns stepping;
+-- stock NPC.update must not run. Reuse one function so syncTrailers does not
+-- allocate a fresh closure per trailer on the hot path.
+local NO_UPDATE = function() end
+
 local function tryRequire(path)
   local ok, mod = pcall(require, path)
   if ok then return mod end
@@ -389,6 +394,12 @@ end
 function ControlEngine:_attachTrailer(game, ow, npc)
   if not (ow and npc) then return end
   local GameCompat = V.require("game_compat")
+  -- Gold rebuildPeople retains a guest only when its mapId is nil or matches
+  -- the current map. Seam handoff deliberately preserves the existing NPC,
+  -- so rebind its source-map id before attaching it to the destination world.
+  if GameCompat.isGen2(self.mod, game) and ow.map and ow.map.id then
+    npc.mapId = ow.map.id
+  end
   local attached = GameCompat.attachGuestEntity(ow, npc, game)
   npc.worldContainer = attached or npc.worldContainer
   local inNpcs, inEntities = false, false
@@ -490,10 +501,18 @@ function ControlEngine:setFollowerCount(game, n)
   n = math.max(0, math.min(6, math.floor(tonumber(n) or 0)))
   local settings = self.settings
   if settings and type(settings.setFollowerCount) == "function" then
-    local ok, got = pcall(settings.setFollowerCount, settings, game, n)
-    if ok and type(got) == "number" then n = got end
+    local ok, got, detail = pcall(settings.setFollowerCount, settings, game, n)
+    if not ok then return nil, tostring(got) end
+    if type(got) ~= "number" then
+      return nil, tostring(detail or got or "follower_count persistence failed")
+    end
+    n = got
   elseif self.mod and self.mod.options and type(self.mod.options.set) == "function" then
-    pcall(self.mod.options.set, self.mod.options, "follower_count", n)
+    local ok, result, detail = pcall(
+      self.mod.options.set, self.mod.options, "follower_count", n)
+    if not ok or result == false then
+      return nil, tostring(ok and detail or result)
+    end
     if game and game.save then game.save.pokepcFollowerCount = n end
   elseif game and game.save then
     game.save.pokepcFollowerCount = n
@@ -506,14 +525,25 @@ function ControlEngine:setControlMode(game, mode)
   mode = mode or "follow"
   if mode == "lead" then mode = "lead_trainer" end
   local settings = self.settings
+  local committedCount
   if settings and type(settings.setEngineMode) == "function" then
-    pcall(settings.setEngineMode, settings, mode)
+    local ok, wrote, detail, count = pcall(
+      settings.setEngineMode, settings, game, mode)
+    if not ok then return false, tostring(wrote) end
+    if wrote ~= true then
+      return false, tostring(detail or "follower control persistence failed")
+    end
+    if type(detail) == "string" then mode = detail end
+    committedCount = count
+  else
+    return false, "follower control settings unavailable"
   end
-  if game and game.save then game.save.pokepcControlMode = mode end
   -- Invalidate; do not cache a second source of truth.
   self._optCache.control_mode = nil
   self._optCache.follow_control = nil
   self._optCache.trainer_trail = nil
+  self._optCache.follower_count = nil
+  return true, mode, committedCount
 end
 
 function ControlEngine:isPokemonFront(game)
@@ -1524,7 +1554,7 @@ function ControlEngine:makeTrailer(game, ow, x, y, facing, kind, mon, slot, opts
   -- ControlEngine owns trailer interpolation exclusively. Exclude trailers
   -- from the stock NPC auto-step so OverworldController's npc loop cannot
   -- double-advance (or reject) water steps.
-  npc.update = function() end
+  npc.update = NO_UPDATE
   local basePose = npc.pose
   if type(basePose) == "function" then
     npc.pose = function(ent)
@@ -1578,6 +1608,41 @@ local function mapContainsCell(map, x, y)
   return ok and inside == true
 end
 
+--- Resolve the runtime map behind one neighbor row.
+-- Gen1 rows carry `map`; Gold .88/.96 rows intentionally carry only
+-- `{ id, ox, oy, image }`. For Gold, construct the same gen2.Map facade the
+-- engine uses for neighbor ghosts from World.maps + World.tilesets. Cache by
+-- world/definition identity so a six-member train does not rebuild it on each
+-- movement probe.
+function ControlEngine:_followerNeighborMap(ow, nb)
+  if type(nb) ~= "table" then return nil end
+  if type(nb.map) == "table" then return nb.map end
+  local id = nb.id
+  local def = id and ow and ow.maps and ow.maps[id]
+  if type(def) ~= "table" then return nil end
+  if type(def.inBounds) == "function" then return def end
+  local tileset = ow.tilesets and def.tileset and ow.tilesets[def.tileset]
+  if type(tileset) ~= "table" then return nil end
+  local Map = tryRequire("src.world.gen2.Map")
+  if not (Map and type(Map.new) == "function") then return nil end
+
+  self._followerNeighborMaps = self._followerNeighborMaps
+    or setmetatable({}, { __mode = "k" })
+  local worldCache = self._followerNeighborMaps[ow]
+  if not worldCache then
+    worldCache = {}
+    self._followerNeighborMaps[ow] = worldCache
+  end
+  local cached = worldCache[id]
+  if cached and cached.def == def and cached.tileset == tileset then
+    return cached.map
+  end
+  local ok, map = pcall(Map.new, def, tileset)
+  if not ok or type(map) ~= "table" then return nil end
+  worldCache[id] = { def = def, tileset = tileset, map = map }
+  return map
+end
+
 --- Resolve a trailer cell in the current map's coordinate frame.
 -- During a seamless connection, trailers may still be standing on the map
 -- behind the player.  Neighbor offsets are pixels relative to the current
@@ -1588,7 +1653,7 @@ function ControlEngine:_followerMapCell(ow, x, y)
   if mapContainsCell(map, x, y) then return map, x, y end
   if not (ow and ow._wildsFollowerSeamActive) then return nil end
   for _, nb in ipairs(ow.neighbors or {}) do
-    local nmap = nb and nb.map
+    local nmap = self:_followerNeighborMap(ow, nb)
     local ox = tonumber(nb and nb.ox)
     local oy = tonumber(nb and nb.oy)
     if nmap and ox and oy then
@@ -1683,11 +1748,20 @@ local function translateTrailer(npc, dx, dy)
   if npc.targetY ~= nil then npc.targetY = npc.targetY + dy end
   if npc.goalX ~= nil then npc.goalX = npc.goalX + dx end
   if npc.goalY ~= nil then npc.goalY = npc.goalY + dy end
+  -- A moving trailer's authoritative destination lives in these private
+  -- fields; target/goal are only presentation/compat mirrors. Leaving the
+  -- live goal in source-map coordinates makes the first post-seam tick steer
+  -- backward or freeze even though its body and trail cells were translated.
+  if npc._wildsGoalX ~= nil then npc._wildsGoalX = npc._wildsGoalX + dx end
+  if npc._wildsGoalY ~= nil then npc._wildsGoalY = npc._wildsGoalY + dy end
 end
 
 function ControlEngine:_isOutsideMap(game, map)
   if not (map and map.def) then return false end
-  local Map = tryRequire("src.world.Map")
+  local GameCompat = V.require("game_compat")
+  local gen2 = type(GameCompat.isGen2) == "function"
+    and GameCompat.isGen2(self.mod, game) == true
+  local Map = tryRequire(gen2 and "src.world.gen2.Map" or "src.world.Map")
   local FieldDefaults = tryRequire("src.world.FieldDefaults")
   if Map and type(Map.isOutside) == "function" then
     local tilesets
@@ -1697,10 +1771,57 @@ function ControlEngine:_isOutsideMap(game, map)
       if ok then tilesets = value end
     end
     local ok, outside = pcall(Map.isOutside, map.def, tilesets)
-    if ok then return outside == true end
+    if ok and outside ~= nil then return outside == true end
   end
   if map.def.outdoor ~= nil then return map.def.outdoor == true end
-  return map.def.tileset == "OVERWORLD" or map.def.tileset == "PLATEAU"
+  local tileset = tostring(map.def.tileset or ""):upper()
+  local id = tostring(map.id or map.def.id or ""):upper()
+  -- Buildings / interiors: never a walking seam (Yellow door parking).
+  if tileset == "HOUSE" or tileset == "POKECENTER" or tileset == "POKEMON_CENTER"
+     or tileset == "MART" or tileset == "POKEMART" or tileset == "GYM"
+     or tileset == "GATE" or tileset == "INTERIOR" or tileset == "LAB"
+     or tileset == "SCHOOL" or tileset == "MUSEUM" or tileset == "SHIP"
+     or tileset == "FACILITY" or tileset == "MANSION" or tileset == "CAVERN"
+     or tileset == "UNDERGROUND" or tileset == "TOWER" or tileset == "RUINS"
+     or tileset:find("HOUSE", 1, true) or tileset:find("CENTER", 1, true)
+     or tileset:find("INTERIOR", 1, true) or tileset:find("GYM", 1, true)
+     or tileset:find("GATE", 1, true) or tileset:find("MART", 1, true) then
+    return false
+  end
+  if id:find("_HOUSE", 1, true) or id:find("POKECENTER", 1, true)
+     or id:find("POKEMON_CENTER", 1, true) or id:find("_GYM", 1, true)
+     or id:find("_MART", 1, true) or id:find("_GATE", 1, true) then
+    return false
+  end
+  if tileset == "OVERWORLD" or tileset == "PLATEAU" or tileset == "TOWN"
+     or tileset == "FOREST" or tileset == "JOHTO" or tileset == "KANTO" then
+    return true
+  end
+  if id:find("ROUTE", 1, true) or id:find("_TOWN", 1, true)
+     or id:find("_CITY", 1, true) or id:find("LAKE", 1, true)
+     or id:find("PARK", 1, true) then
+    return true
+  end
+  return false
+end
+
+-- Walking map seam vs door / warp / script teleport.
+function ControlEngine:_isWalkingSeam(game, ow, ev, snapshot)
+  if not snapshot then return false end
+  local via = ev and ev.via
+  -- Every supported Gen1Recomp line (.75/.80/.88/.96) names a real edge walk
+  -- `connection`. Fail closed for boot/reload/checkpoint/continue and unknown
+  -- future causes; an edge-position heuristic can otherwise drag source-map
+  -- guests into a lifecycle rebuild that merely happens near a border.
+  if via ~= "connection" then
+    return false
+  end
+  local fromMap = snapshot.map
+  local toMap = (ev and ev.map) or (ow and ow.map)
+  if not (self:_isOutsideMap(game, fromMap) and self:_isOutsideMap(game, toMap)) then
+    return false
+  end
+  return true
 end
 
 --- Capture live trailers before setMap replaces the entity lists.
@@ -1722,6 +1843,7 @@ function ControlEngine:_captureMapExit(game, ow, ev)
     trailers = refs,
     trailCells = copyTrailCells(ow.pokepcTrailCells),
     trailHead = copyTrailHead(ow.pokepcTrailHead),
+    trailHistory = copyTrailCells(ow.pokepcTrailHistory),
   }
   return true
 end
@@ -1732,12 +1854,11 @@ function ControlEngine:_queueMapEntry(game, ow, ev)
   self._mapExitSnapshot = nil
   self._pendingConnectionHandoff = nil
   if ow then ow._wildsFollowerSeamActive = nil end
-  if not (snapshot and ev and ev.via == "connection") then return false end
-  if snapshot.toMapId and ev.mapId and snapshot.toMapId ~= ev.mapId then
+  if not snapshot then return false end
+  if snapshot.toMapId and ev and ev.mapId and snapshot.toMapId ~= ev.mapId then
     return false
   end
-  if not (self:_isOutsideMap(game, snapshot.map)
-          and self:_isOutsideMap(game, (ev and ev.map) or (ow and ow.map))) then
+  if not self:_isWalkingSeam(game, ow, ev, snapshot) then
     return false
   end
   self._pendingConnectionHandoff = snapshot
@@ -1770,13 +1891,17 @@ function ControlEngine:_applyConnectionHandoff(ow)
   ow.pokepcTrailers = snapshot.trailers
   ow.pokepcTrailCells = snapshot.trailCells
   ow.pokepcTrailHead = head or { x = player.cellX, y = player.cellY }
+  for _, cell in ipairs(snapshot.trailHistory or {}) do
+    if cell then
+      cell.x, cell.y = (cell.x or 0) + dx, (cell.y or 0) + dy
+    end
+  end
+  ow.pokepcTrailHistory = snapshot.trailHistory or ow.pokepcTrailHistory
   ow._wildsFollowerSeamActive = true
   self._pendingMapTrailerSync = false
   self._pendingSpawnAtPlayer = false
-  -- Suppress catch-up during the connection drain so the trail drains at
-  -- normal cadence — one follower per goal shift — instead of overlapping
-  -- and slingshotting ahead.
-  ow._wildsEntryCooldown = #snapshot.trailers + 2
+  -- Followers are already at lag cells. Do not wait extra frames.
+  ow._wildsEntryCooldown = nil
   return true
 end
 
@@ -2306,7 +2431,9 @@ function ControlEngine:syncTrailers(game, ow, opts)
   -- Reassert movement ownership on hot-reloaded / legacy trailer instances.
   for _, npc in ipairs(trailers) do
     if npc and npc.pokepcTrailer then
-      npc.update = function() end
+      if npc.update ~= NO_UPDATE then
+        npc.update = NO_UPDATE
+      end
       npc._wildsFollowerStepOwned = true
       npc._wildsFollowerStep = true
     end
@@ -2481,7 +2608,9 @@ function ControlEngine:syncTrailers(game, ow, opts)
     }
     self._lastSyncedCount = wantN
     if opts.spawnAtPlayer then
-      ow._wildsEntryCooldown = #trailers + 2
+      -- One settle frame so stacked door-exit parking does not slingshot.
+      -- The first legitimate player step then starts follower 1 immediately.
+      ow._wildsEntryCooldown = 1
     end
     else
     -- Mid-play count change (faint, heal, party menu) or initial sync
@@ -2585,7 +2714,7 @@ function ControlEngine:syncTrailers(game, ow, opts)
       end
       ow.pokepcTrailers = trailers
       ow.pokepcTrailCells = goals
-      ow._wildsEntryCooldown = #trailers + 2
+      ow._wildsEntryCooldown = 1
     end
     ow.pokepcTrailHead = {
       x = anchor.targetX or anchor.cellX,
@@ -3167,6 +3296,18 @@ function ControlEngine:update(game, ow, opts)
   self._lastOw = ow  -- cached for menu-context access (stepper, etc.)
   self.diag.controlUpdateCalls = (self.diag.controlUpdateCalls or 0) + 1
   self.diag.lastSource = opts.source or "direct"
+
+  -- Gold OPTIONS can wipe WILDS AI to OFF. Re-assert on the per-logic-frame
+  -- World:step owner so wilds recover without waiting for a map reload.
+  do
+    local GameCompat = V.require("game_compat")
+    if GameCompat.isGen2(self.mod, game) then
+      local bt = self.mod and self.mod.exports and self.mod.exports.behaviorTick
+      if bt and bt.ensurePipeline then
+        pcall(bt.ensurePipeline, bt)
+      end
+    end
+  end
 
   local ok, err = pcall(function()
     self:_applyConnectionHandoff(ow)
@@ -3921,10 +4062,10 @@ function ControlEngine:_installEventSubscriptions()
       pcall(function() engine:syncPlayerControlVisual(game, ow) end)
       engine:_queueMapEntry(game, ow, payload)
       engine._pendingMapTrailerSync = true
-      -- Seamless outside-to-outside connections keep the existing train
+      -- Seamless outdoor walking seams keep the existing train
       -- (translated by _applyConnectionHandoff); any other entry (warp /
       -- door / boot / healing) parks the pack on the player's cell.
-      if not (payload and payload.via == "connection") then
+      if not engine._pendingConnectionHandoff then
         engine._pendingSpawnAtPlayer = true
         -- Remove any leftover trailers from the previous map immediately
         -- so they don't remain visible during transitions (healing, etc.)
@@ -4091,10 +4232,13 @@ function ControlEngine:install()
       pcall(function() engine:forceYellowStockPikachuArt(ow, game) end)
     end
     engine._pendingMapTrailerSync = true
-    -- Connection crossings are re-seeded by _applyConnectionHandoff (which
-    -- clears the pending sync); every other entry (warp / door / boot) parks
+    -- Connection / walking-seam crossings are re-seeded by
+    -- _applyConnectionHandoff. Do not force player-cell parking over a
+    -- pending seam snapshot. Every other entry (warp / door / boot) parks
     -- the pack on the player's cell.
-    engine._pendingSpawnAtPlayer = true
+    if not engine._pendingConnectionHandoff then
+      engine._pendingSpawnAtPlayer = true
+    end
     pcall(function() engine:syncPlayerControlVisual(game, ow) end)
   end
 

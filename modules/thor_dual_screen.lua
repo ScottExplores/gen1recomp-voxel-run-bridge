@@ -6,7 +6,7 @@
 -- render.compose, render.hud, and SecondScreen contracts.  It deliberately
 -- provides no desktop stacking, no touch translation, and no direct access to
 -- battle-state drawing methods.  Battle Art integration uses only its public
--- Battle Stage v2 export.
+-- Battle Stage export (v2 projection, v3 split-presentation request).
 
 local ThorDualScreen = {
   API_VERSION = 1,
@@ -230,18 +230,27 @@ local function makeCanvas(graphics, width, height)
   return canvas
 end
 
+local function validStageApi(stage)
+  local apiVersion = type(stage) == "table" and tonumber(stage.apiVersion)
+    or nil
+  return apiVersion and apiVersion >= 2
+    and type(stage.state) == "function"
+    and type(stage.animationSurface) == "function"
+end
+
 local function stageApi(mod)
+  -- In Scott's Tweaks, Battle Art is fused into this same loader entry and
+  -- publishes its compatibility seam directly on the root mod exports. A
+  -- standalone BATTLE_ART_VOXEL_FORK handle exists only in older/separate
+  -- installs, so use it strictly as the compatibility fallback.
+  local ownExports = mod and mod.exports
+  local ownStage = type(ownExports) == "table" and ownExports.battleStage or nil
+  if validStageApi(ownStage) then return ownStage end
+
   local handle = findHandle(mod, "BATTLE_ART_VOXEL_FORK")
   local exports = handle and handle.exports
   local stage = type(exports) == "table" and exports.battleStage or nil
-  local apiVersion = type(stage) == "table" and tonumber(stage.apiVersion)
-    or nil
-  if not apiVersion or apiVersion < 2
-      or type(stage.state) ~= "function"
-      or type(stage.animationSurface) ~= "function" then
-    return nil
-  end
-  return stage
+  return validStageApi(stage) and stage or nil
 end
 
 local function animationSurface(mod)
@@ -273,6 +282,16 @@ local function animationSurface(mod)
   }
 end
 
+local function setSplitPresentation(mod, active)
+  local stage = stageApi(mod)
+  if not stage or (tonumber(stage.apiVersion) or 0) < 3
+      or type(stage.setSplitPresentation) ~= "function" then
+    return false
+  end
+  local ok, accepted = pcall(stage.setSplitPresentation, active == true)
+  return ok and accepted == true
+end
+
 local function cloneStatus(runtime, mod, optionKey)
   local desired = optionEnabled(mod, optionKey)
   local external = externalPresenterActive(mod)
@@ -300,6 +319,7 @@ local function cloneStatus(runtime, mod, optionKey)
     pushHz = ThorDualScreen.PUSH_HZ,
     controllerOnly = true,
     touchPolling = false,
+    battleSplit = runtime.splitRequested == true,
   }
 end
 
@@ -336,8 +356,23 @@ function ThorDualScreen.install(mod, opts)
     faulted = false,
     lastError = nil,
     lastPushAt = nil,
+    splitRequested = nil,
     warned = {},
   }
+
+  local function requestBattleSplit(on)
+    on = on == true
+    if runtime.splitRequested == on then return true end
+    local accepted = setSplitPresentation(mod, on)
+    if accepted then
+      runtime.splitRequested = on
+      return true
+    end
+    -- Battle Stage v2 and a boot with no staged-battle provider are valid.
+    -- Retain nil so a provider loaded later in this same process is probed.
+    if not on then runtime.splitRequested = nil end
+    return false
+  end
 
   local function warnOnce(key, message)
     if runtime.warned[key] then return end
@@ -346,6 +381,7 @@ function ThorDualScreen.install(mod, opts)
   end
 
   local function releaseCanvases()
+    requestBattleSplit(false)
     runtime.pending = nil
     runtime.active = false
     release(runtime.topCanvas)
@@ -373,6 +409,7 @@ function ThorDualScreen.install(mod, opts)
   -- to the fresh generation and retires every old GPU resource exactly once.
   local function retireForHandoff(adoptTop)
     if runtime.retired then return nil end
+    requestBattleSplit(false)
     runtime.retired = true
     runtime.pending = nil
     runtime.active = false
@@ -398,6 +435,7 @@ function ThorDualScreen.install(mod, opts)
   end
 
   local function setFault(message)
+    requestBattleSplit(false)
     runtime.faulted = true
     runtime.lastError = tostring(message)
     runtime.pending = nil
@@ -747,6 +785,7 @@ function ThorDualScreen.install(mod, opts)
       -- wrappers or shared native bridge; a fresh entry owns the next boot.
       runtime.delegated = true
       runtime.bridgeRequested = nil
+      requestBattleSplit(false)
     end
     local bound, bindError
     if runtime.delegated then
@@ -755,39 +794,66 @@ function ThorDualScreen.install(mod, opts)
       bound, bindError = bindBridge(ctx.secondScreen)
     end
     local downstream = nextFn(renderer, ctx)
-    if downstream == true then return true end
+    if downstream == true then
+      requestBattleSplit(false)
+      return true
+    end
 
     if runtime.delegated then
+      requestBattleSplit(false)
       runtime.bridgeRequested = nil
       return downstream
     end
     if not bound then
+      requestBattleSplit(false)
       if bindError and ctx.secondScreen ~= nil then
         setFault("secondary display handoff failed: " .. tostring(bindError))
       end
       return downstream
     end
     if not optionEnabled(mod, optionKey) then
+      requestBattleSplit(false)
       requestBridge(false)
       return downstream
     end
-    if runtime.faulted then return downstream end
-    if not requestBridge(true) or not bridgeAvailable(runtime.bridge) then
+    if runtime.faulted then
+      requestBattleSplit(false)
+      return downstream
+    end
+    if not bridgeAvailable(runtime.bridge) then
+      requestBattleSplit(false)
+      -- Keep the already-issued native enable request latched across a
+      -- physical hot-unplug. Android's Presentation bridge will resume that
+      -- same request when the panel returns; toggling it here both spams the
+      -- transport and defeats the existing automatic-replug contract.
       return downstream
     end
 
+    -- Arm Battle Stage v3 one frame before taking over composition. The frame
+    -- that reached this hook was already drawn, so publishing it immediately
+    -- would still contain the old move/pic layers on the lower panel. Falling
+    -- through once lets the next engine draw produce the clean UI-only canvas;
+    -- v2 providers simply skip this optional warm-up.
+    local splitWasReady = runtime.splitRequested == true
+    local splitReady = requestBattleSplit(true)
+    if splitReady and not splitWasReady then return downstream end
+    if not requestBridge(true) then return downstream end
+
     local topReady, topError = updateTop(ctx)
     if not topReady then
+      requestBattleSplit(false)
       if topError then setFault("top surface failed: " .. tostring(topError)) end
       return downstream
     end
     local lowerReady, lowerViewportOrError = stageLower(ctx)
     if not lowerReady then
+      requestBattleSplit(false)
       setFault("lower surface failed: " .. tostring(lowerViewportOrError))
       return downstream
     end
     local topDrawn, topDrawError = drawTop(ctx)
     if not topDrawn then
+      requestBattleSplit(false)
       setFault("primary presentation failed: " .. tostring(topDrawError))
       return downstream
     end

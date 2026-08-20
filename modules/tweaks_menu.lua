@@ -134,8 +134,10 @@ return function(mod, context)
     { "2.5X", 2.5 }, { "3X", 3 }, { "4X", 4 },
   }
   local bobChoices = {
-    { "0.1X", 0.1 }, { "0.15X", 0.15 }, { "0.25X", 0.25 },
-    { "0.5X", 0.5 }, { "0.75X", 0.75 }, { "1X", 1 },
+    { "0.25X", 0.0625 }, { "0.4X", 0.1 }, { "0.5X", 0.125 },
+    { "0.6X", 0.15 }, { "0.75X", 0.1875 }, { "1X", 0.25 },
+    { "1.5X", 0.375 }, { "2X", 0.5 }, { "3X", 0.75 },
+    { "4X", 1 },
   }
   local expChoices = {
     { "VANILLA", "vanilla" }, { "LEAD ONLY", "lead" },
@@ -278,8 +280,20 @@ return function(mod, context)
   local ENCOUNTER_LABEL = {
     visible = "VISIBLE", both = "BOTH", classic = "CLASSIC", off = "OFF",
   }
+  local function wildsExports()
+    local loaded = host and host.loaded and host.loaded[WILDS]
+    local exports = loaded and loaded.exports
+    return type(exports) == "table" and exports or nil
+  end
   local function encounterMode()
     if not host or vendorState(WILDS) ~= "bundled" then return nil end
+    local exports = wildsExports()
+    if exports and type(exports.encounterMode) == "function" then
+      local ok, mode = pcall(exports.encounterMode)
+      if ok and (ENCOUNTER_LABEL[mode] ~= nil or mode == "custom") then
+        return mode
+      end
+    end
     if host:readOption(WILDS, "enable_hidden") == true then return "custom" end
     local visible = host:readOption(WILDS, "enabled") == true
     local classic = host:readOption(WILDS, "random_encounters") == true
@@ -322,11 +336,26 @@ return function(mod, context)
         if not index then index = direction < 0 and 1 or 0 end
         index = ((index - 1 + direction) % #ENCOUNTER_ORDER) + 1
         local wanted = ENCOUNTER_ORDER[index]
+        local exports = wildsExports()
+        if exports and type(exports.setEncounterMode) == "function" then
+          local ok, wrote = pcall(exports.setEncounterMode, wanted,
+            "mod_settings", { game = game, confirm = false })
+          return ok and wrote == true
+        end
+        -- Hot-reload compatibility with a pre-0.12.1 Wilds handle. A clean
+        -- launch always uses the transactional export above.
         local visible = wanted == "visible" or wanted == "both"
         local classic = wanted == "classic" or wanted == "both"
+        if type(host.writeOptions) == "function" then
+          return host:writeOptions(game, WILDS, {
+            { key = "enable_hidden", value = false },
+            { key = "random_encounters", value = classic },
+            { key = "enabled", value = visible },
+          })
+        end
         local okHidden = host:writeOption(game, WILDS, "enable_hidden", false)
-        local okClassic = host:writeOption(
-          game, WILDS, "random_encounters", classic)
+        local okClassic = host:writeOption(game, WILDS,
+          "random_encounters", classic)
         local okVisible = host:writeOption(game, WILDS, "enabled", visible)
         return okHidden and okClassic and okVisible
       end,
@@ -350,14 +379,21 @@ return function(mod, context)
     end
     return rows
   end
-  -- In SIMPLE mode only rows marked simple survive; ALL shows everything.
+  -- In BASIC mode only everyday rows survive. ALL shows every canonical row,
+  -- but drops BASIC-only shortcut rows where their more precise controls are
+  -- now visible (for example, the combined trainer-art source shortcut).
   local function filtered(build)
     return function()
       local rows = build()
-      if not simpleMode() then return rows end
       local out = {}
-      for _, row in ipairs(rows) do
-        if row.simple then out[#out + 1] = row end
+      if simpleMode() then
+        for _, row in ipairs(rows) do
+          if row.simple then out[#out + 1] = row end
+        end
+      else
+        for _, row in ipairs(rows) do
+          if not row.basicOnly then out[#out + 1] = row end
+        end
       end
       return out
     end
@@ -417,7 +453,7 @@ return function(mod, context)
       })
       add(rows, {
         id = mod.id .. ":playerView",
-        label = "PLAYER BATTLE VIEW", simple = true,
+        label = "PLAYER VIEW", simple = true,
         value = function() return sprite:playerViewLabel() end,
         step = function(game, direction)
           return sprite:cyclePlayerView(game, direction)
@@ -432,7 +468,7 @@ return function(mod, context)
         end,
       })
       add(rows, {
-        label = "TRAINER ART SOURCE", simple = true,
+        label = "TRAINER SOURCE", simple = true, basicOnly = true,
         value = function(game) return sprite:trainerLabel(game) end,
         step = function(game, direction)
           return sprite:cycleTrainerSource(game, direction)
@@ -455,7 +491,8 @@ return function(mod, context)
     }))
     addAll(rows, baRows({ "battleArt", "duplicateFix", "opponentTrainerSource",
       "frontAnimatedSet", "backAnimatedSet", "playerTrainerSource",
-      "playerArtSet", "playerAnimatedSet", "backPlacement" }), false)
+      "playerArtSet", "playerAnimatedSet", "opponentFlip", "backFlip",
+      "backPlacement" }), false)
     add(rows, mark(baRow("trainerArtSet", "TRAINER ART SET"), false))
     if not integrated then
       addAll(rows, baRows({ "playerView", "frontFlip" }), false)
@@ -500,9 +537,9 @@ return function(mod, context)
   local function wildsRows()
     local rows = {}
     local curated = {}
-    local function place(key, label, simple)
+    local function place(key, label, simple, valueLabels)
       curated[key] = true
-      add(rows, vrow(WILDS, key, label, simple))
+      add(rows, vrow(WILDS, key, label, simple, valueLabels))
     end
     curated.enabled = true
     curated.random_encounters = true
@@ -523,6 +560,10 @@ return function(mod, context)
     place("follow_control", nil, false)
     place("trainer_trail", nil, false)
     place("enable_hidden", "HIDDEN MONS", false)
+    place("catch_cycle_combo", "BALL SWITCH COMBO", false, {
+      b_dpad = "B + D-PAD", select_dpad = "SELECT + D-PAD",
+      disabled = "OFF",
+    })
     if vendorState(WILDS) == "bundled" then
       add(rows, openScreen("TEST SPAWN", "OverworldSpawnPreview", false))
     end
@@ -560,14 +601,13 @@ return function(mod, context)
 
   local function systemRows()
     local rows = {}
-    -- PACK always needs Scott's Red-inventory pocket projection. Hide the
-    -- classic-only preference while PACK + POKeGEAR owns that presentation,
-    -- without overwriting the saved preference used when the feature is off.
-    if settings:get("gen2_menus") ~= true then
-      add(rows, mark(toggle("bag_pockets", "CLASSIC BAG POCKETS"), true))
-    end
+    -- PACK always needs Scott's Red-inventory pocket projection, but the
+    -- classic preference still controls what happens after PACK is disabled.
+    -- Keep it visible and editable so enabling one feature never makes a
+    -- different persisted setting disappear from the unified menu.
+    add(rows, mark(toggle("bag_pockets", "CLASSIC POCKETS"), true))
     add(rows, mark(toggle("gen2_menus", "PACK + POKéGEAR"), true))
-    add(rows, mark(toggle("dual_screen", "THOR SECOND SCREEN",
+    add(rows, mark(toggle("dual_screen", "THOR 2ND SCREEN",
       dualUnavailable), true))
     addAll(rows, baRows({ "debug" }), false)
     return rows
@@ -591,7 +631,7 @@ return function(mod, context)
     local integrity = mod.exports.integrity
     if type(integrity) == "table" and integrity.ok == false then
       rows[#rows + 1] = {
-        label = "!! PARTIAL INSTALL",
+        label = "PARTIAL INSTALL!",
         value = function()
           return "REINSTALL (" .. tostring(integrity.missingCount or "?")
             .. " MISSING)"
@@ -633,9 +673,7 @@ return function(mod, context)
   -- path stays the seven-category layout above.
   local function legacyInventoryRows()
     local rows = {}
-    if settings:get("gen2_menus") ~= true then
-      add(rows, toggle("bag_pockets", "CLASSIC BAG POCKETS"))
-    end
+    add(rows, toggle("bag_pockets", "CLASSIC POCKETS"))
     add(rows, choice("experience_mode", "EXP. MODE", expChoices))
     return rows
   end
@@ -660,7 +698,7 @@ return function(mod, context)
     return {
       toggle("free_fly_cockpit", "FLY COCKPIT"),
       toggle("gapped_land", "GAPPED LAND"),
-      toggle("dual_screen", "THOR SECOND SCREEN", dualUnavailable),
+      toggle("dual_screen", "THOR 2ND SCREEN", dualUnavailable),
     }
   end
   mod.content.screens:register(SCREEN_INVENTORY_OLD,

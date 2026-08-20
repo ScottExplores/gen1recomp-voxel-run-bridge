@@ -32,10 +32,10 @@ BattleArt.trainerSetting = ModSetting.new(
 -- only the player's intro portrait.  Existing saves retain Battle Art's
 -- historical behavior: both defaults are BATTLE ART.
 BattleArt.opponentTrainerSourceSetting = ModSetting.new(
-  "opponentTrainerSource", "OPP TRAINER SOURCE",
+  "opponentTrainerSource", "OPP TRAINER SRC",
   { "battle_art", "modded" }, { "BATTLE ART", "MODDED" })
 BattleArt.playerTrainerSourceSetting = ModSetting.new(
-  "playerTrainerSource", "PLAYER TRAINER SOURCE",
+  "playerTrainerSource", "MY TRAINER SOURCE",
   { "battle_art", "modded" }, { "BATTLE ART", "MODDED" })
 BattleArt.playerArtSetting = ModSetting.new(
   "playerArtSet", "PLAYER ART",
@@ -54,7 +54,7 @@ BattleArt.playerAnimationSetting = ModSetting.new(
 -- and captures that provider's result; it does not install a species image.
 -- Trainers are people rather than battlers, so this never affects trainer art.
 BattleArt.duplicateSetting = ModSetting.new(
-  "duplicateFix", "DUPLICATE FIX",
+  "duplicateFix", "POKEMON SOURCE",
   { "battle_art", "modded" }, { "BATTLE ART", "MODDED" })
 
 -- Player-side front pictures need one presentation decision after their
@@ -66,6 +66,17 @@ BattleArt.duplicateSetting = ModSetting.new(
 BattleArt.frontFlipSetting = ModSetting.new(
   "frontFlip", "FLIP FRONT SPRITE",
   { "battle_art", "default" }, { "BATTLE ART", "DEFAULT" })
+-- Orientation is a presentation choice, not sprite ownership.  Keep the
+-- historical player-front key above intact for existing saves, and give the
+-- other two Pokemon cards their own explicit switches.  AUTHORED means draw
+-- the provider's pixels as supplied; FLIPPED mirrors once around the card's
+-- own foot anchor.  Trainers are deliberately excluded from all three rows.
+BattleArt.opponentFlipSetting = ModSetting.new(
+  "opponentFlip", "FLIP OPPONENT",
+  { "authored", "flipped" }, { "AUTHORED", "FLIPPED" })
+BattleArt.backFlipSetting = ModSetting.new(
+  "backFlip", "FLIP BACK SPRITE",
+  { "authored", "flipped" }, { "AUTHORED", "FLIPPED" })
 
 function BattleArt.prefersModded()
   return BattleArt.duplicateSetting:get() == "modded"
@@ -120,6 +131,14 @@ end
 
 function BattleArt.flipsPlayerFront()
   return BattleArt.frontFlipSetting:get() == "battle_art"
+end
+
+function BattleArt.flipsOpponent()
+  return BattleArt.opponentFlipSetting:get() == "flipped"
+end
+
+function BattleArt.flipsPlayerBack()
+  return BattleArt.backFlipSetting:get() == "flipped"
 end
 
 -- Upgrade the two settings used through 1.7.8 without keeping two dead rows

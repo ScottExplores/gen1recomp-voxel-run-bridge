@@ -58,6 +58,7 @@ local OverworldBattle = {}
 local session = nil
 local ANIMATION_PROJECTION_HOOK = "battleArtAnimationProjectionHook"
 local ANIMATION_PROJECTION_OWNER = "BATTLE_ART_VOXEL_FORK"
+local SPLIT_PRESENTATION_KEY = "battleArtSplitPresentation"
 
 local function animationProjectionRecord()
   local ok, BattleState = pcall(require, "src.battle.BattleState")
@@ -129,6 +130,25 @@ end
 -- whether their BattleState is currently being captured into voxel billboards.
 function OverworldBattle.battle()
   return session and session.battle or nil
+end
+
+-- A physical dual-screen presenter needs the ordinary 160x144 battle canvas
+-- to contain wording/chrome only: battler/trainer cards already live in the
+-- arena surface and the move OAM layer is exported separately.  Keep this
+-- tiny state on the persistent engine class rather than in this module's
+-- upvalues so an F5 cannot strand the old BattleState wrappers on a stale
+-- value.  It affects staged battles only; flat battles never consult it.
+function OverworldBattle.setSplitPresentation(on)
+  local ok, BattleState = pcall(require, "src.battle.BattleState")
+  if not (ok and type(BattleState) == "table") then return false end
+  rawset(BattleState, SPLIT_PRESENTATION_KEY, on == true)
+  return true
+end
+
+function OverworldBattle.splitPresentation()
+  local ok, BattleState = pcall(require, "src.battle.BattleState")
+  return ok and type(BattleState) == "table"
+         and rawget(BattleState, SPLIT_PRESENTATION_KEY) == true or false
 end
 
 -- ------- battle-art view
@@ -424,6 +444,64 @@ OverworldBattle.HUD_BAND = {
   enemy = { 0, 0, 160, 48 },
   player = { 0, 48, 160, 48 },
 }
+
+-- A Quad contains only a viewport and the dimensions of the texture it was
+-- authored against; it does not retain the HUD canvas itself.  Rebuilding the
+-- two identical band quads here used to allocate two LÖVE objects on every
+-- snapped frame.  Keep one per side and compare the numeric geometry directly
+-- (rather than manufacturing a string/table cache key every frame).
+--
+-- The source dimensions are read from the actual layer.  That keeps the cache
+-- correct across a DPI/backend rebuild or a future battle-surface resize, and
+-- the band fields are part of the key so live authoring/reload changes cannot
+-- reuse stale UVs.  invalidate() releases the objects at the same lifecycle
+-- boundary as the other battle render caches.
+local hudBandQuads = {}
+
+local function hudLayerDimensions(layer)
+  local width, height = BattleScene.GB_W, BattleScene.GB_H
+  local dimensions = layer and layer.getDimensions
+  if dimensions then
+    local ok, w, h = pcall(dimensions, layer)
+    if ok and tonumber(w) and tonumber(h)
+       and tonumber(w) > 0 and tonumber(h) > 0 then
+      width, height = tonumber(w), tonumber(h)
+    end
+  end
+  return width, height
+end
+
+local function releaseHudBandQuad(entry)
+  local quad = entry and entry.quad
+  if quad and quad.release then pcall(quad.release, quad) end
+end
+
+local function clearHudBandQuads()
+  for _, entry in pairs(hudBandQuads) do releaseHudBandQuad(entry) end
+  hudBandQuads = {}
+end
+
+local function hudBandQuad(g, layer, side, band)
+  local textureW, textureH = hudLayerDimensions(layer)
+  local cached = hudBandQuads[side]
+  if cached
+     and cached.x == band[1] and cached.y == band[2]
+     and cached.w == band[3] and cached.h == band[4]
+     and cached.textureW == textureW and cached.textureH == textureH then
+    return cached.quad
+  end
+
+  -- Build first.  If the graphics backend rejects the replacement, retain the
+  -- still-valid old entry and let snapHUDs take its ordinary guarded fallback.
+  local quad = g.newQuad(band[1], band[2], band[3], band[4],
+                         textureW, textureH)
+  releaseHudBandQuad(cached)
+  hudBandQuads[side] = {
+    x = band[1], y = band[2], w = band[3], h = band[4],
+    textureW = textureW, textureH = textureH, quad = quad,
+  }
+  return quad
+end
 
 -- Where each block lands, in WORLD-canvas pixels: the panel rect the frosted
 -- glass is cut to, plus the x its band is blitted at.
@@ -807,6 +885,7 @@ function OverworldBattle.animationSurface(expectedBattle)
 end
 
 function OverworldBattle.invalidate()
+  clearHudBandQuads()
   BattleDOF.invalidate()
   BattleHud.invalidate()
   BattlePics.invalidate()
@@ -1030,12 +1109,14 @@ local OFF = {
 }
 
 -- Whether the player's captured world card should keep the horizontal
--- orientation already present in its image. Backs always do. Fronts normally
--- receive Battle Art's face-the-opponent mirror, unless the user has selected
--- DEFAULT for an external sprite that is already authored for the player side.
+-- orientation already present in its image. Fronts retain the historical
+-- Battle Art/DEFAULT choice; backs use their independent authored/flipped
+-- choice. Trainer cards are excluded by sideTexture before either is applied.
 function OverworldBattle.playerCardNoMirror()
-  return BattleArt.playerSide() == "back"
-         or not BattleArt.flipsPlayerFront()
+  if BattleArt.playerSide() == "back" then
+    return not BattleArt.flipsPlayerBack()
+  end
+  return not BattleArt.flipsPlayerFront()
 end
 
 -- Render one side's pics layer into its canvas and report where the pic's
@@ -1114,8 +1195,16 @@ function OverworldBattle.sideTexture(battle, side)
      and not metric then
     ax, ay = TRAINER_AX, TRAINER_AY
   end
-  local playerNoMirror = side == "player"
-                         and OverworldBattle.playerCardNoMirror()
+  local mirror = false
+  if not trainer then
+    if side == "enemy" then
+      mirror = BattleArt.flipsOpponent()
+    elseif BattleArt.playerSide() == "back" then
+      mirror = BattleArt.flipsPlayerBack()
+    else
+      mirror = BattleArt.flipsPlayerFront()
+    end
+  end
   return { canvas = canvas, ax = ax, ay = ay, trainer = trainer,
            noDayTint = BattleArt.isStaticFront(shownImage),
            -- Opponent trainer cards are authored for a compact intro slot.
@@ -1123,7 +1212,10 @@ function OverworldBattle.sideTexture(battle, side)
            -- supplied them. Pokemon remain native 1x and untouched.
            presentationScale = side == "enemy" and trainer
                                and OPPONENT_TRAINER_SCALE or 1,
-           noMirror = playerNoMirror }
+           -- Explicit for both sides. `noMirror` remains as a compatibility
+           -- hint for older BattleScene consumers of this texture record.
+           mirror = mirror,
+           noMirror = side == "player" and not mirror }
 end
 
 -- Whether the hit flash is showing this frame.
@@ -1140,17 +1232,16 @@ end
 
 -- Both sides, or nil when neither has anything to show.
 --
--- One side under BACK SPRITES: the player's mon is not standing on the map at all
--- there, it is on the menu, so it has no card to be a texture for -- and
--- nothing downstream has to know that. No billboard, and no shadow on the
--- ground under a mon that is not on it.
+-- One side under BACK SPRITES normally remains pinned to the single-screen
+-- menu, so it has no world card. A physical split is the exception: the lower
+-- panel must contain UI only, so that same captured card is routed upstairs.
 function OverworldBattle.textures(battle)
   if not battle then return nil end
   local out = {}
   local okE, enemy = pcall(OverworldBattle.sideTexture, battle, "enemy")
   local okP, player = true, nil
   local cap = BattleScene.capture
-  if not OverworldBattle.backPinned()
+  if (OverworldBattle.splitPresentation() or not OverworldBattle.backPinned())
      and not (cap and cap.hidePlayer) then
     okP, player = pcall(OverworldBattle.sideTexture, battle, "player")
   end
@@ -1317,9 +1408,11 @@ local function drawProjectedAnimation(self, innerAnim, colorized, record)
     if not ok then error(err, 0) end
   end
 
-  -- Keep the ordinary UI composite byte-for-byte intact for single-screen
-  -- play and for the lower half of a dual-screen layout.
-  drawProjected()
+  -- Single-screen play keeps the authored OAM layer in the battle canvas.
+  -- A physical split presenter publishes that canvas on the lower panel and
+  -- consumes the transparent projection below on the upper panel, so drawing
+  -- it here as well would show every move sprite twice.
+  if not OverworldBattle.splitPresentation() then drawProjected() end
 
   -- Also capture only this draw-only OAM layer. The current transform is
   -- deliberately preserved: providers such as Crystal Animated Sprites may
@@ -1684,6 +1777,11 @@ function OverworldBattle.install()
     if not shot then
       return innerPics(self, slide, sx, sy, onlySide, skipMenuClip)
     end
+    -- Thor's upper arena already receives every staged Pokemon/trainer card.
+    -- Its lower surface is the engine's UI canvas, so no combat picture may
+    -- be drawn into this layer while the public split contract is active.
+    -- sideTexture calls `innerPics` directly and is therefore unaffected.
+    if OverworldBattle.splitPresentation() then return end
     local cap = BattleScene.capture
     if cap and cap.hidePlayer then return end
     if OverworldBattle.backPinned() and onlySide ~= "enemy" then
@@ -1906,8 +2004,7 @@ function OverworldBattle.snapHUDs(battle, shot)
     g.setColor(1, 1, 1, 1)
     for side, band in pairs(OverworldBattle.HUD_BAND) do
       local placement = bandPlacement[side]
-      local quad = g.newQuad(band[1], band[2], band[3], band[4],
-                             BattleScene.GB_W, BattleScene.GB_H)
+      local quad = hudBandQuad(g, layer, side, band)
       g.draw(layer, quad, placement.x + band[1] * placement.scale,
              placement.y, 0, placement.scale, placement.scale)
     end

@@ -601,6 +601,16 @@ local SETTINGS = {
     .. "authored direction, for sprite mods that already supply a flipped "
     .. "player picture such as Crystal Animated Sprites.",
     when = function() return stagedBattles() end, full = true },
+  { BattleArt.opponentFlipSetting,
+    "Orient the opponent Pokemon independently. AUTHORED keeps the sprite "
+    .. "provider's direction; FLIPPED mirrors it once around its own anchor. "
+    .. "Trainer portraits are never changed by this row.",
+    when = function() return stagedBattles() end, full = true },
+  { BattleArt.backFlipSetting,
+    "Orient the player's BACK SPRITES card independently. AUTHORED keeps "
+    .. "the supplied backsprite direction; FLIPPED mirrors it once around "
+    .. "its own anchor. Player trainer portraits are never changed.",
+    when = function() return stagedBattles() end, full = true },
   { BattleArt.backPlacementSetting,
     "Place player back art automatically, force it into the 3D world, or "
     .. "use gen1recomp's OG UI anchor. AUTO keeps STATIC fallbacks in the "

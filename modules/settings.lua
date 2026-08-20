@@ -14,6 +14,46 @@ local function bucket(root, id, create)
   return all[id]
 end
 
+-- A menu edit touches both the durable save mirror and the Loader's live
+-- cache before game:writeOptions serializes them.  Keep the original table
+-- identities as well as their contents so a failed Android/filesystem write
+-- can put the complete in-memory state back exactly as it was.
+local function snapshotBucket(root, id)
+  if type(root) ~= "table" then return nil end
+  local all = rawget(root, "modOptions")
+  local original = type(all) == "table" and rawget(all, id) or nil
+  local snapshot = {
+    root = root,
+    all = all,
+    allWasTable = type(all) == "table",
+    original = original,
+    bucketWasTable = type(original) == "table",
+    values = {},
+  }
+  if snapshot.bucketWasTable then
+    for key, value in pairs(original) do snapshot.values[key] = value end
+  end
+  return snapshot
+end
+
+local function restoreBucket(snapshot, id)
+  if not snapshot then return end
+  if not snapshot.allWasTable then
+    snapshot.root.modOptions = snapshot.all
+    return
+  end
+  local all = snapshot.all
+  snapshot.root.modOptions = all
+  if snapshot.bucketWasTable then
+    local original = snapshot.original
+    for key in pairs(original) do original[key] = nil end
+    for key, value in pairs(snapshot.values) do original[key] = value end
+    all[id] = original
+  else
+    all[id] = snapshot.original
+  end
+end
+
 function Settings.new(mod, defaults)
   return setmetatable({ mod = mod, defaults = defaults or {} }, Settings)
 end
@@ -40,8 +80,16 @@ end
 
 function Settings:set(game, key, value, persist)
   if type(game) ~= "table" then return false, "game unavailable" end
-  game.save = game.save or {}
-  game.save.options = game.save.options or {}
+
+  local originalSave = game.save
+  local saveWasTable = type(originalSave) == "table"
+  if not saveWasTable then game.save = {} end
+  local originalOptions = game.save.options
+  local optionsWasTable = type(originalOptions) == "table"
+  if not optionsWasTable then game.save.options = {} end
+
+  local savedSnapshot = snapshotBucket(game.save.options, self.mod.id)
+  local liveSnapshot = snapshotBucket(game.mods, self.mod.id)
   local saved = bucket(game.save.options, self.mod.id, true)
   saved[key] = value
 
@@ -52,8 +100,18 @@ function Settings:set(game, key, value, persist)
 
   local persistError
   if persist ~= false and type(game.writeOptions) == "function" then
-    local ok, err = pcall(game.writeOptions, game)
-    if not ok then persistError = err end
+    local ok, result, detail = pcall(game.writeOptions, game)
+    if not ok or result == false then
+      persistError = not ok and tostring(result)
+        or tostring(detail or "game.writeOptions returned false")
+    end
+  end
+  if persistError ~= nil then
+    restoreBucket(liveSnapshot, self.mod.id)
+    restoreBucket(savedSnapshot, self.mod.id)
+    if not optionsWasTable then game.save.options = originalOptions end
+    if not saveWasTable then game.save = originalSave end
+    return false, persistError
   end
   -- Match ManagerState:setOption: feature modules listening for live option
   -- changes must see edits made through the organized in-game menu too.
@@ -65,7 +123,6 @@ function Settings:set(game, key, value, persist)
       })
     end
   end
-  if persistError ~= nil then return false, persistError end
   return true
 end
 

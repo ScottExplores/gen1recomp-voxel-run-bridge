@@ -98,28 +98,46 @@ end
 
 function Settings:setEngineMode(game, mode)
   if mode == "lead" then mode = "lead_trainer" end
-  if not VALID_ENGINE[mode] then return false end
-  if game and game.save then
-    game.save.pokepcControlMode = mode
+  if not VALID_ENGINE[mode] then
+    return false, "invalid follower control mode: " .. tostring(mode)
   end
-  -- Mirror into Wilds option buckets (Gen1Recomp has no mod.options:set).
-  local ui, trail
+  -- Engine mode is derived from three canonical settings. Commit the complete
+  -- derivation together so `pokemon` cannot read back as `pack` (or vice
+  -- versa), and never pre-mutate the legacy save mirror before persistence.
+  local ui, trail, count
   if mode == "follow" then
     ui, trail = "trainer", false
   elseif mode == "lead_trainer" then
     ui, trail = "pokemon", true
+  elseif mode == "pokemon" then
+    ui, trail, count = "pokemon", false, 0
   else
     ui, trail = "pokemon", false
+    count = self:followerCount(game)
+    if count < 1 then count = 1 end
   end
-  if Config and type(Config.setOption) == "function" then
-    Config.setOption(self.mod, "follow_control", ui, "settings_set_engine_mode", {
-      game = game,
-    })
-    Config.setOption(self.mod, "trainer_trail", trail, "settings_set_engine_mode", {
-      game = game,
-    })
+  local changes = {
+    { key = "follow_control", value = ui },
+    { key = "trainer_trail", value = trail },
+  }
+  if count ~= nil then
+    changes[#changes + 1] = { key = "follower_count", value = count }
   end
-  return true
+  if not (Config and type(Config.setOptions) == "function") then
+    return false, "atomic follower control writer unavailable"
+  end
+  local wrote, detail = Config.setOptions(
+    self.mod, changes, "settings_set_engine_mode", {
+      game = game, key = "control_mode",
+    })
+  if wrote ~= true then
+    return false, tostring(detail or "follower control persistence failed")
+  end
+  if game and game.save then
+    game.save.pokepcControlMode = mode
+    if count ~= nil then game.save.pokepcFollowerCount = count end
+  end
+  return true, mode, count
 end
 
 --- Canonical adapter write for follower_count.
@@ -128,9 +146,13 @@ end
 function Settings:setFollowerCount(game, n)
   n = clampCount(n)
   if Config and type(Config.setOption) == "function" then
-    Config.setOption(self.mod, "follower_count", n, "settings_set_follower_count", {
+    local wrote, detail = Config.setOption(
+      self.mod, "follower_count", n, "settings_set_follower_count", {
       game = game,
     })
+    if wrote ~= true then
+      return nil, tostring(detail or "follower_count persistence failed")
+    end
   end
   if game and game.save then
     game.save.pokepcFollowerCount = n

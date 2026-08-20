@@ -1,10 +1,12 @@
--- Read-only compatibility contract for mods that compose effects with Battle
--- Art's staged battle. Consumers receive copies of projection coordinates and
--- ownership metadata; no setting or live Battle Art table is exposed.
+-- Compatibility contract for presenters that compose Battle Art's staged
+-- battle. Consumers receive copies of projection coordinates and ownership
+-- metadata. API v3 adds one narrowly-scoped presentation request: a physical
+-- split screen may ask the normal battle canvas to omit combat imagery while
+-- it routes the exported arena/effect layers to the other display.
 
 local BattleStage = {}
 
-BattleStage.API_VERSION = 2
+BattleStage.API_VERSION = 3
 BattleStage.SOURCE_MOD_ID = "BATTLE_ART_VOXEL_FORK"
 
 local OWNERSHIP = {
@@ -15,6 +17,7 @@ local OWNERSHIP = {
   hud = true,
   transition = true,
   animationProjection = true,
+  splitPresentation = true,
 }
 
 local function copyPoint(value, fallback)
@@ -59,6 +62,7 @@ function BattleStage.export(battles)
       surfaceOwned = true,
       externalCamera = true,
       layerOwnsProjection = true,
+      splitPresentation = call(battles, "splitPresentation") == true,
     }
 
     local shot = call(battles, "shot")
@@ -116,6 +120,13 @@ function BattleStage.export(battles)
     }
   end
 
+  local function setSplitPresentation(active)
+    local fn = battles and battles.setSplitPresentation
+    if type(fn) ~= "function" then return false end
+    local ok, changed = pcall(fn, active == true)
+    return ok and changed == true or false
+  end
+
   return {
     apiVersion = BattleStage.API_VERSION,
     sourceModId = BattleStage.SOURCE_MOD_ID,
@@ -123,6 +134,7 @@ function BattleStage.export(battles)
     enabled = function() return call(battles, "enabled") == true end,
     state = state,
     animationSurface = animationSurface,
+    setSplitPresentation = setSplitPresentation,
   }
 end
 

@@ -168,8 +168,14 @@ local function bakeSheet(species, sourcePath, log)
   local sw, sh = src:getDimensions()
   if sw < 1 or sh < 1 then return nil end
 
-  local canvasOk, canvas = pcall(love.graphics.newCanvas, CELL, CELL)
+  -- A Canvas defaults to the window DPI. Android panels commonly report a
+  -- fractional density, which made this 16x16 cache read back at a larger
+  -- physical size and introduced resampled seams into follower cards.
+  local canvasOk, canvas = pcall(love.graphics.newCanvas, CELL, CELL,
+    { dpiscale = 1 })
   if not canvasOk or not canvas then return nil end
+  if canvas.setFilter then canvas:setFilter("nearest", "nearest") end
+  if src.setFilter then src:setFilter("nearest", "nearest") end
 
   love.graphics.setCanvas(canvas)
   love.graphics.clear(0, 0, 0, 0)

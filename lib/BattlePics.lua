@@ -101,6 +101,34 @@ local function newCache()
 end
 local cache = newCache()
 
+-- Sprite providers with authored RGBA must bypass the ROM-paper recovery
+-- below.  The registry is keyed by provider so a developer F5 replaces the
+-- old predicate (and its weak image table) instead of stacking wrappers that
+-- keep consulting stale module state.
+local transparentProviders = {}
+
+function BattlePics.registerTransparentProvider(id, predicate)
+  if type(id) ~= "string" or id == "" or type(predicate) ~= "function" then
+    return false
+  end
+  transparentProviders[id] = predicate
+  return true
+end
+
+function BattlePics.unregisterTransparentProvider(id)
+  if transparentProviders[id] == nil then return false end
+  transparentProviders[id] = nil
+  return true
+end
+
+function BattlePics.preservesAuthoredTransparency(img)
+  for _, predicate in pairs(transparentProviders) do
+    local ok, claimed = pcall(predicate, img)
+    if ok and claimed == true then return true end
+  end
+  return false
+end
+
 -- What an enclosed hole is filled with when the pic itself offers nothing
 -- better. White, because white is what the battle field was: this restores the
 -- pixel the artist drew and the engine then keyed away, it does not invent a
@@ -293,6 +321,7 @@ end
 -- where all but one of this mod's pics are.
 function BattlePics.filled(img, sealBottom)
   if not img then return img end
+  if BattlePics.preservesAuthoredTransparency(img) then return img end
   sealBottom = sealBottom and true or false
   local slot = cache[sealBottom]
   local hit = slot[img]

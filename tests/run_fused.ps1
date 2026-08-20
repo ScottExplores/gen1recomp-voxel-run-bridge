@@ -26,5 +26,10 @@ $files = Get-ChildItem -LiteralPath $root -Recurse -File |
 Write-Host "staged $($files.Count) files"
 
 Push-Location $root
-try { & $lua 'tests/fused_renderer_load.lua' $root $EngineRoot $list }
+$exitCode = 0
+try {
+  & $lua 'tests/fused_renderer_load.lua' $root $EngineRoot $list
+  $exitCode = $LASTEXITCODE
+}
 finally { Pop-Location }
+exit $exitCode

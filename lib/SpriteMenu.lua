@@ -8,6 +8,7 @@
 local V = ...
 local mod = V.mod
 local BattleArt = V.require("BattleArt")
+local ModSetting = V.require("ModSetting")
 local SpriteControl = V.require("SpriteControl")
 
 local CRYSTAL = "crystal_animated_sprites_with_shiny_visuals"
@@ -112,8 +113,10 @@ function SpriteMenu:setBattleArtSetting(setting, value, game)
   if not index then return false, "VALUE UNAVAILABLE" end
   local okCurrent, current = pcall(setting.get, setting)
   if okCurrent and current == value then return true, value end
-  local ok, result = pcall(setting.setIndex, setting, index, game)
-  return ok, ok and result or tostring(result)
+  local ok, result, detail = pcall(setting.setIndex, setting, index, game)
+  if not ok then return false, tostring(result) end
+  if result == nil then return false, tostring(detail or "OPTION WRITE FAILED") end
+  return true, result
 end
 
 function SpriteMenu:applyOwnership(profile, game)
@@ -144,6 +147,36 @@ function SpriteMenu:setPlayerFrontFlip(game, enabled)
   }, game)
 end
 
+function SpriteMenu:opponentFlip()
+  return BattleArt.opponentFlipSetting:get() == "flipped"
+end
+
+function SpriteMenu:opponentFlipLabel()
+  return self:opponentFlip() and "ON" or "OFF"
+end
+
+function SpriteMenu:setOpponentFlip(game, enabled)
+  if type(enabled) ~= "boolean" then return false, "BOOLEAN REQUIRED" end
+  return self:applyOwnership({
+    opponentFlip = enabled and "flipped" or "authored",
+  }, game)
+end
+
+function SpriteMenu:playerBackFlip()
+  return BattleArt.backFlipSetting:get() == "flipped"
+end
+
+function SpriteMenu:playerBackFlipLabel()
+  return self:playerBackFlip() and "ON" or "OFF"
+end
+
+function SpriteMenu:setPlayerBackFlip(game, enabled)
+  if type(enabled) ~= "boolean" then return false, "BOOLEAN REQUIRED" end
+  return self:applyOwnership({
+    backFlip = enabled and "flipped" or "authored",
+  }, game)
+end
+
 -- Import only the old adapter's one preference, only on the first boot where
 -- the adapter is no longer active, and only if this stable Battle Art key has
 -- never been explicitly saved. The old bucket is retained as rollback data.
@@ -152,15 +185,19 @@ function SpriteMenu:migrateLegacyFlip(game)
   local options = game and game.save and game.save.options
   local buckets = options and options.modOptions
   if type(buckets) ~= "table" then return false end
-  local battleBucket = buckets[BATTLE_ART]
-  if type(battleBucket) == "table" and battleBucket.frontFlip ~= nil then
-    return false
-  end
   local loaderBuckets = game and game.mods and game.mods.modOptions
-  local loaderBattle = type(loaderBuckets) == "table"
-    and loaderBuckets[BATTLE_ART]
-  if type(loaderBattle) == "table" and loaderBattle.frontFlip ~= nil then
-    return false
+  -- Standalone Battle Art historically owned BATTLE_ART_VOXEL_FORK, while
+  -- the fused build stores every Battle Art row in Scott's Tweaks' real
+  -- Loader bucket. Either explicit key is authoritative and must prevent the
+  -- old Sprite Hub mirror from overwriting a newer choice on every boot.
+  local stableIds = { mod and mod.id, BATTLE_ART }
+  for _, id in ipairs(stableIds) do
+    if type(id) == "string" and id ~= "" then
+      local saved = buckets[id]
+      if type(saved) == "table" and saved.frontFlip ~= nil then return false end
+      local live = type(loaderBuckets) == "table" and loaderBuckets[id]
+      if type(live) == "table" and live.frontFlip ~= nil then return false end
+    end
   end
   local oldBucket = buckets[EXTERNAL_HUB]
   local oldValue = type(oldBucket) == "table" and oldBucket.playerFrontFlip
@@ -206,17 +243,129 @@ function SpriteMenu:crystalMode(game)
   return "both"
 end
 
+local function runtimeCrystalValue(key, value)
+  if key == "crystalTrainers" then
+    local valid = value == "none" or value == "player"
+      or value == "trainers" or value == "both"
+      or value == "overworld" or value == "all"
+    return valid and value or "both"
+  elseif key == "crystalFront" then
+    return value == true
+  elseif key == "crystalBattlePic" then
+    return value == "back" and "back" or "front"
+  elseif key == "crystalAnimations" then
+    return value == "once" and "once" or "loop"
+  end
+  return value
+end
+
+-- Persist Crystal's top-level provider preferences and Battle Art's ownership
+-- keys as one logical edit. Runtime provider callbacks run only after disk has
+-- accepted the complete snapshot; any callback failure restores memory,
+-- caches, the provider runtime, and (best effort) the durable old snapshot.
+function SpriteMenu:applyTransaction(game, settingValues, crystalValues)
+  if not (game and game.save and type(game.save.options) == "table") then
+    return false, "GAME NOT READY"
+  end
+  settingValues = settingValues or {}
+  crystalValues = crystalValues or {}
+
+  local staged = {}
+  for _, change in ipairs(settingValues) do
+    local setting = change and change.setting
+    local index = setting and findIndex(setting.values, change.value)
+    if not index then return false, "VALUE UNAVAILABLE" end
+    local okCurrent, current = pcall(setting.get, setting)
+    if not okCurrent or current ~= change.value then
+      staged[#staged + 1] = { setting = setting, index = index }
+    end
+  end
+  local token, stageError = ModSetting.stage(staged, game)
+  if not token then return false, tostring(stageError) end
+
+  local apply, crystalExports
+  if next(crystalValues) ~= nil then
+    local found = self:crystalHandle()
+    crystalExports = found and found.exports
+    apply = crystalExports and crystalExports.applyOption
+    if type(apply) ~= "function" then
+      token:rollback()
+      return false, "UPDATE CRYSTAL"
+    end
+  end
+
+  local options = game.save.options
+  local crystalSnapshots = {}
+  for key, value in pairs(crystalValues) do
+    local stored = rawget(options, key)
+    local runtime = runtimeCrystalValue(key, stored)
+    -- crystalPlayerSprite has a game-specific runtime default (Red on Gen 1,
+    -- Gold on Gen 2). When its save key is absent, nil is not the value that
+    -- is actually active, so capture Crystal's live getter for an exact
+    -- rollback instead of assigning nil after a failed provider refresh.
+    if key == "crystalPlayerSprite"
+        and type(crystalExports.playerSprite) == "function" then
+      local okRuntime, active = pcall(crystalExports.playerSprite)
+      if okRuntime and type(active) == "string" and active ~= "" then
+        runtime = active
+      end
+    end
+    crystalSnapshots[#crystalSnapshots + 1] = {
+      key = key,
+      present = rawget(options, key) ~= nil,
+      value = stored,
+      runtime = runtime,
+      wanted = value,
+    }
+    options[key] = value
+  end
+
+  local function restoreCrystalOptions()
+    for _, snapshot in ipairs(crystalSnapshots) do
+      if snapshot.present then
+        options[snapshot.key] = snapshot.value
+      else
+        options[snapshot.key] = nil
+      end
+    end
+  end
+
+  if game.writeOptions then
+    local ok, result, detail = pcall(game.writeOptions, game)
+    if not ok or result == false then
+      restoreCrystalOptions()
+      token:rollback()
+      return false, not ok and tostring(result)
+        or tostring(detail or "game.writeOptions returned false")
+    end
+  end
+
+  for _, snapshot in ipairs(crystalSnapshots) do
+    local ok, result = pcall(apply, snapshot.key, snapshot.wanted)
+    if not ok or result == false then
+      -- The failing callback may have assigned its runtime value before a
+      -- downstream redraw raised, so restore it as well as earlier callbacks.
+      for i = #crystalSnapshots, 1, -1 do
+        local prior = crystalSnapshots[i]
+        pcall(apply, prior.key, prior.runtime)
+      end
+      restoreCrystalOptions()
+      token:rollback()
+      if game.writeOptions then pcall(game.writeOptions, game) end
+      return false, not ok and tostring(result)
+        or "Crystal rejected " .. tostring(snapshot.key)
+    end
+  end
+  token:finish()
+  return true
+end
+
 function SpriteMenu:setCrystalOption(game, key, value)
   local found = self:crystalHandle()
   local apply = found and found.exports and found.exports.applyOption
   if type(apply) ~= "function" then return false, "UPDATE CRYSTAL" end
-  if not (game and game.save and game.save.options) then
-    return false, "GAME NOT READY"
-  end
-  local ok, err = pcall(apply, key, value)
-  if not ok then return false, tostring(err) end
-  game.save.options[key] = value
-  if game.writeOptions then pcall(game.writeOptions, game) end
+  local ok, err = self:applyTransaction(game, nil, { [key] = value })
+  if not ok then return false, err end
   return true, value
 end
 
@@ -271,36 +420,45 @@ function SpriteMenu:setTrainerSource(game, source)
   local crystalMode = self:crystalReady() and self:crystalMode(game) or nil
   local parts = crystalMode and crystalTrainerParts(crystalMode) or {}
   local quietMode = parts.overworld and "overworld" or "none"
+  local crystalChanges, settingChanges = {}, {}
+
+  local function change(setting, value)
+    settingChanges[#settingChanges + 1] = {
+      setting = setting, value = value,
+    }
+  end
 
   if source == "crystal" then
-    local wanted = parts.overworld and "all" or "both"
-    local ok, err = self:setCrystalOption(game, "crystalTrainers", wanted)
+    crystalChanges.crystalTrainers = parts.overworld and "all" or "both"
+    change(BattleArt.opponentTrainerSourceSetting, "modded")
+    change(BattleArt.playerTrainerSourceSetting, "modded")
+    local ok, err = self:applyTransaction(
+      game, settingChanges, crystalChanges)
     if not ok then return false, err end
-    return self:applyOwnership({
-      opponentTrainer = "modded", playerTrainer = "modded",
-    }, game)
+    return true, SpriteControl.profile()
   end
 
   if crystalMode then
-    local ok, err = self:setCrystalOption(
-      game, "crystalTrainers", quietMode)
-    if not ok then return false, err end
+    crystalChanges.crystalTrainers = quietMode
   end
+  local rememberedMode
   if source == "battle_art" then
     local current = BattleArt.setting:get()
     if current == "rom" then
       local wanted = self.lastNonRomMode
       if wanted ~= "static" and wanted ~= "animated" then wanted = "animated" end
-      local ok, err = self:setBattleArtSetting(BattleArt.setting, wanted, game)
-      if not ok then return false, err end
+      change(BattleArt.setting, wanted)
     else
-      self.lastNonRomMode = current
+      rememberedMode = current
     end
   end
   local owner = source == "battle_art" and "battle_art" or "modded"
-  return self:applyOwnership({
-    opponentTrainer = owner, playerTrainer = owner,
-  }, game)
+  change(BattleArt.opponentTrainerSourceSetting, owner)
+  change(BattleArt.playerTrainerSourceSetting, owner)
+  local ok, err = self:applyTransaction(game, settingChanges, crystalChanges)
+  if not ok then return false, err end
+  if rememberedMode then self.lastNonRomMode = rememberedMode end
+  return true, SpriteControl.profile()
 end
 
 function SpriteMenu:cycleTrainerSource(game, direction)
@@ -334,12 +492,14 @@ function SpriteMenu:setPlayerView(game, value)
   if self:crystalHandle() and not self:crystalReady() then
     return false, "UPDATE CRYSTAL"
   end
-  if self:crystalReady() then
-    local ok, err = self:setCrystalOption(
-      game, "crystalFront", value == "front")
-    if not ok then return false, err end
+  if not self:crystalReady() then
+    return self:setBattleArtSetting(BattleArt.viewSetting, value, game)
   end
-  return self:setBattleArtSetting(BattleArt.viewSetting, value, game)
+  local ok, err = self:applyTransaction(game, {
+    { setting = BattleArt.viewSetting, value = value },
+  }, { crystalFront = value == "front" })
+  if not ok then return false, err end
+  return true, value
 end
 
 function SpriteMenu:syncPlayerView(game)
@@ -371,9 +531,22 @@ function SpriteMenu:cycleCrystalMode(game, direction)
   local values = { "none", "player", "trainers", "both", "overworld", "all" }
   local index = findIndex(values, self:crystalMode(game)) or 4
   local wanted = values[((index - 1 + (direction or 1)) % #values) + 1]
-  local ok, err = self:setCrystalOption(game, "crystalTrainers", wanted)
+  local parts = crystalTrainerParts(wanted)
+  local settings = {}
+  if parts.opponent then
+    settings[#settings + 1] = {
+      setting = BattleArt.opponentTrainerSourceSetting, value = "modded",
+    }
+  end
+  if parts.player then
+    settings[#settings + 1] = {
+      setting = BattleArt.playerTrainerSourceSetting, value = "modded",
+    }
+  end
+  local ok, err = self:applyTransaction(
+    game, settings, { crystalTrainers = wanted })
   if not ok then return false, err end
-  return self:reconcileCrystalTrainerMode(game, wanted)
+  return true, SpriteControl.profile()
 end
 
 function SpriteMenu:crystalPlayerList()
@@ -436,6 +609,20 @@ function SpriteMenu:crystalRows(game)
         return self:setCrystalOption(g, "crystalBattlePic", wanted)
       end,
     },
+    {
+      label = "ANIMATIONS",
+      value = function(g)
+        local options = g and g.save and g.save.options
+        return options and options.crystalAnimations == "once"
+          and "PLAY ONCE" or "LOOP"
+      end,
+      step = function(g)
+        local options = g and g.save and g.save.options
+        if not options then return false end
+        local wanted = options.crystalAnimations == "once" and "loop" or "once"
+        return self:setCrystalOption(g, "crystalAnimations", wanted)
+      end,
+    },
   }
 end
 
@@ -471,7 +658,7 @@ function SpriteMenu:onOptionsChanged(payload)
   if not self:integrated() or type(payload) ~= "table" then return end
   if payload.mod == CRYSTAL and payload.key == "crystalTrainers" and self.game then
     self:reconcileCrystalTrainerMode(self.game, self:crystalMode(self.game))
-  elseif payload.mod == BATTLE_ART then
+  elseif payload.mod == BATTLE_ART or payload.mod == (mod and mod.id) then
     if payload.key == "playerView" and self.game then
       self:syncPlayerView(self.game)
     elseif payload.key == "duplicateFix" or payload.key == "frontFlip"

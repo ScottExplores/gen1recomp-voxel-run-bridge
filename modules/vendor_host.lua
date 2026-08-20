@@ -22,7 +22,8 @@ local VendorHost = {}
 -- already running by the time this is called.
 VendorHost.MODS = {
   { dir = "wilds",             id = "overworld_wild_spawns",  priority = 80 },
-  { dir = "free_fly",          id = "free_fly",               priority = 100 },
+  { dir = "free_fly",          id = "free_fly", version = "1.8.0",
+    priority = 100 },
   { dir = "choose_lead",       id = "choose_lead",            priority = 100 },
   { dir = "catchable151",      id = "all_pokemon_catchable_151_mod", priority = 100 },
   { dir = "unique_menu_icons", id = "unique_menu_icons",      priority = 100 },
@@ -111,8 +112,21 @@ function VendorHost:_find(first, second)
   end
   local hit = self.loaded[wanted]
   if hit then return hit end
-  if wanted == VendorHost.HOST_ID or wanted == self.mod.id then
-    -- Battle Art publishes onto the host mod's exports.
+  if wanted == VendorHost.HOST_ID then
+    -- Battle Art publishes onto the host mod's exports, but the alias only
+    -- exists after that renderer finished installing. If it stood down for an
+    -- external renderer (or failed before publishing its module loader), Wilds
+    -- must not mistake Scott's Tweaks itself for an active Voxel provider.
+    local exports = self.mod.exports
+    local fused = exports and exports.fusedRenderer
+    local lib = exports and exports.lib
+    if not (type(fused) == "table" and fused.installed == true
+        and type(lib) == "table" and type(lib.require) == "function") then
+      return nil
+    end
+    return { id = wanted, version = exports.version, exports = exports }
+  end
+  if wanted == self.mod.id then
     return { id = wanted, version = self.mod.exports and self.mod.exports.version,
              exports = self.mod.exports }
   end
@@ -136,6 +150,7 @@ function VendorHost:handleFor(entry)
   end
   local proxy = setmetatable({}, { __index = mod })
   proxy.id = entry.id
+  proxy.version = entry.version
   proxy.path = mod.path .. "/" .. base
   proxy.exports = {}
   proxy.read = function(_, relative)
@@ -205,6 +220,17 @@ function VendorHost:handleFor(entry)
     -- this seam deliberately suppresses engine events (avoiding double apply).
     write = function(_, game, key, value)
       return host:writeOption(game, entry.id, key, value, { emit = false })
+    end,
+    -- Atomic multi-key writer used by Wilds' synthetic Encounter Mode. A
+    -- single player action must not leave the save half-way between VISIBLE,
+    -- BOTH, CLASSIC and OFF if Android suspends the process during a write.
+    -- Wilds invokes its one live callback after this returns, so engine events
+    -- stay suppressed here just like the one-key writer above.
+    writeMany = function(_, game, changes, transaction)
+      local writeOpts = {}
+      for key, value in pairs(transaction or {}) do writeOpts[key] = value end
+      writeOpts.emit = false
+      return host:writeOptions(game, entry.id, changes, writeOpts)
     end,
   }
   -- The unified MOD SETTINGS screen presents every bundled mod's settings, so
@@ -391,50 +417,148 @@ function VendorHost:installAll()
   return self
 end
 
--- Write one bundled mod's option through the ordinary save path and announce
--- the change under BOTH ids: listeners inside the bundle filter on their own
--- vendor id, while the engine and Scott's Tweaks filter on the host id. This
--- is the only sanctioned writer for "<vendorId>:<key>" values -- menus go
--- through here so a bundled mod reacts live exactly as it did standalone.
-function VendorHost:writeOption(game, vendorId, key, value, opts)
+-- Write one or more bundled-mod options through the ordinary save path and,
+-- unless suppressed, announce each change under BOTH ids: listeners inside
+-- the bundle filter on their vendor id, while the engine and Scott's Tweaks
+-- filter on the host id. This is the only sanctioned writer for
+-- "<vendorId>:<key>" values.
+function VendorHost:writeOptions(game, vendorId, changes, opts)
   local mod = self.mod
-  if type(game) ~= "table" then return false end
+  if type(game) ~= "table" then return false, "game table required" end
+  if type(changes) ~= "table" then return false, "changes table required" end
   opts = opts or {}
-  local storedKey = vendorId .. ":" .. tostring(key)
+
+  -- Array records retain explicit nil values, which are needed to remove the
+  -- obsolete grass_encounters key. Accept a plain key/value table too for
+  -- small callers, but prefer records when order or nil matters.
+  local records = {}
+  if #changes > 0 then
+    for i = 1, #changes do
+      local change = changes[i]
+      if type(change) == "table" and change.key ~= nil then
+        records[#records + 1] = {
+          key = tostring(change.key), value = change.value,
+        }
+      end
+    end
+  else
+    for key, value in pairs(changes) do
+      records[#records + 1] = { key = tostring(key), value = value }
+    end
+    table.sort(records, function(a, b) return a.key < b.key end)
+  end
+  if #records == 0 then return false, "no valid option changes" end
+
+  -- Save and both Loader shapes are one in-memory transaction. Snapshot the
+  -- complete affected buckets (including whether they existed) so a failed
+  -- disk write cannot leave runtime reads on the new mode while the save on
+  -- disk still contains the old one.
   game.save = game.save or {}
   game.save.options = game.save.options or {}
-  local options = game.save.options
-  options.modOptions = options.modOptions or {}
-  options.modOptions[mod.id] = options.modOptions[mod.id] or {}
-  options.modOptions[mod.id][storedKey] = value
+  local holders, holderSeen = {}, {}
+  local function addHolder(candidate)
+    if type(candidate) ~= "table" or holderSeen[candidate] then return end
+    holderSeen[candidate] = true
+    holders[#holders + 1] = {
+      value = candidate.modOptions,
+      holder = candidate,
+    }
+  end
+  addHolder(game.save.options)
+  addHolder(game.mods)
+  addHolder(game.mods and game.mods.loader)
 
-  local loaders = {}
-  local function addLoader(candidate)
-    if type(candidate) ~= "table" then return end
-    for _, existing in ipairs(loaders) do
-      if existing == candidate then return end
+  local roots, rootSeen = {}, {}
+  for _, snapshot in ipairs(holders) do
+    local holder = snapshot.holder
+    if type(holder.modOptions) ~= "table" then holder.modOptions = {} end
+    if not rootSeen[holder.modOptions] then
+      rootSeen[holder.modOptions] = true
+      roots[#roots + 1] = holder.modOptions
     end
-    loaders[#loaders + 1] = candidate
   end
-  addLoader(game.mods)
-  addLoader(game.mods and game.mods.loader)
-  for _, loader in ipairs(loaders) do
-    loader.modOptions = loader.modOptions or {}
-    loader.modOptions[mod.id] = loader.modOptions[mod.id] or {}
-    loader.modOptions[mod.id][storedKey] = value
+
+  local bucketSnapshots = {}
+  local function snapshotBucket(root, bucketId)
+    local bucket = root[bucketId]
+    local saved = {
+      root = root,
+      bucketId = bucketId,
+      wasTable = type(bucket) == "table",
+      raw = bucket,
+      ref = type(bucket) == "table" and bucket or nil,
+      values = {},
+    }
+    if saved.wasTable then
+      for key, value in pairs(bucket) do saved.values[key] = value end
+    end
+    bucketSnapshots[#bucketSnapshots + 1] = saved
   end
+  for _, root in ipairs(roots) do
+    snapshotBucket(root, mod.id)
+    if type(opts.legacyKeys) == "table" and vendorId ~= mod.id then
+      snapshotBucket(root, vendorId)
+    end
+  end
+
+  local function rollback()
+    for _, snapshot in ipairs(bucketSnapshots) do
+      if snapshot.wasTable then
+        local bucket = snapshot.ref
+        for key in pairs(bucket) do bucket[key] = nil end
+        for key, value in pairs(snapshot.values) do bucket[key] = value end
+        snapshot.root[snapshot.bucketId] = bucket
+      else
+        snapshot.root[snapshot.bucketId] = snapshot.raw
+      end
+    end
+    -- If this call had to create a modOptions root, remove it again. Existing
+    -- root identities stay intact so cached references remain valid.
+    for _, snapshot in ipairs(holders) do
+      if type(snapshot.value) ~= "table" then
+        snapshot.holder.modOptions = snapshot.value
+      end
+    end
+  end
+
+  for _, root in ipairs(roots) do
+    if type(root[mod.id]) ~= "table" then root[mod.id] = {} end
+    local canonical = root[mod.id]
+    for _, record in ipairs(records) do
+      canonical[vendorId .. ":" .. record.key] = record.value
+    end
+    local legacy = root[vendorId]
+    if type(legacy) == "table" and type(opts.legacyKeys) == "table" then
+      for _, key in ipairs(opts.legacyKeys) do legacy[key] = nil end
+    end
+  end
+
   if opts.persist ~= false and game.writeOptions then
-    pcall(game.writeOptions, game)
+    local ok, result, detail = pcall(game.writeOptions, game)
+    if not ok or result == false then
+      rollback()
+      return false, not ok and tostring(result)
+        or tostring(detail or "game.writeOptions returned false")
+    end
   end
   local events = game.mods and (game.mods.events
     or (game.mods.loader and game.mods.loader.events))
   if opts.emit ~= false and events then
-    events:emit("mod.options_changed",
-      { mod = mod.id, key = storedKey, value = value })
-    events:emit("mod.options_changed",
-      { mod = vendorId, key = key, value = value })
+    for _, record in ipairs(records) do
+      local storedKey = vendorId .. ":" .. record.key
+      events:emit("mod.options_changed",
+        { mod = mod.id, key = storedKey, value = record.value })
+      events:emit("mod.options_changed",
+        { mod = vendorId, key = record.key, value = record.value })
+    end
   end
   return true
+end
+
+function VendorHost:writeOption(game, vendorId, key, value, opts)
+  return self:writeOptions(game, vendorId, {
+    { key = key, value = value },
+  }, opts)
 end
 
 function VendorHost:readOption(vendorId, key)

@@ -247,6 +247,41 @@ eq(emitted4[#emitted4].payload.value, false,
 eq(writes4, writesBeforeMenu + 1,
   "organized-menu edit persists exactly once")
 
+-- A failed device write must not leave the menu/live Loader ahead of disk or
+-- announce a change that will disappear on restart.
+local savedBucket4 = game4.save.options.modOptions.voxel_run_bridge
+local liveBucket4 = newLoader.modOptions.voxel_run_bridge
+local eventsBeforeFailure = #emitted4
+game4.writeOptions = function() error("simulated Android storage failure") end
+local wroteFailed, writeFailure = settings4:set(game4, "dual_screen", true)
+eq(wroteFailed, false, "organized-menu write reports a thrown storage failure")
+check(tostring(writeFailure):find("simulated Android storage failure", 1, true)
+    ~= nil, "organized-menu write returns the storage error")
+eq(game4.save.options.modOptions.voxel_run_bridge, savedBucket4,
+  "failed write preserves the save bucket identity")
+eq(newLoader.modOptions.voxel_run_bridge, liveBucket4,
+  "failed write preserves the live bucket identity")
+eq(savedBucket4.dual_screen, false,
+  "failed write restores the durable option mirror")
+eq(liveBucket4.dual_screen, false,
+  "failed write restores the live Loader option")
+eq(#emitted4, eventsBeforeFailure,
+  "failed write emits no live option event")
+
+game4.writeOptions = function() return false, "read-only storage" end
+local explicitFailed, explicitError = settings4:set(
+  game4, "dual_screen", true)
+eq(explicitFailed, false,
+  "organized-menu write honors an explicit false persistence result")
+check(tostring(explicitError):find("read-only storage", 1, true) ~= nil,
+  "explicit failure detail reaches the caller")
+eq(savedBucket4.dual_screen, false,
+  "explicit failure restores the durable option mirror")
+eq(liveBucket4.dual_screen, false,
+  "explicit failure restores the live Loader option")
+eq(#emitted4, eventsBeforeFailure,
+  "explicit persistence failure emits no live option event")
+
 package.loaded["src.core.Game"] = nil
 package.preload["src.core.Game"] = nil
 if failures > 0 then error(tostring(failures) .. " migration checks failed") end

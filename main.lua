@@ -48,7 +48,7 @@ local GAPPED_LAND_CELL = 64
 -- Native terrain and Flora's detailed apron occupy roughly y=-2..-37.
 -- Keep the broad procedural ground below both so it only fills the void.
 local GAPPED_LAND_Y = -40
-local RELEASE_VERSION = "0.12.0"
+local RELEASE_VERSION = "0.12.1"
 
 local OPTION_DEFAULTS = {
   hm_without_badges = true,
@@ -67,7 +67,9 @@ local OPTION_DEFAULTS = {
   running_speed = 1.5,
   simple_menu = true,
   running_view_bob = true,
-  running_bob_intensity = 0.5,
+  -- Raw camera amplitude. 0.25 is the historical effect now presented as
+  -- 1X; the gentler new-install default is half of that (0.5X).
+  running_bob_intensity = 0.125,
   dual_screen = false,
 }
 
@@ -591,7 +593,7 @@ local function defineOptions(mod, vendorHost)
     {
       key = BAG_POCKETS_OPTION,
       type = "toggle",
-      label = "CLASSIC BAG POCKETS",
+      label = "CLASSIC POCKETS",
       default = true,
       help = "Organize the classic Red bag into ITEMS, BALLS, KEY ITEMS and TM/HM pockets. Use D-pad Left or Right to change pockets. PACK + POKeGEAR keeps this projection active while its menu is on.",
     },
@@ -678,15 +680,18 @@ local function defineOptions(mod, vendorHost)
       key = "running_bob_intensity",
       type = "choice",
       label = "BOB INTENSITY",
-      default = 0.5,
-      choices = { { "0.1X", 0.1 }, { "0.15X", 0.15 }, { "0.25X", 0.25 },
-                  { "0.5X", 0.5 }, { "0.75X", 0.75 }, { "1X", 1 } },
-      help = "Scale the subtle running camera motion. The default is 0.5X.",
+      default = 0.125,
+      choices = {
+        { "0.25X", 0.0625 }, { "0.4X", 0.1 }, { "0.5X", 0.125 },
+        { "0.6X", 0.15 }, { "0.75X", 0.1875 }, { "1X", 0.25 },
+        { "1.5X", 0.375 }, { "2X", 0.5 }, { "3X", 0.75 }, { "4X", 1 },
+      },
+      help = "Scale running camera motion. The former 0.25 effect is now 1X; the gentler new-install default is 0.5X.",
     },
     {
       key = "dual_screen",
       type = "toggle",
-      label = "THOR SECOND SCREEN",
+      label = "THOR 2ND SCREEN",
       default = false,
       help = "Use the physical AYN Thor lower display for menus when it is attached. Single-screen systems stay unchanged.",
     },
@@ -1754,25 +1759,33 @@ local function installFreeFlyImmediateFlight(mod)
     reason = "free_fly_not_active",
   }
   local activeLoader
+  local activeBucketId
+  local activeKey
+  local activeHosted = false
   local priorSet = false
   local priorValue
   local priorBucketExisted = false
 
   local function findFreeFly()
-    if type(mod.find) ~= "function" then return nil end
-    local ok, handle = pcall(mod.find, FREE_FLY_ID)
-    if not ok then ok, handle = pcall(mod.find, mod, FREE_FLY_ID) end
-    if ok then return handle end
-    return nil
+    local host = mod.exports and mod.exports.vendorHost
+    local bundled = host and host.loaded and host.loaded[FREE_FLY_ID]
+    local handle = findMod(mod, FREE_FLY_ID)
+    return handle, handle ~= nil and handle == bundled
   end
 
-  local function compatible(handle, loader)
+  local function compatible(handle, loader, hosted)
     local exports = handle and handle.exports
     if type(exports) ~= "table" or type(exports.isFlying) ~= "function" then
       return false, "flight_state_export_missing"
     end
-    local schemas = loader and loader.optionSchemas
-    local schema = schemas and schemas[FREE_FLY_ID]
+    local schema
+    if hosted then
+      local host = mod.exports and mod.exports.vendorHost
+      schema = host and host.schemas and host.schemas[FREE_FLY_ID]
+    else
+      local schemas = loader and loader.optionSchemas
+      schema = schemas and schemas[FREE_FLY_ID]
+    end
     if type(schema) ~= "table" then
       return false, "option_schema_missing"
     end
@@ -1788,20 +1801,24 @@ local function installFreeFlyImmediateFlight(mod)
   local function restore()
     local loader = activeLoader
     local buckets = loader and loader.modOptions
-    local bucket = buckets and buckets[FREE_FLY_ID]
+    local bucket = buckets and activeBucketId and buckets[activeBucketId]
     if bucket then
       if priorSet then
-        bucket[FREE_FLY_BADGES_KEY] = priorValue
+        bucket[activeKey] = priorValue
       else
-        bucket[FREE_FLY_BADGES_KEY] = nil
+        bucket[activeKey] = nil
       end
       if not priorBucketExisted and next(bucket) == nil then
-        buckets[FREE_FLY_ID] = nil
+        buckets[activeBucketId] = nil
       end
     end
     activeLoader = nil
+    activeBucketId = nil
+    activeKey = nil
+    activeHosted = false
     priorSet, priorValue, priorBucketExisted = false, nil, false
     state.active = false
+    state.hosted = false
     state.reason = "disabled"
   end
 
@@ -1812,7 +1829,7 @@ local function installFreeFlyImmediateFlight(mod)
       return false
     end
 
-    local handle = findFreeFly()
+    local handle, hosted = findFreeFly()
     if not handle then
       state.active = false
       state.reason = "free_fly_not_active"
@@ -1823,7 +1840,7 @@ local function installFreeFlyImmediateFlight(mod)
       state.reason = "loader_unavailable"
       return false
     end
-    local isCompatible, compatibilityReason = compatible(handle, loader)
+    local isCompatible, compatibilityReason = compatible(handle, loader, hosted)
     if not isCompatible then
       state.active = false
       state.reason = "unsupported_free_fly_" .. tostring(compatibilityReason)
@@ -1833,22 +1850,34 @@ local function installFreeFlyImmediateFlight(mod)
     end
 
     loader.modOptions = loader.modOptions or {}
-    local bucket = loader.modOptions[FREE_FLY_ID]
-    if activeLoader ~= loader then
+    local bucketId = hosted and mod.id or FREE_FLY_ID
+    local optionKey = hosted
+      and (FREE_FLY_ID .. ":" .. FREE_FLY_BADGES_KEY)
+      or FREE_FLY_BADGES_KEY
+    local bucket = loader.modOptions[bucketId]
+    if activeLoader ~= loader or activeBucketId ~= bucketId
+        or activeKey ~= optionKey then
+      if activeLoader then restore() end
       priorBucketExisted = bucket ~= nil
       bucket = bucket or {}
-      loader.modOptions[FREE_FLY_ID] = bucket
-      priorSet = bucket[FREE_FLY_BADGES_KEY] ~= nil
-      priorValue = bucket[FREE_FLY_BADGES_KEY]
+      loader.modOptions[bucketId] = bucket
+      priorSet = bucket[optionKey] ~= nil
+      priorValue = bucket[optionKey]
       activeLoader = loader
+      activeBucketId = bucketId
+      activeKey = optionKey
+      activeHosted = hosted
     else
       bucket = bucket or {}
-      loader.modOptions[FREE_FLY_ID] = bucket
+      loader.modOptions[bucketId] = bucket
     end
-    bucket[FREE_FLY_BADGES_KEY] = false
+    bucket[optionKey] = false
     state.active = true
-    state.reason = "badges_runtime_override"
+    state.reason = hosted and "hosted_badges_runtime_override"
+      or "badges_runtime_override"
     state.version = handle.version
+      or (handle.exports and handle.exports.version)
+    state.hosted = hosted
     return true
   end
 
@@ -1860,16 +1889,22 @@ local function installFreeFlyImmediateFlight(mod)
       if not payload then return end
       if payload.mod == mod.id and payload.key == FREE_FLY_OPTION then
         if payload.value == true then apply(Game.mods) else restore() end
-      elseif state.active and payload.mod == FREE_FLY_ID
-          and payload.key == FREE_FLY_BADGES_KEY then
+      elseif state.active and ((not activeHosted
+            and payload.mod == FREE_FLY_ID
+            and payload.key == FREE_FLY_BADGES_KEY)
+          or (activeHosted
+            and ((payload.mod == mod.id
+                  and payload.key == FREE_FLY_ID .. ":" .. FREE_FLY_BADGES_KEY)
+              or (payload.mod == FREE_FLY_ID
+                  and payload.key == FREE_FLY_BADGES_KEY)))) then
         -- Keep the player's latest Free Fly preference ready for restoration if
         -- Scott's override is later switched off, but hold the live answer
         -- false while the override remains enabled.
         priorSet = payload.value ~= nil
         priorValue = payload.value
         local buckets = activeLoader and activeLoader.modOptions
-        local bucket = buckets and buckets[FREE_FLY_ID]
-        if bucket then bucket[FREE_FLY_BADGES_KEY] = false end
+        local bucket = buckets and activeBucketId and buckets[activeBucketId]
+        if bucket then bucket[activeKey] = false end
       end
     end)
   end
@@ -1881,7 +1916,7 @@ local function installFreeFlyImmediateFlight(mod)
   end
 end
 
--- Free Fly 1.6.2 deliberately draws a second mount picture in render.hud
+-- Free Fly 1.6.2 and the bundled 1.8.0 draw a second mount picture in render.hud
 -- whenever Battle Art hides the player's world card for first person. Scott
 -- prefers a clear first-person view. Keep this as a narrow presentation
 -- adapter instead of editing Free Fly: its public isFlying export establishes
@@ -1908,10 +1943,11 @@ local function installFreeFlyCockpitControl(mod)
 
   local version = handle.version or exports.version
   status.version = version
-  -- This adapter targets the exact locally verified HUD implementation. A
-  -- future Free Fly may publish its own cockpit option or change its draw
+  -- These releases use the same verified hidePlayer-gated HUD implementation.
+  -- A future Free Fly may publish its own cockpit option or change that draw
   -- gate; standing aside is safer than pretending an internal contract held.
-  if version ~= "1.6.2" then
+  local supportedHud = version == "1.6.2" or version == "1.8.0"
+  if not supportedHud then
     status.reason = "unsupported_free_fly_version"
     return status
   end

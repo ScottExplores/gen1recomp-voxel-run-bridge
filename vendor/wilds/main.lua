@@ -271,7 +271,12 @@ return function(mod)
       logic.state:markError(err)
       logic:_restoreVanillaEncounters("world.stepped error")
     end
-    if GameCompat.isGen2(mod, liveGame()) and behaviorTick then
+    -- Reassert the hidden WILDS AI pipeline in every generation. The engine's
+    -- settings apply can reset it to OFF; without this recovery, grass spawns
+    -- remain logical-only after their pop animation and never reach the draw
+    -- list. The BehaviorTick cadence guard prevents a second AI update when
+    -- the render pipeline already advanced this frame.
+    if behaviorTick then
       pcall(function() behaviorTick:stepFromWorld(ev) end)
     end
     if render._pendingSpriteRefresh then
@@ -420,11 +425,15 @@ return function(mod)
 
   local unwraps = {}
 
+  local function removeHook(key)
+    local unwrap = unwraps[key]
+    if type(unwrap) == "function" then unwrap() end
+    unwraps[key] = nil
+  end
+
   local function removeHooks()
-    for key, unwrap in pairs(unwraps) do
-      if type(unwrap) == "function" then unwrap() end
-      unwraps[key] = nil
-    end
+    removeHook("encounter")
+    removeHook("collision")
     logic.state.vanillaSuppressed = false
   end
 
@@ -437,20 +446,18 @@ return function(mod)
 
   logic:setRestoreVanilla(restoreVanillaEncounters)
 
-  local function installHooks()
-    if not supports("encounters") then
-      noteGameplaySkipped()
-      return
-    end
-    if unwraps.encounter or unwraps.collision then return end
-
+  local function installEncounterHook()
+    if unwraps.encounter then return end
     unwraps.encounter = mod.hooks:wrap("encounter.roll", function(next, encDef, ctx)
       if logic:shouldSuppressClassicEncounter(ctx) then
         return nil
       end
       return next(encDef, ctx)
     end)
+  end
 
+  local function installCollisionHook()
+    if unwraps.collision then return end
     unwraps.collision = mod.hooks:wrap("movement.collision", function(next, allowed, ctx)
       local ok, result = pcall(function()
         local base = next(allowed, ctx)
@@ -466,15 +473,36 @@ return function(mod)
     end)
   end
 
+  local function installHooks()
+    if not supports("encounters") then
+      noteGameplaySkipped()
+      return
+    end
+    installEncounterHook()
+    installCollisionHook()
+  end
+
   local function syncFeatureState()
-    if Config.isEnabled(mod) then
-      installHooks()
+    if not supports("encounters") then
+      removeHooks()
+      noteGameplaySkipped()
+      return
+    end
+    local visible = Config.isEnabled(mod)
+    local suppressClassic = not Config.randomEncountersEnabled(mod)
+    if visible or suppressClassic then
+      installEncounterHook()
+    else
+      removeHook("encounter")
+    end
+    if visible then
+      installCollisionHook()
       logic.state.vanillaSuppressed = false
       if Config.debug(mod) then
         DebugLog.info(mod, "hooks installed; vanilla still active until spawn system ready")
       end
     else
-      removeHooks()
+      removeHook("collision")
       logic:clearAll()
     end
   end
@@ -484,6 +512,13 @@ return function(mod)
   -- mods cannot forge that event, so OPTIONS menus call this handler directly
   -- after Config.setOption writes the same option buckets.
   local function handleOptionsChanged(payload)
+    -- Encounter Mode is one committed three-key transition. Install/remove
+    -- encounter hooks from that final snapshot before rebuilding the map.
+    if supports("encounters") and payload and payload.mod == mod.id
+       and (payload.key == "encounter_mode" or payload.key == "enabled"
+         or payload.key == "random_encounters") then
+      syncFeatureState()
+    end
     if supports("encounters") then
       local ok, err = pcall(logic.onOptionsChanged, logic, payload)
       if not ok then
@@ -500,11 +535,6 @@ return function(mod)
     end
     if supports("catching") then
       pcall(function() catching:onOptionsChanged(payload) end)
-    end
-    if payload and payload.mod == mod.id and payload.key == "enabled" then
-      if supports("encounters") then
-        syncFeatureState()
-      end
     end
   end
 
@@ -528,6 +558,10 @@ return function(mod)
 
   -- ------- exports (companion / debug / test surface)
 
+  -- This bundle remains the Scott-customized 2.1.7 baseline. Runtime-safety
+  -- fixes from upstream 2.1.8 are backported selectively; do not advertise the
+  -- full release while its catching art/HUD and public-settings changes are
+  -- intentionally absent.
   mod.exports.version = "2.1.7"
   mod.exports.gameCompat = GameCompat
   mod.exports.supportsFeature = function(feature)
@@ -589,6 +623,13 @@ return function(mod)
   mod.exports.clearAll = function() logic:clearAll() end
   mod.exports.removeHooks = removeHooks
   mod.exports.installHooks = installHooks
+  mod.exports.syncEncounterHooks = syncFeatureState
+  mod.exports.encounterHookState = function()
+    return {
+      encounter = unwraps.encounter ~= nil,
+      collision = unwraps.collision ~= nil,
+    }
+  end
   mod.exports.canSuppressVanilla = function() return logic:canSuppressVanilla() end
   mod.exports.spawnSystemState = function() return logic.state:snapshot() end
   mod.exports.hudSnapshot = function() return Diagnostics.hudSnapshot(logic) end
@@ -615,6 +656,16 @@ return function(mod)
     opts.game = opts.game or (mod.world and mod.world.game)
     opts.logic = opts.logic or logic
     return Config.setRandomEncounters(mod, value, source or "export", opts)
+  end
+  mod.exports.encounterMode = function()
+    return Config.encounterMode(mod)
+  end
+  mod.exports.setEncounterMode = function(value, source, opts)
+    opts = opts or {}
+    opts.game = opts.game or (mod.world and mod.world.game)
+    opts.logic = opts.logic or logic
+    opts.onChanged = opts.onChanged or handleOptionsChanged
+    return Config.setEncounterMode(mod, value, source or "export", opts)
   end
   mod.exports.setWaterMons = function(value, source, opts)
     opts = opts or {}

@@ -273,16 +273,65 @@ function modePalette(data, baseName, mode)
 end
 
 local VOXEL_MOD_IDS = { "DRAMATIC_SHAPE", "BATTLE_ART_VOXEL_FORK", "potato_voxel", "DRAMALESS_SHAPE" }
+local FUSED_VOXEL_MOD_ID = "voxel_run_bridge"
+
+local function rendererExports(candidate, fused)
+  if type(candidate) ~= "table" then return nil end
+  -- Game.mods.exports stores the export table directly; mod.find returns a
+  -- handle containing it. Accept both public Loader shapes.
+  local exports = type(candidate.exports) == "table"
+                  and candidate.exports or candidate
+  local lib = type(exports) == "table" and exports.lib
+  if type(lib) ~= "table" or type(lib.require) ~= "function" then return nil end
+  if fused then
+    -- Older Voxel Run Bridge releases are movement adapters rather than a
+    -- renderer. Only Scott's fused build publishes this positive ownership
+    -- marker, so an unrelated/old install cannot be mistaken for Battle Art.
+    local marker = exports.fusedRenderer
+    if type(marker) ~= "table" or marker.installed ~= true then return nil end
+  end
+  return exports
+end
+
+local function foundExports(id, fused)
+  local find = mod and mod.find
+  if type(find) ~= "function" then return nil end
+  local ok, found = pcall(find, id)
+  if not ok then ok, found = pcall(find, mod, id) end
+  return ok and rendererExports(found, fused) or nil
+end
 
 function voxelMod()
   local ok, Game = pcall(require, "src.core.Game")
-  if not (ok and Game and Game.mods and Game.mods.exports) then
-    return nil
-  end
+  local loaderExports = ok and Game and Game.mods and Game.mods.exports
+  if type(loaderExports) ~= "table" then loaderExports = {} end
+
+  -- Preserve standalone Crystal beside every historical standalone renderer.
+  -- Direct Loader exports are authoritative; a malformed export is skipped
+  -- so a valid later candidate can still win.
   for i = 1, #VOXEL_MOD_IDS do
-    local voxel = Game.mods.exports[VOXEL_MOD_IDS[i]]
+    local id = VOXEL_MOD_IDS[i]
+    local voxel = rendererExports(loaderExports[id], false)
     if voxel then return voxel end
   end
+
+  -- Scott's Tweaks owns Battle Art inside the voxel_run_bridge Loader entry;
+  -- there is deliberately no BATTLE_ART_VOXEL_FORK alias in Game.mods.exports.
+  -- Resolve the root export itself, capability- and ownership-validated.
+  local fused = rendererExports(loaderExports[FUSED_VOXEL_MOD_ID], true)
+                or (mod and mod.id == FUSED_VOXEL_MOD_ID
+                    and rendererExports(mod.exports, true))
+  if fused then return fused end
+
+  -- Bare compatibility harnesses and older Loader facades may expose find()
+  -- without the exports map. Ask those only after the real fused id above, so
+  -- VendorHost's historical-id shim cannot mask which Loader entry owns art.
+  for i = 1, #VOXEL_MOD_IDS do
+    local voxel = foundExports(VOXEL_MOD_IDS[i], false)
+    if voxel then return voxel end
+  end
+  fused = foundExports(FUSED_VOXEL_MOD_ID, true)
+  if fused then return fused end
   return nil
 end
 
@@ -3998,26 +4047,71 @@ end
 
 -- DRAMATIC SHAPE / BATTLE_ART_VOXEL_FORK keep the Crystal art's own
 -- transparency instead of sealing its bottom rows onto paper.
+local CRYSTAL_TRANSPARENCY_DISPATCH = "__crystalTransparencyDispatch"
 local function voxelPaperCompat()
-  if voxelPaper then return true end
   local voxel = voxelMod()
   local lib = voxel and voxel.lib
   if not (lib and lib.require) then return false end
   local okBP, BattlePics = pcall(lib.require, "BattlePics")
-  if not (okBP and BattlePics
-          and type(BattlePics.filled) == "function"
-          and not BattlePics.crystalTransparencyHook) then
+  if not (okBP and BattlePics and type(BattlePics.filled) == "function") then
     return false
   end
-  local innerFilled = BattlePics.filled
-  function BattlePics.filled(img, sealBottom)
-    if isCrystalImage(img) then return img end
-    return innerFilled(img, sealBottom)
+
+  -- Current Battle Art owns this as a provider registry, so a reload simply
+  -- replaces the predicate under Crystal's stable id. Keep the dispatcher
+  -- fallback below for a live upgrade from a pre-registry renderer module.
+  if type(BattlePics.registerTransparentProvider) == "function" then
+    local first = BattlePics.crystalTransparencyHook ~= true
+    local okRegister = BattlePics.registerTransparentProvider(
+      mod.id, isCrystalImage)
+    if not okRegister then return false end
+    BattlePics.crystalTransparencyHook = true
+    voxelPaper = true
+    if first then
+      mod.log:info(
+        "DRAMATIC SHAPE: crystal transparency kept in staged battles")
+    end
+    return true
   end
+
+  -- BattlePics lives in the renderer namespace and survives a developer F5;
+  -- this Crystal chunk and its weak `crystalImages` table do not.  A boolean
+  -- "already wrapped" marker therefore leaves the surviving wrapper calling
+  -- the OLD predicate, so every newly loaded frame is mistaken for ROM art
+  -- and its transparent limb gaps are filled white.  Keep one engine-owned
+  -- dispatcher and refresh only its predicate on every entry.
+  local record = rawget(BattlePics, CRYSTAL_TRANSPARENCY_DISPATCH)
+  if record ~= nil and (type(record) ~= "table"
+      or record.owner ~= mod.id or type(record.wrapper) ~= "function") then
+    return false
+  end
+  if not record then
+    record = {
+      owner = mod.id,
+      inner = BattlePics.filled,
+      generation = 0,
+    }
+    record.wrapper = function(img, sealBottom)
+      local predicate = record.predicate
+      if type(predicate) == "function" and predicate(img) then return img end
+      return record.inner(img, sealBottom)
+    end
+    rawset(BattlePics, CRYSTAL_TRANSPARENCY_DISPATCH, record)
+    BattlePics.filled = record.wrapper
+  elseif BattlePics.filled == record.inner then
+    -- Safe recovery if another development tool temporarily restored the
+    -- original method. An unknown outer provider is otherwise left intact;
+    -- it already calls this dispatcher from the chain it wrapped.
+    BattlePics.filled = record.wrapper
+  end
+  record.predicate = isCrystalImage
+  record.generation = (tonumber(record.generation) or 0) + 1
   BattlePics.crystalTransparencyHook = true
   voxelPaper = true
-  mod.log:info(
-    "DRAMATIC SHAPE: crystal transparency kept in staged battles")
+  if record.generation == 1 then
+    mod.log:info(
+      "DRAMATIC SHAPE: crystal transparency kept in staged battles")
+  end
   return true
 end
 
@@ -4065,6 +4159,8 @@ local function exportHelpers()
   mod.exports.pngWidth = pngWidth
 
   mod.exports.isCrystalImage = isCrystalImage
+  mod.exports.voxelContext = voxelContext
+  mod.exports.refreshVoxelPaper = voxelPaperCompat
 
   mod.exports.markCrystalBattlers = markCrystalBattlers
 

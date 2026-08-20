@@ -33,6 +33,28 @@ BehaviorTick.AI_MAX_CATCHUP = 2
 BehaviorTick.VOXEL_PRESENCE_INTERVAL = 0.5
 BehaviorTick.PALETTE_POLL_INTERVAL = 0.1
 
+-- Pipelines is an engine singleton and survives developer F5 reloads while
+-- this module's locals do not. Keep the row-filter dispatcher on that
+-- persistent singleton, keyed by logical owner, and refresh only its callback
+-- for each new Wilds generation.
+local ROW_DISPATCHERS_FIELD = "_wildsOptionsRowDispatchers"
+
+local function rowOwnerKey(mod)
+  return tostring(mod and mod.id or "overworld_wild_spawns")
+    .. ":" .. BehaviorTick.PIPELINE_ID
+end
+
+local function rowFilterCallback(nextRows, game)
+  local rows = nextRows(game)
+  local out = {}
+  for _, row in ipairs(rows or {}) do
+    if not (row and row.id == "pipeline:" .. BehaviorTick.PIPELINE_ID) then
+      out[#out + 1] = row
+    end
+  end
+  return out
+end
+
 local function now()
   if love and love.timer and love.timer.getTime then
     return love.timer.getTime()
@@ -184,30 +206,57 @@ end
 function BehaviorTick:hideFromEngineOptions()
   local ok, Pipelines = pcall(require, "src.render.Pipelines")
   if not ok or not Pipelines or type(Pipelines.rows) ~= "function" then return end
-  if self._rowsPatched then return end
-  local origRows = Pipelines.rows
-  Pipelines.rows = function(game)
-    local rows = origRows(game)
-    local out = {}
-    for _, row in ipairs(rows or {}) do
-      if not (row and row.id == "pipeline:" .. BehaviorTick.PIPELINE_ID) then
-        out[#out + 1] = row
-      end
-    end
-    return out
+  local registry = rawget(Pipelines, ROW_DISPATCHERS_FIELD)
+  if type(registry) ~= "table" then
+    registry = {}
+    rawset(Pipelines, ROW_DISPATCHERS_FIELD, registry)
   end
+  local key = rowOwnerKey(self.mod)
+  local record = registry[key]
+  if type(record) ~= "table" or type(record.dispatcher) ~= "function" then
+    record = {
+      key = key,
+      previous = Pipelines.rows,
+      active = false,
+    }
+    record.dispatcher = function(game)
+      local callback = record.callback
+      if record.active and type(callback) == "function" then
+        return callback(record.previous, game)
+      end
+      return record.previous(game)
+    end
+    registry[key] = record
+    Pipelines.rows = record.dispatcher
+  end
+
+  -- A new generation takes ownership without adding another wrapper. The old
+  -- generation's cleanup checks this token and cannot tear the refresh down.
+  record.callback = rowFilterCallback
+  record.owner = self
+  record.active = true
   self._rowsPatched = true
-  self._origRows = origRows
+  self._rowsRecord = record
 end
 
 function BehaviorTick:restoreEngineOptionsRow()
   if not self._rowsPatched then return end
   local ok, Pipelines = pcall(require, "src.render.Pipelines")
-  if ok and Pipelines and self._origRows then
-    Pipelines.rows = self._origRows
+  local record = self._rowsRecord
+  if ok and Pipelines and record and record.owner == self then
+    record.active = false
+    record.callback = nil
+    record.owner = nil
+    local registry = rawget(Pipelines, ROW_DISPATCHERS_FIELD)
+    if Pipelines.rows == record.dispatcher then
+      Pipelines.rows = record.previous
+      if type(registry) == "table" and registry[record.key] == record then
+        registry[record.key] = nil
+      end
+    end
   end
   self._rowsPatched = false
-  self._origRows = nil
+  self._rowsRecord = nil
 end
 
 function BehaviorTick:syncPipelineLevel()
@@ -218,6 +267,12 @@ function BehaviorTick:syncPipelineLevel()
   else
     Pipelines.setLevel(BehaviorTick.PIPELINE_ID, 0)
   end
+end
+
+-- Re-assert WILDS AI after OPTIONS / Pipelines.applyOptions restores saved
+-- pipeline levels (typically OFF because the row is hidden). Cheap table write.
+function BehaviorTick:ensurePipeline()
+  self:syncPipelineLevel()
 end
 
 function BehaviorTick:_ensureReuseCtx()
@@ -258,6 +313,69 @@ function BehaviorTick:_fillBehaviorCtx(ctx, ow, game, logic, occupancy, cfg, saf
   ctx.safariSightRange = SafariCompat.SIGHT_RANGE
   ctx.rng = nil
   return ctx
+end
+
+-- Keep the hot-path helpers outside the entity loop. Local functions declared
+-- inside that loop allocate two fresh closures for every visible Pokemon on
+-- every rendered frame, including frames where the fixed-rate AI does not run.
+local function updateVoxelEntity(voxel, entity)
+  return voxel:updateEntity(entity)
+end
+
+local function attachEntity(logic, entity)
+  return logic:_attach(entity)
+end
+
+local function runEntityBehavior(self, reuseCtx, ow, game, logic, occupancy,
+                                 cfg, safariActive, entity, extraDt, record)
+  local bctx = self:_fillBehaviorCtx(
+    reuseCtx, ow, game, logic, occupancy, cfg, safariActive, entity, extraDt)
+  return tickBehavior(self.mod, entity, bctx, record, ow)
+end
+
+local function handleEntityEvent(self, event, entity, record, logic, ow,
+                                 game, id)
+  if event == "alert" then
+    logic:_onAggressiveAlert(entity, record)
+  elseif event == "entered_water" then
+    record.behavior = entity.behavior
+    record.surface = Surface.WATER
+    record.waterEnteredByChase = true
+    record.originSurface = entity.originSurface or record.originSurface
+    record.encounterKind = record.encounterKind or "water"
+    if entity.cellX and entity.cellY and logic.shoreDistance then
+      record.shoreDistance = WaterSpawn.distanceAt(
+        logic.shoreDistance, entity.cellX, entity.cellY)
+      record.waterZone = WaterSpawn.zoneForDistance(record.shoreDistance)
+      entity.shoreDistance = record.shoreDistance
+      entity.waterZone = record.waterZone
+    end
+    local alreadyPresented = entity.surface == Surface.WATER
+      and entity.spriteState == "water"
+      and entity._wildsPresSpriteState == "water"
+      and (entity.spriteKind == "swimming"
+        or entity.spriteKind == "levitates"
+        or entity.spriteKind == "levitate"
+        or entity.spriteKind == "submerged"
+        or entity.waterSpriteApplied)
+    if logic.refreshEntitySprite and not alreadyPresented then
+      pcall(logic.refreshEntitySprite, logic, entity, {
+        reason = "entered_water",
+        surface = Surface.WATER,
+        spriteState = "water",
+        game = game,
+        forcePresentationRefresh = true,
+      })
+    end
+    DebugLog.info(self.mod, "land→water chase id=%s species=%s",
+                  tostring(id), tostring(record.species))
+  elseif event == "contact" or event == "battle_pending" then
+    if SpawnFx.canBattle(entity) and not entity.caveScenery then
+      logic:_startBattle(record)
+    end
+  elseif event == "flee_start" or event == "flee_done" then
+    record.behavior = entity.behavior
+  end
 end
 
 function BehaviorTick:step(ctx)
@@ -469,6 +587,13 @@ function BehaviorTick:step(ctx)
   end
 
   local reuseCtx = self:_ensureReuseCtx()
+  local spawnFxCtx = self._spawnFxCtx
+  if not spawnFxCtx then
+    spawnFxCtx = {}
+    self._spawnFxCtx = spawnFxCtx
+  end
+  spawnFxCtx.map = ow.map
+  spawnFxCtx.spawnFx = logic.spawnFx
   local followerN = 0
   if ow.pokepcTrailers then followerN = #ow.pokepcTrailers end
   perf:sampleCounts(logic.entities, followerN)
@@ -484,9 +609,7 @@ function BehaviorTick:step(ctx)
       else
       do
         local veStart = perf.enabled and now() or nil
-        local okVoxel, voxelErr = pcall(function()
-          self.voxel:updateEntity(entity)
-        end)
+        local okVoxel, voxelErr = pcall(updateVoxelEntity, self.voxel, entity)
         if not okVoxel then
           self.voxel:markFallback(entity, voxelErr)
         end
@@ -537,14 +660,11 @@ function BehaviorTick:step(ctx)
       end
 
       -- Per-entity spawn / reveal FX (visual; every frame).
-      local fxEvent = SpawnFx.updateEntity(entity, dt, {
-        map = ow.map,
-        spawnFx = logic.spawnFx,
-      })
+      local fxEvent = SpawnFx.updateEntity(entity, dt, spawnFxCtx)
       if fxEvent == "spawn_visible" then
         entity.hiddenBody = false
         entity.visibleSprite = true
-        pcall(function() logic:_attach(entity) end)
+        pcall(attachEntity, logic, entity)
       elseif fxEvent == "spawn_done" then
         if not entity.caveScenery then
           entity.canTriggerBattle = true
@@ -552,84 +672,53 @@ function BehaviorTick:step(ctx)
           entity.canTriggerBattle = false
         end
         entity.hiddenBody = false
-        pcall(function() logic:_attach(entity) end)
+        pcall(attachEntity, logic, entity)
       end
       SpawnFx.ensureProgress(entity)
 
-      local function runBehavior(extraDt)
-        local bctx = self:_fillBehaviorCtx(
-          reuseCtx, ow, game, logic, occupancy, cfg, safariActive, entity, extraDt)
-        return tickBehavior(self.mod, entity, bctx, record, ow)
-      end
-
-      local function handleEvent(event)
-        if event == "alert" then
-          logic:_onAggressiveAlert(entity, record)
-        elseif event == "entered_water" then
-          record.behavior = entity.behavior
-          record.surface = Surface.WATER
-          record.waterEnteredByChase = true
-          record.originSurface = entity.originSurface or record.originSurface
-          record.encounterKind = record.encounterKind or "water"
-          if entity.cellX and entity.cellY and logic.shoreDistance then
-            record.shoreDistance = WaterSpawn.distanceAt(
-              logic.shoreDistance, entity.cellX, entity.cellY)
-            record.waterZone = WaterSpawn.zoneForDistance(record.shoreDistance)
-            entity.shoreDistance = record.shoreDistance
-            entity.waterZone = record.waterZone
-          end
-          local alreadyPresented = entity.surface == Surface.WATER
-            and entity.spriteState == "water"
-            and entity._wildsPresSpriteState == "water"
-            and (entity.spriteKind == "swimming"
-              or entity.spriteKind == "levitates"
-              or entity.spriteKind == "levitate"
-              or entity.spriteKind == "submerged"
-              or entity.waterSpriteApplied)
-          if logic.refreshEntitySprite and not alreadyPresented then
-            pcall(logic.refreshEntitySprite, logic, entity, {
-              reason = "entered_water",
-              surface = Surface.WATER,
-              spriteState = "water",
-              game = game,
-              forcePresentationRefresh = true,
-            })
-          end
-          DebugLog.info(self.mod, "land→water chase id=%s species=%s",
-                        tostring(id), tostring(record.species))
-        elseif event == "contact" or event == "battle_pending" then
-          if SpawnFx.canBattle(entity) and not entity.caveScenery then
-            logic:_startBattle(record)
-          end
-        elseif event == "flee_start" or event == "flee_done" then
-          record.behavior = entity.behavior
-        end
+      -- A delayed/disabled pipeline may let ensureProgress finish the pop FX
+      -- from wall-clock age without producing spawn_visible/spawn_done. The
+      -- entity then has a visible, battleable body but is still logical-only,
+      -- so it collides while drawing nothing. Reconcile membership from the
+      -- final presentation state; identity lookup keeps this a cheap no-op on
+      -- every normally attached frame.
+      if entity.spawnFx and entity.spawnFx.done
+         and entity.hiddenBody ~= true
+         and entity.hiddenEncounter ~= true
+         and entity.visibleSprite ~= false
+         and logic._isEntityActuallyAttached
+         and not logic:_isEntityActuallyAttached(entity, ow, game) then
+        pcall(attachEntity, logic, entity)
       end
 
       if not SpawnFx.canAct(entity) then
         -- Spawn pop in progress: no wander/chase planning.
         -- Contact during an in-progress chase step still needs every frame.
         if bx and (bx.chasing or bx.state == Behavior.STATE.CHASING) then
-          local event = runBehavior(0)
-          handleEvent(event)
+          local event = runEntityBehavior(self, reuseCtx, ow, game, logic,
+            occupancy, cfg, safariActive, entity, 0, record)
+          handleEntityEvent(self, event, entity, record, logic, ow, game, id)
         end
       elseif holdAi and not activeSpecial then
         if bx and (bx.state == Behavior.STATE.ALERT
                    or bx.state == Behavior.STATE.PLAYER_NOTICED)
            and Behavior.isSafariFlee(bx.behavior) then
           -- Safari alert ownership: keep ticking while emote holds the world.
-          local event = runBehavior(0)
-          handleEvent(event)
+          local event = runEntityBehavior(self, reuseCtx, ow, game, logic,
+            occupancy, cfg, safariActive, entity, 0, record)
+          handleEntityEvent(self, event, entity, record, logic, ow, game, id)
         end
       elseif alreadyMoved or (Movement.isBusy(entity) and activeSpecial) then
         -- Mid-step: contact / interrupt checks every render frame (dt=0).
         -- Planning waits for the next free AI decision tick.
-        local event = runBehavior(0)
-        handleEvent(event)
+        local event = runEntityBehavior(self, reuseCtx, ow, game, logic,
+          occupancy, cfg, safariActive, entity, 0, record)
+        handleEntityEvent(self, event, entity, record, logic, ow, game, id)
       elseif ranAi then
         -- Decision tick: time-based wander / chase / flee planning.
-        local event = runBehavior(aiDt)
-        handleEvent(event)
+        local event = runEntityBehavior(self, reuseCtx, ow, game, logic,
+          occupancy, cfg, safariActive, entity, aiDt, record)
+        handleEntityEvent(self, event, entity, record, logic, ow, game, id)
       end
 
       if logic.render and logic.render.syncEntityAnimation then
@@ -679,6 +768,8 @@ end
 -- Keep a ~AI_STEP floor so world.stepped cannot double-run decisions when
 -- present already advanced _lastT this frame.
 function BehaviorTick:stepFromWorld(ctx)
+  -- Recover if the present pipeline was wiped while settings were open.
+  self:ensurePipeline()
   local t = now()
   if (t - (self._lastT or 0)) < (BehaviorTick.AI_STEP * 0.9) then
     return

@@ -409,6 +409,24 @@ end
 
 local Thor = loadThor()
 eq(Thor.API_VERSION, 1, "presenter API version is stable")
+local BattleStage = assert(loadfile(sourceRoot .. "/lib/BattleStage.lua"),
+  "missing BattleStage.lua")()
+eq(BattleStage.API_VERSION, 3,
+  "Battle Stage v3 publishes split-presentation control")
+local stageSplit = false
+local stageApi = BattleStage.export({
+  ANCHOR = { player = { 26, 96 }, enemy = { 124, 56 } },
+  battle = function() return {} end,
+  splitPresentation = function() return stageSplit end,
+  setSplitPresentation = function(on) stageSplit = on == true return true end,
+})
+eq(stageApi.setSplitPresentation(true), true,
+  "Battle Stage accepts a physical split request")
+eq(stageSplit, true, "Battle Stage forwards the split request to renderer state")
+eq(stageApi.state().splitPresentation, true,
+  "Battle Stage state reports the active split")
+eq(stageApi.setSplitPresentation(false), true,
+  "Battle Stage restores ordinary single-screen composition")
 eq(Thor.OUTPUT_WIDTH, 400, "logical lower width is transport-sized")
 eq(Thor.OUTPUT_HEIGHT, 360, "logical lower height is transport-sized")
 near(Thor.OUTPUT_WIDTH / Thor.OUTPUT_HEIGHT, 10 / 9,
@@ -511,6 +529,56 @@ eq(status.controllerOnly, true, "public status records controller-only policy")
 eq(status.touchPolling, false, "public status records no touch translation")
 eq(status.outputPolicy, "logical_10_9_integer_scaled",
   "public status explains device-neutral output policy")
+
+-- Battle Stage v3 is armed before Thor publishes a physical frame. The first
+-- compose arrived after the engine already rendered uiCanvas, so it falls
+-- through once; the next frame is guaranteed to have omitted combat pictures
+-- and move OAM from the lower canvas while the exported effect stays upstairs.
+local splitFixture = makeFixture()
+local splitBattle = {}
+local splitEffect = splitFixture.graphics.external(160, 144, "split-effect")
+local splitCalls = {}
+-- The shipped package is one fused Loader entry: Battle Stage is exported by
+-- Scott's Tweaks itself and Loader.find cannot resolve its historical
+-- standalone Battle Art id. This fixture intentionally has no such handle.
+splitFixture.mod.exports.battleStage = {
+    apiVersion = 3,
+    state = function()
+      return { battle = splitBattle, staged = true, ready = true }
+    end,
+    animationSurface = function(expected)
+      if expected ~= splitBattle then return nil end
+      return { canvas = splitEffect, lx = 80, ly = 24, scale = 3,
+        pw = 800, ph = 480 }
+    end,
+    setSplitPresentation = function(on)
+      splitCalls[#splitCalls + 1] = on == true
+      return true
+    end,
+}
+eq(splitFixture.handles.BATTLE_ART_VOXEL_FORK, nil,
+  "consolidated split fixture has no standalone Battle Art handle")
+installFixture(splitFixture, loadThor())
+local splitCtx = splitFixture.context("live")
+eq(splitFixture.frame(splitCtx).handled, false,
+  "v3 split request warms one engine draw before physical takeover")
+eq(#splitFixture.bridge.pushes, 0,
+  "pre-split uiCanvas is never pushed to the lower display")
+eq(#splitCalls, 1, "split presenter makes one initial stage request")
+eq(splitCalls[1], true, "initial stage request enables UI-only battle drawing")
+eq(splitFixture.frame(splitCtx).handled, true,
+  "v3 presenter takes over after the clean battle layer is ready")
+eq(#splitFixture.bridge.pushes, 1,
+  "first physical lower frame is the post-request UI canvas")
+check(findDraw(splitFixture.graphics.screenDraws, splitEffect) ~= nil,
+  "v3 move surface remains projected on the upper arena")
+eq(splitFixture.controller.status().battleSplit, true,
+  "status reports the active Battle Stage split contract")
+splitFixture.mod.options.values.dual_screen = false
+splitFixture.events:emit("mod.options_changed",
+  { mod = splitFixture.mod.id, key = "dual_screen", value = false })
+eq(splitCalls[#splitCalls], false,
+  "disabling Thor restores ordinary single-screen battle layers")
 
 local classic = makeFixture()
 installFixture(classic, loadThor())
@@ -830,7 +898,7 @@ local function realLoaderRegression(engineRoot)
   local files = {
     [prefix .. "manifest.json"] = [[{
       "id":"voxel_run_bridge","name":"Scott's Tweaks Thor Loader Test",
-      "version":"0.12.0","api":2,"entry":"main.lua",
+      "version":"0.12.1","api":2,"entry":"main.lua",
       "profile":"content","priority":200,"dependencies":[],
       "optional_dependencies":[],"conflicts":[],"games":["gen1"],
       "permissions":[]
@@ -839,6 +907,25 @@ local function realLoaderRegression(engineRoot)
       mod.options:define({
         { key = "dual_screen", type = "toggle", default = true },
       })
+      local battle = {}
+      local effect = love.graphics.newCanvas(160, 144, { dpiscale = 1 })
+      local splitCalls = {}
+      mod.exports.testBattleSplitCalls = splitCalls
+      mod.exports.battleStage = {
+        apiVersion = 3,
+        state = function()
+          return { battle = battle, staged = true, ready = true }
+        end,
+        animationSurface = function(expected)
+          if expected ~= battle then return nil end
+          return { canvas = effect, lx = 80, ly = 24, scale = 3,
+            pw = 800, ph = 480 }
+        end,
+        setSplitPresentation = function(on)
+          splitCalls[#splitCalls + 1] = on == true
+          return true
+        end,
+      }
       local source = assert(mod:read("modules/thor_dual_screen.lua"))
       local chunk = assert(load(source, "@voxel_run_bridge/thor_dual_screen.lua"))
       local Thor = chunk()
@@ -895,8 +982,15 @@ local function realLoaderRegression(engineRoot)
   end
 
   local run1 = loadEntry()
+  local run1Exports = run1.loader.exports.voxel_run_bridge
+  eq(draw(run1.loader, ctx("live")), false,
+    "real Loader own export warms the pre-split battle frame")
+  eq(run1Exports.testBattleSplitCalls[1], true,
+    "real Loader resolves its own Battle Stage export without mod.find")
+  eq(#loaderBridge.pushes, 0,
+    "real Loader never pushes the pre-split lower battle canvas")
   eq(draw(run1.loader, ctx("live")), true,
-    "real Loader entry 1 owns physical frame")
+    "real Loader entry 1 owns the clean physical frame after warm-up")
   eq(#loaderBridge.enables, 1, "real Loader entry 1 enables once")
   eq(#loaderBridge.pushes, 1, "real Loader entry 1 pushes once")
   local run1Top = loaderGraphics.screenDraws[1].source
@@ -904,8 +998,15 @@ local function realLoaderRegression(engineRoot)
 
   local run2 = loadEntry()
   loaderClock.value = 1
+  eq(draw(run2.loader, ctx("menu")), false,
+    "real Loader entry 2 warms its refreshed split contract after F5")
+  eq(run1Exports.testBattleSplitCalls[2], false,
+    "real Loader F5 retires the prior split request")
+  local run2Exports = run2.loader.exports.voxel_run_bridge
+  eq(run2Exports.testBattleSplitCalls[1], true,
+    "real Loader F5 arms the new own-export split contract")
   eq(draw(run2.loader, ctx("menu")), true,
-    "real Loader entry 2 survives mid-menu F5")
+    "real Loader entry 2 survives mid-menu F5 after warm-up")
   eq(#loaderBridge.enables, 1,
     "real Loader F5 preserves one native enable request")
   eq(#loaderBridge.pushes, 2, "real Loader F5 pushes exactly once")
@@ -935,6 +1036,8 @@ local function realLoaderRegression(engineRoot)
   run2.loader.hooks:call("core.quit_to_launcher", function() end)
   eq(loaderBridge.enables[#loaderBridge.enables], false,
     "real Loader current quit disables exactly once")
+  eq(run2Exports.testBattleSplitCalls[#run2Exports.testBattleSplitCalls], false,
+    "real Loader current quit restores ordinary battle layers")
   eq(run1Top.released, 1, "real Loader adopted top releases at current quit")
   local run2Lower = loaderBridge.pushes[2].source
   eq(run2Lower.released, 1, "real Loader current lower releases at quit")

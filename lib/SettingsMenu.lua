@@ -103,24 +103,70 @@ local function optionValue(row)
   return row.default
 end
 
+local function snapshotBucket(root)
+  if type(root) ~= "table" then return nil end
+  local all = rawget(root, "modOptions")
+  local original = type(all) == "table" and rawget(all, mod.id) or nil
+  local snapshot = {
+    root = root,
+    all = all,
+    allWasTable = type(all) == "table",
+    original = original,
+    bucketWasTable = type(original) == "table",
+    values = {},
+  }
+  if snapshot.bucketWasTable then
+    for key, value in pairs(original) do snapshot.values[key] = value end
+  end
+  return snapshot
+end
+
+local function restoreBucket(snapshot)
+  if not snapshot then return end
+  if not snapshot.allWasTable then
+    snapshot.root.modOptions = snapshot.all
+    return
+  end
+  local all = snapshot.all
+  snapshot.root.modOptions = all
+  if snapshot.bucketWasTable then
+    local original = snapshot.original
+    for key in pairs(original) do original[key] = nil end
+    for key, value in pairs(snapshot.values) do original[key] = value end
+    all[mod.id] = original
+  else
+    all[mod.id] = snapshot.original
+  end
+end
+
 local function writeOption(game, row, value)
   if not (game and game.save and type(game.save.options) == "table") then
     return false
   end
   local options = game.save.options
+  local savedSnapshot = snapshotBucket(options)
+  local loader = game.mods
+  local liveSnapshot = snapshotBucket(loader)
   options.modOptions = options.modOptions or {}
   options.modOptions[mod.id] = options.modOptions[mod.id] or {}
   options.modOptions[mod.id][row.key] = value
 
-  local loader = game.mods
   if loader then
     loader.modOptions = loader.modOptions or {}
     loader.modOptions[mod.id] = loader.modOptions[mod.id] or {}
     loader.modOptions[mod.id][row.key] = value
   end
-  if game.writeOptions then pcall(game.writeOptions, game) end
+  if game.writeOptions then
+    local ok, result, detail = pcall(game.writeOptions, game)
+    if not ok or result == false then
+      restoreBucket(liveSnapshot)
+      restoreBucket(savedSnapshot)
+      return false, not ok and tostring(result)
+        or tostring(detail or "game.writeOptions returned false")
+    end
+  end
   if loader and loader.events then
-    loader.events:emit("mod.options_changed",
+    pcall(loader.events.emit, loader.events, "mod.options_changed",
       { mod = mod.id, key = row.key, value = value })
   end
   return true

@@ -472,17 +472,23 @@ function Config.peekSavedOption(mod, key)
   local game = world and world.game
   local roots = optionRoots(game)
   local _, _, hosted = optionStorage(mod)
-  -- Preserve source precedence: the authoritative save wins over a stale live
-  -- Loader mirror. Within each source, canonical wins over the early fused
-  -- build's stray standalone-style vendor bucket.
+  -- Canonical storage wins ACROSS every mirror before legacy storage is even
+  -- considered. The first fused builds left an `overworld_wild_spawns` bucket
+  -- in options.lua; after consolidation the live Loader correctly held
+  -- `voxel_run_bridge["overworld_wild_spawns:<key>"]`. Scanning legacy in the
+  -- save before canonical in the Loader made MOD SETTINGS display VISIBLE
+  -- while runtime still read the old CLASSIC/HIDDEN values on upgraded Thor
+  -- installs. Save still wins when both canonical mirrors contain a value.
   for i = 1, #roots do
     local b = optionBucket(mod, roots[i], false)
     if type(b) == "table" and b[key] ~= nil then
       return b[key], true
     end
-    -- Upgrade bridge: read the stray address only when this source has no
-    -- canonical value; the next migration/setter writes the host address.
-    if hosted then
+  end
+  -- Upgrade bridge: consult the stray address only if no canonical mirror has
+  -- the key at all. The next migration/setter writes the host address.
+  if hosted then
+    for i = 1, #roots do
       local legacy = roots[i][mod.id]
       if type(legacy) == "table" and legacy[key] ~= nil then
         return legacy[key], true
@@ -606,46 +612,120 @@ end
 -- Gen1Recomp exposes mod.options:define / :get only — there is NO
 -- mod.options:set on the public mod API (see Loader._api). Mod Manager
 -- writes through ManagerState:setOption → loader.modOptions + emit
--- mod.options_changed. In-game menus must mirror that bucket write.
+-- mod.options_changed. In-game menus must mirror that bucket write. Keep both
+-- single- and multi-key writes on one transaction path so a failed disk write
+-- cannot leave the live Loader cache ahead of the persisted save.
+local writeStandaloneOptionsTransaction
+local writeOptionsTransaction
+
 local function writeOptionBucket(mod, game, key, value)
-  if not (mod and mod.id) then return false end
-  -- Scott's Tweaks' vendor proxy owns the persistence/event contract. Calling
-  -- it here keeps every programmatic Wilds path (menus, FOLLOW/DISMISS, public
-  -- setters) synchronized with MOD SETTINGS' namespaced readOption().
-  if mod.options and type(mod.options.write) == "function" then
-    local ok, wrote = pcall(mod.options.write, mod.options, game, key, value)
-    return ok and wrote == true
+  return writeOptionsTransaction(mod, game, {
+    { key = key, value = value },
+  })
+end
+
+-- Standalone Wilds has no host facade, but the combined export can still be
+-- called by companion code. Preserve the same all-or-nothing contract there:
+-- update every save/Loader mirror, persist once, and restore the prior bucket
+-- identity and contents if the engine rejects the write.
+writeStandaloneOptionsTransaction = function(mod, game, changes)
+  if not (mod and type(mod.id) == "string" and type(game) == "table") then
+    return false, "standalone transaction requires mod and game"
   end
-  local function write(bucket)
-    local options = optionBucket(mod, bucket, true)
-    if not options then return false end
-    options[key] = value
-    return true
+  game.save = game.save or {}
+  game.save.options = game.save.options or {}
+
+  local holders, holderSeen = {}, {}
+  local function addHolder(holder)
+    if type(holder) ~= "table" or holderSeen[holder] then return end
+    holderSeen[holder] = true
+    holders[#holders + 1] = { holder = holder, value = holder.modOptions }
   end
-  local wrote = false
-  if game and game.save then
-    game.save.options = game.save.options or {}
-    game.save.options.modOptions = game.save.options.modOptions or {}
-    if write(game.save.options.modOptions) then wrote = true end
-  end
-  if game and game.mods then
-    -- loader.modOptions is what mod.options:get reads.
-    game.mods.modOptions = game.mods.modOptions or {}
-    if write(game.mods.modOptions) then wrote = true end
-    if game.mods.loader then
-      game.mods.loader.modOptions = game.mods.loader.modOptions or {}
-      if write(game.mods.loader.modOptions) then wrote = true end
+  addHolder(game.save.options)
+  addHolder(game.mods)
+  addHolder(game.mods and game.mods.loader)
+
+  local roots, rootSeen = {}, {}
+  for _, holderSnapshot in ipairs(holders) do
+    local holder = holderSnapshot.holder
+    if type(holder.modOptions) ~= "table" then holder.modOptions = {} end
+    if not rootSeen[holder.modOptions] then
+      rootSeen[holder.modOptions] = true
+      roots[#roots + 1] = holder.modOptions
     end
   end
-  if game and type(game.writeOptions) == "function" then
-    pcall(game.writeOptions, game)
+
+  local snapshots = {}
+  for _, root in ipairs(roots) do
+    local bucket = root[mod.id]
+    local snapshot = {
+      root = root,
+      wasTable = type(bucket) == "table",
+      raw = bucket,
+      ref = type(bucket) == "table" and bucket or nil,
+      values = {},
+    }
+    if snapshot.wasTable then
+      for key, value in pairs(bucket) do snapshot.values[key] = value end
+    end
+    snapshots[#snapshots + 1] = snapshot
+    if type(bucket) ~= "table" then
+      bucket = {}
+      root[mod.id] = bucket
+    end
+    for _, change in ipairs(changes or {}) do
+      bucket[tostring(change.key)] = change.value
+    end
   end
-  -- Optional: some forks may expose options:set. Prefer bucket write above.
-  if mod and mod.options and type(mod.options.set) == "function" then
-    local ok = pcall(function() mod.options:set(key, value) end)
-    if ok then wrote = true end
+
+  local function rollback()
+    for _, snapshot in ipairs(snapshots) do
+      if snapshot.wasTable then
+        for key in pairs(snapshot.ref) do snapshot.ref[key] = nil end
+        for key, value in pairs(snapshot.values) do
+          snapshot.ref[key] = value
+        end
+        snapshot.root[mod.id] = snapshot.ref
+      else
+        snapshot.root[mod.id] = snapshot.raw
+      end
+    end
+    for _, holderSnapshot in ipairs(holders) do
+      if type(holderSnapshot.value) ~= "table" then
+        holderSnapshot.holder.modOptions = holderSnapshot.value
+      end
+    end
   end
-  return wrote
+
+  if type(game.writeOptions) == "function" then
+    local ok, result, detail = pcall(game.writeOptions, game)
+    if not ok or result == false then
+      rollback()
+      return false, not ok and tostring(result)
+        or tostring(detail or "game.writeOptions returned false")
+    end
+  end
+  return true
+end
+
+writeOptionsTransaction = function(mod, game, changes, transaction)
+  if not (mod and type(mod.id) == "string") then
+    return false, "option transaction requires mod"
+  end
+  -- Scott's Tweaks' vendor proxy owns the persistence/rollback contract. The
+  -- proxy deliberately emits no engine events; the public setter invokes one
+  -- logical live callback only after persistence succeeds.
+  if mod.options and type(mod.options.writeMany) == "function" then
+    local ok, result, detail = pcall(mod.options.writeMany,
+      mod.options, game, changes, transaction or {})
+    if ok and result == true then return true end
+    return false, tostring(ok and (detail or "option persistence failed") or result)
+  end
+  local _, _, hosted = optionStorage(mod)
+  if hosted then
+    return false, "hosted atomic option writer unavailable"
+  end
+  return writeStandaloneOptionsTransaction(mod, game, changes)
 end
 
 local function resolveGame(mod, opts)
@@ -660,13 +740,46 @@ end
 -- invokes a shared onChanged callback (main.lua handleOptionsChanged).
 -- Does NOT emit engine event `mod.options_changed` (mods cannot forge it).
 -- opts: { game=, onChanged=, source= }
+function Config.setOptions(mod, changes, source, opts)
+  opts = opts or {}
+  if not (mod and type(changes) == "table" and #changes > 0) then
+    return false, "invalid setOptions args"
+  end
+  for _, change in ipairs(changes) do
+    if type(change) ~= "table" or type(change.key) ~= "string"
+       or change.key == "" then
+      return false, "invalid setOptions change"
+    end
+  end
+  local game = resolveGame(mod, opts)
+  local wrote, writeError = writeOptionsTransaction(
+    mod, game, changes, opts.transaction)
+  if not wrote then
+    return false, tostring(writeError or "option persistence failed")
+  end
+  local payload = {
+    mod = mod.id,
+    key = opts.key or "options",
+    changes = changes,
+    source = source or opts.source or "config_set_options",
+    game = game,
+  }
+  if type(opts.onChanged) == "function" then
+    pcall(opts.onChanged, payload)
+  end
+  return true, payload
+end
+
 function Config.setOption(mod, key, value, source, opts)
   opts = opts or {}
   if not (mod and type(key) == "string" and key ~= "") then
     return false, "invalid setOption args"
   end
   local game = resolveGame(mod, opts)
-  local wrote = writeOptionBucket(mod, game, key, value)
+  local wrote, writeError = writeOptionBucket(mod, game, key, value)
+  if not wrote then
+    return false, tostring(writeError or "option persistence failed")
+  end
   local payload = {
     mod = mod.id,
     key = key,
@@ -677,7 +790,7 @@ function Config.setOption(mod, key, value, source, opts)
   if type(opts.onChanged) == "function" then
     pcall(opts.onChanged, payload)
   end
-  return wrote, payload
+  return true, payload
 end
 
 -- Test / internal access to the bucket writer.
@@ -703,7 +816,10 @@ function Config.setSpriteStyle(mod, value, source, opts)
   end
 
   local game = resolveGame(mod, opts)
-  writeOptionBucket(mod, game, "sprite_style", value)
+  local wrote, writeError = writeOptionBucket(mod, game, "sprite_style", value)
+  if not wrote then
+    return false, tostring(writeError or "sprite_style persistence failed")
+  end
 
   local render = opts.render
   local logic = opts.logic
@@ -791,6 +907,25 @@ function Config.randomEncountersEnabled(mod)
   end
   if Config.DEFAULTS.random_encounters == false then return false end
   return true
+end
+
+Config.ENCOUNTER_MODES = {
+  visible = { enabled = true,  random_encounters = false, enable_hidden = false },
+  both    = { enabled = true,  random_encounters = true,  enable_hidden = false },
+  classic = { enabled = false, random_encounters = true,  enable_hidden = false },
+  off     = { enabled = false, random_encounters = false, enable_hidden = false },
+}
+
+-- Combined player-facing state used by Scott's Tweaks. A hidden-marker choice
+-- is intentionally CUSTOM because it cannot honestly be called VISIBLE.
+function Config.encounterMode(mod)
+  if Config.get(mod, "enable_hidden") == true then return "custom" end
+  local visible = Config.isEnabled(mod)
+  local classic = Config.randomEncountersEnabled(mod)
+  if visible and classic then return "both" end
+  if visible then return "visible" end
+  if classic then return "classic" end
+  return "off"
 end
 
 function Config.migrateRandomEncountersOption(mod)
@@ -961,7 +1096,10 @@ function Config.setSpawnAmount(mod, value, source, opts)
   end
 
   local game = resolveGame(mod, opts)
-  writeOptionBucket(mod, game, "spawn_density", value)
+  local wrote, writeError = writeOptionBucket(mod, game, "spawn_density", value)
+  if not wrote then
+    return false, tostring(writeError or "spawn_density persistence failed")
+  end
 
   local logic = opts.logic
   if not logic and mod and mod.exports then
@@ -1002,9 +1140,15 @@ function Config.setRandomEncounters(mod, value, source, opts)
   end
 
   local game = resolveGame(mod, opts)
-  writeOptionBucket(mod, game, "random_encounters", on)
-  -- Clear obsolete choice so readers never prefer it over the toggle.
-  writeOptionBucket(mod, game, "grass_encounters", nil)
+  -- Clear the obsolete choice in the same persistence transaction so readers
+  -- can never observe it ahead of (or behind) the canonical toggle.
+  local wrote, writeError = writeOptionsTransaction(mod, game, {
+    { key = "random_encounters", value = on },
+    { key = "grass_encounters", value = nil },
+  })
+  if not wrote then
+    return false, tostring(writeError or "random_encounters persistence failed")
+  end
 
   local logic = opts.logic
   if not logic and mod and mod.exports then
@@ -1031,6 +1175,74 @@ function Config.setRandomEncounters(mod, value, source, opts)
   return true, on
 end
 
+-- Transactional Scott's Tweaks shortcut. The three gameplay switches are one
+-- user decision, so hosted builds persist them in one options.lua rewrite and
+-- invoke one live callback. Standalone Wilds has no combined row, but the
+-- exported shortcut preserves the same one-write/rollback contract there.
+-- opts: { game=, logic=, onChanged=, confirm=, message= }
+function Config.setEncounterMode(mod, value, source, opts)
+  opts = opts or {}
+  local mode = type(value) == "string" and value:lower() or value
+  local wanted = Config.ENCOUNTER_MODES[mode]
+  if not wanted then
+    return false, "invalid encounter_mode: " .. tostring(value)
+  end
+
+  local game = resolveGame(mod, opts)
+  local changes = {
+    { key = "enable_hidden", value = wanted.enable_hidden },
+    { key = "random_encounters", value = wanted.random_encounters },
+    { key = "enabled", value = wanted.enabled },
+    { key = "grass_encounters", value = nil },
+  }
+  -- The host snapshots canonical and legacy buckets, applies both the new
+  -- values and alias deletions, then persists once. If persistence fails it
+  -- restores every save/Loader mirror before returning here.
+  local wrote, writeError = writeOptionsTransaction(mod, game, changes, {
+    legacyKeys = {
+      "enabled", "random_encounters", "enable_hidden", "grass_encounters",
+    },
+  })
+
+  -- Never announce or apply a mode that did not reach persistent storage. In
+  -- the hosted build writeMany has already rolled all mirrors back, so config
+  -- readers and the current map continue using the pre-transaction state.
+  if not wrote then
+    return false, tostring(writeError or "encounter mode persistence failed")
+  end
+
+  local payload = {
+    mod = mod and mod.id,
+    key = "encounter_mode",
+    value = mode,
+    mode = mode,
+    enabled = wanted.enabled,
+    random_encounters = wanted.random_encounters,
+    enable_hidden = wanted.enable_hidden,
+    source = source or opts.source or "config_set_encounter_mode",
+    game = game,
+  }
+  if type(opts.onChanged) == "function" then
+    pcall(opts.onChanged, payload)
+  elseif opts.logic and type(opts.logic.onOptionsChanged) == "function" then
+    pcall(opts.logic.onOptionsChanged, opts.logic, payload)
+  end
+
+  local confirmMsg = opts.message
+  if not confirmMsg and opts.confirm ~= false then
+    confirmMsg = "ENCOUNTERS: " .. tostring(mode):upper()
+  end
+  confirmText(game, mod, confirmMsg)
+
+  if source and mod and mod.log and type(mod.log.info) == "function" then
+    pcall(mod.log.info, mod.log,
+      "encounter_mode set to %s via %s (enabled=%s random=%s hidden=%s)",
+      tostring(mode), tostring(source), tostring(wanted.enabled),
+      tostring(wanted.random_encounters), tostring(wanted.enable_hidden))
+  end
+  return true, mode, payload
+end
+
 function Config.setWaterMons(mod, value, source, opts)
   opts = opts or {}
   local mode = coerceWaterMode(value)
@@ -1042,8 +1254,13 @@ function Config.setWaterMons(mod, value, source, opts)
   local spawnOn = (mode == "swimming_sprites"
     or mode == "hidden_silhouettes"
     or mode == "silhouettes")
-  writeOptionBucket(mod, game, "water_spawns", mode)
-  writeOptionBucket(mod, game, "enable_water_spawns", spawnOn)
+  local wrote, writeError = writeOptionsTransaction(mod, game, {
+    { key = "water_spawns", value = mode },
+    { key = "enable_water_spawns", value = spawnOn },
+  })
+  if not wrote then
+    return false, tostring(writeError or "water_spawns persistence failed")
+  end
 
   local logic = opts.logic
   if not logic and mod and mod.exports then
@@ -1158,7 +1375,10 @@ function Config.setCaveSpawnMode(mod, value, source, opts)
     return false, "invalid cave_spawns: " .. tostring(value)
   end
   local game = resolveGame(mod, opts)
-  writeOptionBucket(mod, game, "cave_spawns", mode)
+  local wrote, writeError = writeOptionBucket(mod, game, "cave_spawns", mode)
+  if not wrote then
+    return false, tostring(writeError or "cave_spawns persistence failed")
+  end
 
   local logic = opts.logic
   if not logic and mod and mod.exports then
@@ -1310,8 +1530,13 @@ function Config.setSpriteFade(mod, value, source, opts)
   local game = resolveGame(mod, opts)
   local alpha = (mode == "faded")
     and (tonumber(Config.DEFAULTS.sprite_fade_alpha) or 0.72) or 1.0
-  writeOptionBucket(mod, game, "sprite_fade", mode)
-  writeOptionBucket(mod, game, "sprite_opacity", alpha)
+  local wrote, writeError = writeOptionsTransaction(mod, game, {
+    { key = "sprite_fade", value = mode },
+    { key = "sprite_opacity", value = alpha },
+  })
+  if not wrote then
+    return false, tostring(writeError or "sprite_fade persistence failed")
+  end
 
   local logic = opts.logic
   if not logic and mod and mod.exports then
@@ -1462,7 +1687,10 @@ end
 function Config.setSpriteColor(mod, value, source, opts)
   opts = opts or {}
   local game = resolveGame(mod, opts)
-  writeOptionBucket(mod, game, "sprite_color", "colored")
+  local wrote, writeError = writeOptionBucket(mod, game, "sprite_color", "colored")
+  if not wrote then
+    return false, tostring(writeError or "sprite_color persistence failed")
+  end
 
   local render = opts.render
   local logic = opts.logic
@@ -1517,7 +1745,10 @@ function Config.setTownPokemon(mod, value, source, opts)
     end
   end
   local game = resolveGame(mod, opts)
-  writeOptionBucket(mod, game, "town_pokemon", on)
+  local wrote, writeError = writeOptionBucket(mod, game, "town_pokemon", on)
+  if not wrote then
+    return false, tostring(writeError or "town_pokemon persistence failed")
+  end
 
   local ambient = opts.ambient
   if not ambient and mod and mod.exports then
@@ -1550,7 +1781,10 @@ function Config.setIndoorPokemon(mod, value, source, opts)
   local on = (value == true or value == "on" or value == "ON")
   if value == false or value == "off" or value == "OFF" then on = false end
   local game = resolveGame(mod, opts)
-  writeOptionBucket(mod, game, "indoor_pokemon", on)
+  local wrote, writeError = writeOptionBucket(mod, game, "indoor_pokemon", on)
+  if not wrote then
+    return false, tostring(writeError or "indoor_pokemon persistence failed")
+  end
   local ambient = opts.ambient
   if not ambient and mod and mod.exports then
     ambient = mod.exports.ambient

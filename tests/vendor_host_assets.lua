@@ -126,6 +126,23 @@ local iconsEntry = entry("unique_menu_icons")
 local wild = host:handleFor(wildEntry)
 local icons = host:handleFor(iconsEntry)
 
+eq(host:_find("BATTLE_ART_VOXEL_FORK"), nil,
+  "renderer alias is absent before the fused renderer installs")
+hostMod.exports.fusedRenderer = {
+  installed = false, reason = "external_voxel",
+}
+hostMod.exports.lib = { require = function() return {} end }
+eq(host:_find("BATTLE_ART_VOXEL_FORK"), nil,
+  "renderer alias is absent when the fused renderer stands down")
+hostMod.exports.fusedRenderer = { installed = true }
+hostMod.exports.lib = {}
+eq(host:_find("BATTLE_ART_VOXEL_FORK"), nil,
+  "renderer alias requires the fused module loader capability")
+hostMod.exports.lib.require = function() return {} end
+local fusedRendererHandle = host:_find("BATTLE_ART_VOXEL_FORK")
+eq(fusedRendererHandle and fusedRendererHandle.exports, hostMod.exports,
+  "installed renderer alias resolves the host root exports")
+
 eq(wild.path, HOST_ROOT .. "/vendor/wilds", "vendor mod.path is rooted")
 eq(wild:read("main.lua"), fileBodies["vendor/wilds/main.lua"],
   "vendor read reaches its own file")
@@ -232,6 +249,114 @@ eq(optionGame.mods.loader.modOptions.voxel_run_bridge[
 eq(optionWrites, 1, "hosted writer persists once")
 eq(#emitted, 0,
   "vendor Config writer leaves live notification to its direct callback")
+
+canonical["overworld_wild_spawns:grass_encounters"] = "both"
+optionGame.mods.modOptions.voxel_run_bridge[
+  "overworld_wild_spawns:grass_encounters"] = "both"
+optionGame.mods.loader.modOptions.voxel_run_bridge[
+  "overworld_wild_spawns:grass_encounters"] = "both"
+eq(wild.options:writeMany(optionGame, {
+  { key = "enable_hidden", value = false },
+  { key = "random_encounters", value = false },
+  { key = "enabled", value = true },
+  { key = "grass_encounters", value = nil },
+}), true, "hosted multi-writer accepts an atomic encounter snapshot")
+eq(canonical["overworld_wild_spawns:enable_hidden"], false,
+  "multi-writer stores hidden OFF")
+eq(canonical["overworld_wild_spawns:random_encounters"], false,
+  "multi-writer stores random encounters OFF")
+eq(canonical["overworld_wild_spawns:enabled"], true,
+  "multi-writer stores visible encounters ON")
+for _, bucket in ipairs({
+  canonical,
+  optionGame.mods.modOptions.voxel_run_bridge,
+  optionGame.mods.loader.modOptions.voxel_run_bridge,
+}) do
+  eq(bucket["overworld_wild_spawns:grass_encounters"], nil,
+    "multi-writer removes an obsolete key in every mirror")
+end
+eq(optionWrites, 2, "multi-writer adds exactly one persisted transaction")
+eq(#emitted, 0, "multi-writer leaves one live callback to vendor Config")
+
+-- A failed options.lua write must restore the exact save/direct/nested Loader
+-- state, including legacy aliases scheduled for deletion. Config will only
+-- announce Encounter Mode after this writer returns true.
+local roots = {
+  optionGame.save.options.modOptions,
+  optionGame.mods.modOptions,
+  optionGame.mods.loader.modOptions,
+}
+for _, root in ipairs(roots) do
+  root.voxel_run_bridge["overworld_wild_spawns:enabled"] = false
+  root.voxel_run_bridge["overworld_wild_spawns:random_encounters"] = true
+  root.voxel_run_bridge["overworld_wild_spawns:enable_hidden"] = true
+  root.overworld_wild_spawns = {
+    enabled = false,
+    random_encounters = true,
+    enable_hidden = true,
+    grass_encounters = "both",
+    unrelated = "keep",
+  }
+end
+local oldWriteOptions = optionGame.writeOptions
+local failedWrites = 0
+optionGame.writeOptions = function()
+  failedWrites = failedWrites + 1
+  error("simulated storage failure")
+end
+local failed, failureReason = wild.options:writeMany(optionGame, {
+  { key = "enable_hidden", value = false },
+  { key = "random_encounters", value = false },
+  { key = "enabled", value = true },
+  { key = "grass_encounters", value = nil },
+}, {
+  legacyKeys = {
+    "enabled", "random_encounters", "enable_hidden", "grass_encounters",
+  },
+})
+eq(failed, false, "failed multi-write propagates persistence failure")
+check(type(failureReason) == "string"
+    and failureReason:find("simulated storage failure", 1, true) ~= nil,
+  "failed multi-write returns the storage error")
+eq(failedWrites, 1, "failed multi-write attempts persistence exactly once")
+for _, root in ipairs(roots) do
+  eq(root.voxel_run_bridge["overworld_wild_spawns:enabled"], false,
+    "rollback restores canonical enabled in every mirror")
+  eq(root.voxel_run_bridge["overworld_wild_spawns:random_encounters"], true,
+    "rollback restores canonical random mode in every mirror")
+  eq(root.voxel_run_bridge["overworld_wild_spawns:enable_hidden"], true,
+    "rollback restores canonical hidden mode in every mirror")
+  eq(root.overworld_wild_spawns.enabled, false,
+    "rollback retains legacy enabled in every mirror")
+  eq(root.overworld_wild_spawns.random_encounters, true,
+    "rollback retains legacy random mode in every mirror")
+  eq(root.overworld_wild_spawns.enable_hidden, true,
+    "rollback retains legacy hidden mode in every mirror")
+  eq(root.overworld_wild_spawns.grass_encounters, "both",
+    "rollback retains legacy grass mode in every mirror")
+  eq(root.overworld_wild_spawns.unrelated, "keep",
+    "rollback retains unrelated legacy data in every mirror")
+end
+optionGame.writeOptions = function()
+  failedWrites = failedWrites + 1
+  return false, "storage rejected write"
+end
+local rejected, rejectedReason = wild.options:writeMany(optionGame, {
+  { key = "enabled", value = true },
+}, { legacyKeys = { "enabled" } })
+eq(rejected, false, "explicit false persistence result propagates")
+check(type(rejectedReason) == "string"
+    and rejectedReason:find("storage rejected write", 1, true) ~= nil,
+  "explicit false persistence result retains its detail")
+eq(failedWrites, 2,
+  "throwing and false-returning failures each attempt one transaction")
+for _, root in ipairs(roots) do
+  eq(root.voxel_run_bridge["overworld_wild_spawns:enabled"], false,
+    "false-result rollback restores canonical enabled")
+  eq(root.overworld_wild_spawns.enabled, false,
+    "false-result rollback retains the legacy alias")
+end
+optionGame.writeOptions = oldWriteOptions
 
 -- The unified menu calls VendorHost directly and still announces both ids.
 eq(host:writeOption(optionGame, "overworld_wild_spawns",

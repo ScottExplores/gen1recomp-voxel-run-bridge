@@ -12,3 +12,4 @@ dist/ export-ignore
 .gitignore export-ignore
 .modkitignore export-ignore
 .github/ export-ignore
+vendor/dynamic_scaling/main.lua.bak export-ignore

@@ -53,8 +53,11 @@ function OptionScreen:update(_)
       or input:wasPressed("a") then
     local row = self.rows[self.index]
     local pressedA = input:wasPressed("a")
-    if row and row.activate then
-      if pressedA then row.activate(self.game) end
+    -- A row may support both A activation and left/right stepping (the root
+    -- BASIC/ALL row does). Do not let the mere presence of `activate` swallow
+    -- arrow input; choose the action that matches the button actually pressed.
+    if row and pressedA and row.activate then
+      row.activate(self.game)
     elseif row and row.step then
       local direction = input:wasPressed("left") and -1 or 1
       row.step(self.game, direction)

@@ -1,5 +1,62 @@
 # Changelog
 
+## 0.12.1 - 2026-08-20
+
+- **Restored the complete settings surface.** Left/Right and A now switch
+  **OPTIONS SHOWN** between BASIC and ALL through the real in-game input path.
+  ALL again exposes every first-person/camera control, every Battle Art source
+  selector, Crystal's provider options, and the detailed advanced rows without
+  changing values merely because they are hidden in BASIC. Crystal's
+  **ANIMATIONS** choice is retained, and **CLASSIC POCKETS** stays editable
+  even while PACK temporarily owns the active pocket presentation.
+- **Made organized settings transactional.** Scott, Battle Art, Wilds, and
+  cross-provider Crystal ownership rows now change save/live state only after
+  one successful device write. A rejected Android write restores table
+  identity, cached values, and legacy mirrors without a false confirmation or
+  partial sprite-owner profile.
+- **Added independent Pokémon orientation controls.** Player front, player
+  back, and opponent cards can each retain authored direction or be mirrored;
+  trainer portraits are never flipped by these rows.
+- **Fixed Crystal white seams after a reload.** Crystal now refreshes its
+  authored-transparency predicate by provider ID, so transparent gaps between
+  arms and other sprite details do not get reconstructed as white paper after
+  F5 or a provider refresh.
+- **Fixed Thor staged-battle duplication.** Battle Stage v3 gives the physical
+  dual-screen presenter a UI-only lower canvas: wording and HUD stay below,
+  while Pokémon, trainers, and move-effect sprites appear only in the upper
+  arena. Hot unplug, replug, disable, and reload restore normal composition.
+- **Made visible Wild encounters authoritative and live.** Encounter Mode is
+  now one persisted transaction that clears conflicting legacy standalone
+  values, installs the correct classic-encounter hooks, and rebuilds the
+  current map once. Choosing VISIBLE suppresses classic grass rolls and keeps
+  hidden, sprite-less markers off.
+- **Fixed logical-only grass Pokémon.** Wilds reasserts its AI pipeline after
+  settings apply, completes delayed spawn effects, and reconciles revealed
+  entities into the actual Gen 1 draw list. Selected Wilds 2.1.8 runtime fixes
+  for live behavior and follower map seams are backported onto the bundled
+  2.1.7 baseline; unrelated catching art/HUD changes are not claimed.
+- **Fixed bundled Free Fly ownership.** FREE FLY NOW now controls the hosted
+  namespaced badge option as its label promises, and flying mounts/followers
+  can borrow the bundled Wilds provider's exact species art without a separate
+  Wilds Loader entry. FLY COCKPIT now recognizes the bundled Free Fly 1.8.0
+  HUD contract instead of silently standing aside.
+- **Hardened follower map handoffs.** Gen 1 lifecycle reloads now fail closed
+  instead of retaining stale follower objects. Gen 2 connection rows resolve
+  through their id-only neighbor shape, translate live goals, and rebind the
+  destination map id so a later world rebuild cannot drop the follower.
+- **Made handheld sprite canvases pixel-accurate.** Wild and follower card
+  canvases use `dpiscale=1` plus nearest sampling, preventing Android/AYN DPI
+  scaling from enlarging, blurring, or corrupting nominal 16×16 art. Removed
+  two legacy UTF-8 byte-order marks so the same renderer files also load under
+  the supported plain Lua 5.1 runtime.
+- **Recalibrated run bob.** The historical raw 0.25 effect is now labeled 1X,
+  gentler values are available below it, and new installs default to 0.5X.
+  Existing saved raw values retain their exact motion strength.
+- **Reduced handheld render churn.** Wild behavior ticking now reuses its
+  per-frame context and calls handlers without allocating closures for every
+  visible Pokemon. Stable battle HUD rendering likewise caches its two quads
+  until the source texture or band geometry changes.
+
 ## 0.12.0 - 2026-08-19
 
 - **Fixed missing Pokemon art in consolidated installs, especially on AYN

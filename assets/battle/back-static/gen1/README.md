@@ -13,7 +13,7 @@ slugs used across the battle-art folders (`bulbasaur.png`, `mr-mime.png`,
 `farfetchd.png`, etc.).
 
 They are used as the default `BACK ART: GEN 1` static back set, and as the
-back fallback when `DUPLICATE FIX: MODDED` is selected and no shiny override is present.
+back fallback when `POKEMON SOURCE: MODDED` is selected and no shiny override is present.
 
 ## Licensing / provenance
 

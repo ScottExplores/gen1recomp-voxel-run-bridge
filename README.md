@@ -1,7 +1,8 @@
 # Scott's Tweaks
 
-**0.12.0 is the single-package Scott's Tweaks release.** The 3D voxel Kanto
-renderer, visible wild Pokemon, followers, animated battle sprites, menu
+**0.12.1 is the handheld/runtime repair for the single Scott's Tweaks
+package.** The 3D voxel Kanto renderer, visible wild Pokemon, followers,
+animated battle sprites, menu
 icons, Free Fly integration, and Scott's gameplay tweaks are bundled so one
 launcher update carries the full set. Separately installed copies are no
 longer required; when one is present, the standalone copy remains the owner
@@ -12,7 +13,7 @@ is broader, but its internal mod ID remains `voxel_run_bridge`. Existing
 installations therefore update in place, keep their settings, and do not
 become a duplicate mod.
 
-Version 0.12.0 keeps the existing updater identity and provides one categorized
+Version 0.12.1 keeps the existing updater identity and provides one categorized
 **START > MOD MENUS > MOD SETTINGS** home for all of its settings. Its
 features are:
 
@@ -69,6 +70,17 @@ movement, and menu/device categories. **OPTIONS SHOWN: BASIC / ALL** keeps the
 normal screen short without changing any hidden value. The in-game Mod Manager
 opens this same menu, and its schema uses the same saved values.
 
+BASIC keeps the everyday choices compact. ALL restores the complete camera,
+renderer, Battle Art source, Crystal provider, and Pokemon orientation controls.
+The player-front, player-back, and opponent battle cards have independent flip
+choices; changing one never mirrors a trainer portrait or another card.
+
+Under **WILD & FOLLOWERS**, **ENCOUNTER MODE: VISIBLE** means visible overworld
+Pokemon on, classic step-based random battles off, and sprite-less hidden
+markers off. Selecting it also replaces conflicting settings from an older
+standalone Wilds install and rebuilds the current map once, so the label and
+the live grass encounters cannot silently disagree.
+
 `MENU ICONS` is built while the mod loads. Changing that row saves the new
 choice for the next restart; this keeps icon art and its true-color rendering
 in sync with the engine's frozen content registry.
@@ -107,7 +119,7 @@ other Scott's Tweaks feature remains active.
 
 ## Bag pockets and shop counts
 
-The default-on **CLASSIC BAG POCKETS** option presents the Gen 1 bag as four
+The default-on **CLASSIC POCKETS** option presents the Gen 1 bag as four
 tabs in Gold's order: **ITEMS**, **BALLS**, **KEY ITEMS**, and **TM/HM**. Press
 D-pad Left or Right inside the bag to change tabs. SELECT still reorders items,
 and the order is written back by item identity so filtering never corrupts the
@@ -116,9 +128,11 @@ real bag order.
 This is a view over the existing inventory, not a larger replacement bag.
 Saving, item quantities, the Gen 1 slot limit, battle item use, selling, and
 other mods' items remain owned by Gen1Recomp. Unknown custom items stay
-visible under ITEMS. With **PACK + POKéGEAR** off, turn **CLASSIC BAG POCKETS**
+visible under ITEMS. With **PACK + POKéGEAR** off, turn **CLASSIC POCKETS**
 off to use the original one-list bag. PACK keeps this Red-inventory pocket
-projection active without overwriting the saved classic preference.
+projection active without overwriting the saved classic preference. The
+Classic Bag row stays editable while PACK is on, so it can preset the view
+that returns when PACK is later disabled.
 
 When BUY is open at a mart, its title includes **BAG:N** for the currently
 highlighted item. The count updates after a purchase and does not alter shop
@@ -185,7 +199,7 @@ special canopy scenery so it does not flatten places that are supposed to be
 enclosed or water-covered.
 
 The renderer is selected by its stable mod ID and then checked for the required
-capabilities rather than trusted by display name alone. Version 0.12.0 targets
+capabilities rather than trusted by display name alone. Version 0.12.1 targets
 Pokemon Final, the verified Dramatic Shape 1.8.0-1.8.2 renderer contract, and
 Battle Art Voxel Fork's published renderer modules.
 If an active voxel provider does not expose the required renderer modules,
@@ -202,7 +216,9 @@ Free Fly performs its own badge check outside Gen1Recomp's normal HM hook.
 Scott's Tweaks detects Free Fly's real option schema and public flight-state
 export, then holds its live **BADGE CHECKS** answer off while **FREE FLY NOW**
 is enabled. It defaults to enabled, so there is no second setting to find.
-This badge adapter is tested with Free Fly 1.5.0 and the current 1.6.2 release.
+Scott's Tweaks already bundles Free Fly 1.8.0, so no separate Free Fly download
+is required. The badge adapter is also compatible with supported standalone
+Free Fly installs when a player deliberately keeps one as the owner.
 
 This does not add a badge, teach a move, or alter the save. Free Fly still
 decides which Pokemon can carry the player and keeps its FLY eligibility,
@@ -213,22 +229,19 @@ option, so both badge checks are relaxed while **FREE FLY NOW** is on.
 Turn **FREE FLY NOW** off in Scott's Tweaks to return control to Free Fly's
 own saved **BADGE CHECKS** preference. Its exact previous value is restored.
 
-For Pokemon Final, update Free Fly itself to **1.6.1 or newer** (1.6.2 is the
-current verified release). Free Fly 1.6.1 changed its voxel-provider lookup
-from the original Dramatic Shape ID
-to capability detection, so its first- and third-person flight support also
-finds Pokemon Final. Scott's Tweaks supports the badge toggle in both the
-older 1.5.0 package and the current line, but it does not copy or replace Free
-Fly's flight renderer.
+The bundled 1.8.0 build uses capability detection, so its first- and
+third-person flight support also finds Pokemon Final. If a standalone Free Fly
+copy is intentionally enabled, it remains the owner; use 1.6.1 or newer for
+Pokemon Final compatibility.
 
-Free Fly 1.6.2 also draws a separate mount picture at the bottom of its
-first-person HUD. Scott's Tweaks exposes that presentation choice as **FLY
+Free Fly draws a separate mount picture at the bottom of its first-person HUD.
+Scott's Tweaks exposes that presentation choice as **FLY
 COCKPIT**. It defaults to **OFF** for a clear view. Turn it **ON** to restore
 Free Fly's original cockpit picture. The adapter runs only during the HUD
 pass and only while Free Fly's public state says flight is active, so the
 world-space mount remains visible in third person and all flight rules remain
-owned by Free Fly. Later Free Fly versions are left untouched until their HUD
-contract is verified or they publish a native cockpit setting.
+owned by Free Fly. The adapter covers the verified 1.6.2 and bundled 1.8.0 HUD
+contracts; unknown standalone versions stand aside safely.
 
 ## Pokemon Final cache result compatibility
 
@@ -260,11 +273,15 @@ the renderer's temporary speed constant after every tick, including errors.
 advances from actual distance traveled rather than a timer, touches only a
 per-frame camera proxy, and never mutates player height or collision. It
 defaults on at the intentionally subtle **0.5X** intensity. Turn it off for a
-completely steady first-person run.
+completely steady first-person run. The historical raw 0.25 strength is shown
+as **1X**; 0.25X, 0.4X, 0.5X, 0.6X, and 0.75X choices provide gentler motion.
 
-### Do you need the run bridge?
+### Do you need a separate run bridge?
 
-- **Pokemon Final:** yes. Scott's Tweaks recognizes Pokemon Final's stable ID
+No. The bridge is part of Scott's Tweaks; do not download Voxel Run Bridge as
+a second mod. The cases below only explain when the built-in bridge is active:
+
+- **Pokemon Final:** the built-in bridge recognizes Pokemon Final's stable ID
   and carries its built-in run into the 1ST/3RD camera movement.
 - **A standalone `running_shoes` mod:** that mod remains the sole running
   owner. Scott's internal producer and bob stand aside, and the corresponding
@@ -307,7 +324,7 @@ when the corresponding new value was never explicitly stored:
 - Oak's one-time claimed marker;
 - the distinctive 0.x Running Shoes enabled/speed/view-bob settings, or
   Scott Mod's run preferences; and
-- old `gen1recomp_ds.enabled` into **THOR SECOND SCREEN**.
+- old `gen1recomp_ds.enabled` into **THOR 2ND SCREEN**.
 
 The import records one per-feature marker table in `voxel_run_bridge` save
 data. It never deletes or edits an old mod namespace, and repeating the
@@ -318,12 +335,17 @@ being stranded.
 
 ## Physical Thor second screen
 
-**THOR SECOND SCREEN** is the one on/off authority for Scott's original
+**THOR 2ND SCREEN** is the one on/off authority for Scott's original
 physical-AYN-Thor presenter. It routes supported menu surfaces only when a
 real lower display is attached. On a normal PC, handheld with one display, or
 missing second display, the game remains a normal single-screen layout. It
 does not merge or redistribute the private upstream-derived Dual Screen or
 Battle Art implementations.
+
+During staged battles, the lower panel keeps wording, menus, and HUD chrome.
+Pokemon cards, trainer cards, and move-effect sprites stay in the upper arena
+instead of being duplicated below. Disabling the option or unplugging the
+second display immediately restores the ordinary single-screen composition.
 
 If the older `gen1recomp_ds` mod is still enabled, its presenter remains the
 owner and this row reads **OTHER MOD** without accepting edits. Disable that
@@ -334,14 +356,14 @@ Scott's Tweaks choice was already saved.
 ## Install or update
 
 If Voxel Run Bridge or any earlier Scott's Tweaks release is installed, open
-Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.12.0
+Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.12.1
 update. It will appear as **Scott's Tweaks** afterward without creating a
 second entry.
 
 For a first installation:
 
 1. Open **MODS -> Import mod .zip** and choose
-   `voxel_run_bridge-0.12.0.zip`.
+   `voxel_run_bridge-0.12.1.zip`.
 2. Enable **Scott's Tweaks**, then restart the game if the manager asks.
 3. Open **START > MOD MENUS > MOD SETTINGS**. Classic bag pockets, trainer
    features, Oak's starter, B running, light run bob, gapped land, badge-free
@@ -349,7 +371,7 @@ For a first installation:
    Classic random battles and hidden encounter markers default off. EXP
    defaults to Vanilla; Fly Cockpit, Thor Second Screen, and Pack + Pokegear
    default off; run speed defaults to 1.5X and bob to 0.5X.
-4. Update Free Fly to **1.6.1 or newer** and enable it for free-roaming flight.
+4. Use the bundled Free Fly for free-roaming flight; no separate mod is needed.
 5. For 1ST/3RD running, enable one supported voxel provider; no separate
    running mod is required.
 6. To use PACK and POKéGEAR, open **START > MOD MENUS > MOD SETTINGS >
@@ -413,17 +435,17 @@ Use the `dev` branch of
 ```powershell
 python tools/modkit.py validate C:\path\to\voxel_run_bridge --strict --base fixture
 python tools/modkit.py lint C:\path\to\voxel_run_bridge
-python tools/modkit.py pack C:\path\to\voxel_run_bridge -o C:\path\to\dist\voxel_run_bridge-0.12.0.zip --base fixture
+python tools/modkit.py pack C:\path\to\voxel_run_bridge -o C:\path\to\dist\voxel_run_bridge-0.12.1.zip --base fixture
 ```
 
 The archive keeps `manifest.json`, `main.lua`, `LICENSE`, notices, and the
 `modules/` directory at its root. Gen1Recomp's importer mounts those paths
 unchanged; development tests and unrelated workspace files are excluded.
 
-Version 0.12.0 is configured for Gen1Recomp's built-in GitHub update checks via
+Version 0.12.1 is configured for Gen1Recomp's built-in GitHub update checks via
 `ScottExplores/gen1recomp-voxel-run-bridge`.
 
-The download is deliberately named `voxel_run_bridge-0.12.0.zip` so the
+The download is deliberately named `voxel_run_bridge-0.12.1.zip` so the
 launcher selects it first from the matching GitHub release. Its internal ID
 remains `voxel_run_bridge`, so existing installs and saved settings update in
 place rather than appearing as a second mod.

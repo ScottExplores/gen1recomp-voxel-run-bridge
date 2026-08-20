@@ -230,6 +230,26 @@ end
 
 local sourceCache = {}
 
+-- The engine exports table only contains real Loader ids. Scott's Tweaks
+-- keeps bundled providers behind VendorHost.loaded, so resolve that narrow
+-- capability shape after the ordinary standalone lookup. This preserves a
+-- separately installed provider as first choice and avoids publishing fake
+-- historical ids into Game.mods.exports.
+function Sky.spriteSourceExports(game, modId)
+  local exportsById = game and game.mods and game.mods.exports
+  local direct = exportsById and exportsById[modId]
+  if type(direct) == "table" then return direct, "loader" end
+  for _, rootExports in pairs(exportsById or {}) do
+    local host = type(rootExports) == "table" and rootExports.vendorHost or nil
+    local loaded = type(host) == "table" and host.loaded or nil
+    local handle = type(loaded) == "table" and loaded[modId] or nil
+    if type(handle) == "table" and type(handle.exports) == "table" then
+      return handle.exports, "vendor_host"
+    end
+  end
+  return nil, "unavailable"
+end
+
 -- PMD-style directional sheets: 8 rows of frames, one row per facing,
 -- rotating clockwise from facing the camera (the SpriteCollab layout).
 -- A source def opts in with directions = 8; diagonal facings land on
@@ -517,10 +537,9 @@ end
 local function borrowedSprite(data, species, dex, seedPrefix)
   local okG, Game = pcall(require, "src.core.Game")
   Game = okG and Game or nil
-  local exportsById = Game and Game.mods and Game.mods.exports or nil
   local canon
   for _, source in ipairs(Sky.SPRITE_SOURCES) do
-    local exports = source.mod and exportsById and exportsById[source.mod]
+    local exports = source.mod and Sky.spriteSourceExports(Game, source.mod)
       or nil
     if source.dexKeyed then
       if canon == nil then canon = Sky.canonicalDex(data) end
