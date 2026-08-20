@@ -175,9 +175,9 @@ T.eq(run.mod and run.mod.manifest.id, "voxel_run_bridge",
   "stable updater identity is retained")
 T.eq(run.mod and run.mod.manifest.name, "Scott's Tweaks",
   "new display name is loaded")
-T.eq(run.mod and run.mod.manifest.version, "0.11.0",
-  "loader selected version 0.11.0")
--- 0.11.0 bundles All Pokemon Catchable 151 and Dynamic Scaling, which repatch
+T.eq(run.mod and run.mod.manifest.version, "0.12.0",
+  "loader selected version 0.12.0")
+-- The consolidated build bundles All Pokemon Catchable 151 and Dynamic Scaling, which repatch
 -- encounter tables and pokemon records. The loader warns when a mod writes to
 -- pokemon while claiming otherwise, and a link partner must know, so the flag
 -- is now honestly true.
@@ -199,6 +199,7 @@ local schema = run.loader.optionSchemas.voxel_run_bridge or {}
 local schemaByKey = {}
 for _, row in ipairs(schema) do schemaByKey[row.key] = row end
 for key, expected in pairs({
+  simple_menu = true,
   trainer_forfeit_enabled = true,
   trainer_rematches = true,
   trainer_adaptive_dialogue = true,
@@ -341,14 +342,42 @@ local function buildScreen(id, ...)
 end
 local menuApi = run.loader.exports.voxel_run_bridge.tweaksMenu
 local tweaksMain = buildScreen(menuApi.screenIds.main)
-T.eq(#(tweaksMain.rows or {}), 6,
-  "Scott's Tweaks opens as six organized categories")
+T.eq(#(tweaksMain.rows or {}), 8,
+  "MOD SETTINGS opens as seven categories plus one visibility control")
+local expectedCategories = {
+  "VIEW & CAMERA", "WORLD & WEATHER", "POKEMON ART", "BATTLES",
+  "WILD & FOLLOWERS", "MOVEMENT", "MENUS & DEVICE",
+}
+for i, label in ipairs(expectedCategories) do
+  T.eq(tweaksMain.rows[i] and tweaksMain.rows[i].label, label,
+    "unified category " .. i .. " is concise and stable")
+end
+local optionsShown = tweaksMain.rows[8]
+T.eq(optionsShown and optionsShown.label, "OPTIONS SHOWN",
+  "the single visibility control is named plainly")
+T.eq(optionsShown and optionsShown.value(), "BASIC",
+  "new installs show the BASIC settings set")
+T.check(type(tweaksMain.footer) == "string"
+    and tweaksMain.footer:find("MOD SETTINGS", 1, true) ~= nil,
+  "screen footer keeps the current menu title visible")
+
+-- Inspect ALL so coverage includes advanced settings without changing any of
+-- their values. The root visibility row itself is part of the canonical
+-- schema and is collected from the root below.
+run.loader.modOptions.voxel_run_bridge =
+  run.loader.modOptions.voxel_run_bridge or {}
+run.loader.modOptions.voxel_run_bridge.simple_menu = false
 local organized = {}
-for _, id in pairs({
-  menuApi.screenIds.inventory, menuApi.screenIds.trainers,
-  menuApi.screenIds.movement, menuApi.screenIds.field,
-  menuApi.screenIds.display,
-  menuApi.screenIds.gen2,
+for _, row in ipairs(tweaksMain.rows or {}) do
+  local key = type(row.id) == "string"
+    and row.id:match("^voxel_run_bridge:(.+)$") or nil
+  if key then organized[key] = row end
+end
+for _, id in ipairs({
+  menuApi.screenIds.graphics, menuApi.screenIds.world,
+  menuApi.screenIds.sprites, menuApi.screenIds.battles,
+  menuApi.screenIds.wilds, menuApi.screenIds.movement,
+  menuApi.screenIds.system,
 }) do
   local child = buildScreen(id)
   for _, row in ipairs(child.rows or {}) do
@@ -365,6 +394,7 @@ for key in pairs(organized) do
 end
 T.eq(organizedCount, #schema,
   "categorized screens retain every Mod Manager setting")
+run.loader.modOptions.voxel_run_bridge.simple_menu = true
 T.eq(organized.gen2_menus.value(), "OFF",
   "built-in PACK + Pokegear needs no external import")
 run.loader.modOptions.voxel_run_bridge =
@@ -476,11 +506,15 @@ local startRows = run.loader.hooks:call("ui.start_menu.items",
     { id = "vanilla.party", label = "POKEMON" },
     { id = "vanilla.mods", label = "MODS" },
   })
-local startCount = 0
+local startCount, battleArtCount = 0, 0
 for _, row in ipairs(startRows) do
-  if row.id == "scotts_tweaks.open" then startCount = startCount + 1 end
+  if row.id == "scotts_tweaks.open" and row.label == "MOD SETTINGS" then
+    startCount = startCount + 1
+  end
+  if row.label == "BATTLE ART" then battleArtCount = battleArtCount + 1 end
 end
-T.eq(startCount, 1, "Start exposes exactly one Scott's Tweaks entry")
+T.eq(startCount, 1, "Start exposes exactly one MOD SETTINGS entry")
+T.eq(battleArtCount, 0, "Start exposes no competing Battle Art entry")
 
 local bagScreen = buildScreen("BagMenu", {})
 T.eq(bagScreen.title, "< ITEMS >",
@@ -655,7 +689,7 @@ T.check(type(pokemonFinalExports) == "table",
   "Pokemon Final test-double exports are published")
 T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.owner, "voxel_run_bridge",
   "Pokemon Final FreeMove receives Scott's bridge marker")
-T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.11.0",
+T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.12.0",
   "Pokemon Final bridge marker carries the update version")
 T.eq(type(exported.hmWithoutBadges), "function",
   "live HM option accessor is published")

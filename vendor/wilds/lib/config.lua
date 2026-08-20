@@ -90,10 +90,12 @@ Config.DEFAULTS = {
   enable_idle = true,
   enable_wander = true,
   enable_aggressive = true,
-  enable_hidden = true,
+  -- New installs should never enter a sprite-less battle unexpectedly. Saved
+  -- values still win through peekSavedOption/mod.options below.
+  enable_hidden = false,
   -- Classic step-based random encounters (grass / cave / water).
   -- Public label "Random Enc"; independent of visible overworld spawns.
-  random_encounters = true,
+  random_encounters = false,
   aggressive_frequency = 1.0,
   aggressive_sight_range = 4,
   aggressive_reaction_delay = 0.55,
@@ -198,6 +200,57 @@ function Config.get(mod, key)
   return v
 end
 
+-- A standalone Wilds install stores [mod.id][key]. Scott's Tweaks supplies
+-- explicit proxy metadata and stores the same logical value in its canonical
+-- host bucket as [hostId][vendorId .. ":" .. key]. Keep that distinction in
+-- one place so migrations, raw-value probes, and menu writes cannot drift.
+local function optionStorage(mod)
+  local hosted = mod and mod.options and mod.options.hosted
+  if type(hosted) == "table"
+      and type(hosted.hostId) == "string"
+      and type(hosted.prefix) == "string" then
+    return hosted.hostId, hosted.prefix, true
+  end
+  return mod and mod.id, "", false
+end
+
+local function optionBucket(mod, root, create)
+  if type(root) ~= "table" then return nil end
+  local hostId, prefix = optionStorage(mod)
+  if type(hostId) ~= "string" then return nil end
+  if create and type(root[hostId]) ~= "table" then root[hostId] = {} end
+  local physical = root[hostId]
+  if type(physical) ~= "table" then return nil end
+  if prefix == "" then return physical end
+  -- Lua 5.1 invokes __newindex even for nil assignments because this facade
+  -- stays empty, so obsolete-key cleanup is namespaced too.
+  return setmetatable({}, {
+    __index = function(_, key) return physical[prefix .. tostring(key)] end,
+    __newindex = function(_, key, value)
+      physical[prefix .. tostring(key)] = value
+    end,
+  })
+end
+
+local function optionRoots(game)
+  local out = {}
+  local function add(root)
+    if type(root) ~= "table" then return end
+    for _, existing in ipairs(out) do
+      if existing == root then return end
+    end
+    out[#out + 1] = root
+  end
+  if game and game.save and game.save.options then
+    add(game.save.options.modOptions)
+  end
+  if game and game.mods then
+    add(game.mods.modOptions)
+    add(game.mods.loader and game.mods.loader.modOptions)
+  end
+  return out
+end
+
 function Config.isEnabled(mod)
   return Config.get(mod, "enabled") == true
 end
@@ -258,16 +311,16 @@ function Config.devOverlay(mod)
   if present then
     return raw == true
   end
-  if mod and mod.options and type(mod.options.get) == "function" then
-    local v = mod.options:get("dev_overlay")
-    if v ~= nil then return v == true end
-  end
   -- One-shot legacy: general debug / Dev Mode ON → Dev Overlay ON.
   local legacyDebug, legacyPresent = Config.peekSavedOption(mod, "debug")
   if legacyPresent and legacyDebug == true then return true end
   local legacyDev, legacyDevPresent = Config.peekSavedOption(mod, "dev_mode")
   if legacyDevPresent and legacyDev == true then return true end
   if mod and mod.options and type(mod.options.get) == "function" then
+    -- Only consult the new schema default after raw legacy storage; otherwise
+    -- default false masks a saved dev_mode=true before it can migrate.
+    local v = mod.options:get("dev_overlay")
+    if v ~= nil then return v == true end
     if mod.options:get("dev_mode") == true then return true end
   end
   return Config.DEFAULTS.dev_overlay == true
@@ -307,24 +360,24 @@ end
 function Config.migrateDevOverlayOption(mod)
   local on = Config.devOverlay(mod)
   local function write(bucket)
-    if type(bucket) ~= "table" then return end
-    bucket[mod.id] = bucket[mod.id] or {}
-    if bucket[mod.id].dev_overlay == nil then
-      bucket[mod.id].dev_overlay = on
+    local options = optionBucket(mod, bucket, true)
+    if not options then return end
+    if options.dev_overlay == nil then
+      options.dev_overlay = on
     end
     -- Drop obsolete public developer keys (ignore on load; no crash).
-    bucket[mod.id].dev_mode = nil
-    bucket[mod.id].debug_hud_always_visible = nil
-    bucket[mod.id].show_spawn_tile_overlay = nil
-    bucket[mod.id].show_behavior_overlays = nil
-    bucket[mod.id].allow_debug_spawn_outside_encounter_areas = nil
-    bucket[mod.id].debug_logging = nil
-    bucket[mod.id].force_test_spawn = nil
-    bucket[mod.id].preview_filter = nil
-    bucket[mod.id].preview_search = nil
-    bucket[mod.id].preview_map_filter = nil
-    bucket[mod.id].preview_encounter_kind = nil
-    bucket[mod.id].debug = nil
+    options.dev_mode = nil
+    options.debug_hud_always_visible = nil
+    options.show_spawn_tile_overlay = nil
+    options.show_behavior_overlays = nil
+    options.allow_debug_spawn_outside_encounter_areas = nil
+    options.debug_logging = nil
+    options.force_test_spawn = nil
+    options.preview_filter = nil
+    options.preview_search = nil
+    options.preview_map_filter = nil
+    options.preview_encounter_kind = nil
+    options.debug = nil
   end
   local world = mod.world
   local game = world and world.game
@@ -333,8 +386,10 @@ function Config.migrateDevOverlayOption(mod)
     write(game.save.options.modOptions)
   end
   if game and game.mods then
-    if game.mods.modOptions then write(game.mods.modOptions) end
-    if game.mods.loader and game.mods.loader.modOptions then
+    game.mods.modOptions = game.mods.modOptions or {}
+    write(game.mods.modOptions)
+    if game.mods.loader then
+      game.mods.loader.modOptions = game.mods.loader.modOptions or {}
       write(game.mods.loader.modOptions)
     end
   end
@@ -413,25 +468,25 @@ end
 
 function Config.peekSavedOption(mod, key)
   if not mod then return nil, false end
-  local buckets = {}
   local world = mod.world
   local game = world and world.game
-  if game and game.save and game.save.options and game.save.options.modOptions then
-    buckets[#buckets + 1] = game.save.options.modOptions[mod.id]
-  end
-  if game and game.mods then
-    if game.mods.modOptions then
-      buckets[#buckets + 1] = game.mods.modOptions[mod.id]
-    end
-    if game.mods.loader and game.mods.loader.modOptions then
-      buckets[#buckets + 1] = game.mods.loader.modOptions[mod.id]
-    end
-  end
-  -- Unit-test / harness path: options table may expose raw values via get only.
-  for i = 1, #buckets do
-    local b = buckets[i]
+  local roots = optionRoots(game)
+  local _, _, hosted = optionStorage(mod)
+  -- Preserve source precedence: the authoritative save wins over a stale live
+  -- Loader mirror. Within each source, canonical wins over the early fused
+  -- build's stray standalone-style vendor bucket.
+  for i = 1, #roots do
+    local b = optionBucket(mod, roots[i], false)
     if type(b) == "table" and b[key] ~= nil then
       return b[key], true
+    end
+    -- Upgrade bridge: read the stray address only when this source has no
+    -- canonical value; the next migration/setter writes the host address.
+    if hosted then
+      local legacy = roots[i][mod.id]
+      if type(legacy) == "table" and legacy[key] ~= nil then
+        return legacy[key], true
+      end
     end
   end
   return nil, false
@@ -518,12 +573,12 @@ end
 function Config.migrateSpriteStyleOption(mod)
   local style = Config.spriteStyle(mod)
   local function write(bucket)
-    if type(bucket) ~= "table" then return end
-    bucket[mod.id] = bucket[mod.id] or {}
-    local current = bucket[mod.id].sprite_style
+    local options = optionBucket(mod, bucket, true)
+    if not options then return end
+    local current = options.sprite_style
     -- Persist the normalized public value whenever missing or legacy.
     if current == nil or Config.normalizeSpriteStyle(current) ~= current then
-      bucket[mod.id].sprite_style = style
+      options.sprite_style = style
     end
   end
   local world = mod.world
@@ -533,8 +588,10 @@ function Config.migrateSpriteStyleOption(mod)
     write(game.save.options.modOptions)
   end
   if game and game.mods then
-    if game.mods.modOptions then write(game.mods.modOptions) end
-    if game.mods.loader and game.mods.loader.modOptions then
+    game.mods.modOptions = game.mods.modOptions or {}
+    write(game.mods.modOptions)
+    if game.mods.loader then
+      game.mods.loader.modOptions = game.mods.loader.modOptions or {}
       write(game.mods.loader.modOptions)
     end
   end
@@ -552,10 +609,17 @@ end
 -- mod.options_changed. In-game menus must mirror that bucket write.
 local function writeOptionBucket(mod, game, key, value)
   if not (mod and mod.id) then return false end
+  -- Scott's Tweaks' vendor proxy owns the persistence/event contract. Calling
+  -- it here keeps every programmatic Wilds path (menus, FOLLOW/DISMISS, public
+  -- setters) synchronized with MOD SETTINGS' namespaced readOption().
+  if mod.options and type(mod.options.write) == "function" then
+    local ok, wrote = pcall(mod.options.write, mod.options, game, key, value)
+    return ok and wrote == true
+  end
   local function write(bucket)
-    if type(bucket) ~= "table" then return false end
-    bucket[mod.id] = bucket[mod.id] or {}
-    bucket[mod.id][key] = value
+    local options = optionBucket(mod, bucket, true)
+    if not options then return false end
+    options[key] = value
     return true
   end
   local wrote = false
@@ -732,15 +796,15 @@ end
 function Config.migrateRandomEncountersOption(mod)
   local on = Config.randomEncountersEnabled(mod)
   local function write(bucket)
-    if type(bucket) ~= "table" then return end
-    bucket[mod.id] = bucket[mod.id] or {}
-    if bucket[mod.id].random_encounters == nil then
-      bucket[mod.id].random_encounters = on
+    local options = optionBucket(mod, bucket, true)
+    if not options then return end
+    if options.random_encounters == nil then
+      options.random_encounters = on
     end
     -- Drop obsolete choice key once migrated.
-    bucket[mod.id].grass_encounters = nil
-    if bucket[mod.id].water_spawns == nil then
-      bucket[mod.id].water_spawns = Config.waterDisplayMode(mod)
+    options.grass_encounters = nil
+    if options.water_spawns == nil then
+      options.water_spawns = Config.waterDisplayMode(mod)
     end
   end
   local world = mod.world
@@ -750,8 +814,10 @@ function Config.migrateRandomEncountersOption(mod)
     write(game.save.options.modOptions)
   end
   if game and game.mods then
-    if game.mods.modOptions then write(game.mods.modOptions) end
-    if game.mods.loader and game.mods.loader.modOptions then
+    game.mods.modOptions = game.mods.modOptions or {}
+    write(game.mods.modOptions)
+    if game.mods.loader then
+      game.mods.loader.modOptions = game.mods.loader.modOptions or {}
       write(game.mods.loader.modOptions)
     end
   end
@@ -801,6 +867,11 @@ function Config.waterDisplayMode(mod)
     local mode = coerceWaterMode(raw)
     if mode then return mode end
   end
+  local legacyRaw, legacyPresent =
+    Config.peekSavedOption(mod, "enable_water_spawns")
+  if legacyPresent then
+    return coerceWaterMode(legacyRaw) or "swimming_sprites"
+  end
   if mod and mod.options and type(mod.options.get) == "function" then
     local v = mod.options:get("water_spawns")
     local mode = coerceWaterMode(v)
@@ -817,14 +888,14 @@ end
 function Config.migrateWaterDisplayMode(mod)
   local mode = Config.waterDisplayMode(mod)
   local function write(bucket)
-    if type(bucket) ~= "table" then return end
-    bucket[mod.id] = bucket[mod.id] or {}
-    local cur = bucket[mod.id].water_spawns
+    local options = optionBucket(mod, bucket, true)
+    if not options then return end
+    local cur = options.water_spawns
     if cur == true or cur == false or cur == nil
        or (type(cur) == "string" and not VALID_WATER_MODES[cur]) then
-      bucket[mod.id].water_spawns = mode
+      options.water_spawns = mode
     end
-    bucket[mod.id].enable_water_spawns = (mode == "swimming_sprites"
+    options.enable_water_spawns = (mode == "swimming_sprites"
       or mode == "hidden_silhouettes"
       or mode == "silhouettes")
   end
@@ -835,8 +906,10 @@ function Config.migrateWaterDisplayMode(mod)
     write(game.save.options.modOptions)
   end
   if game and game.mods then
-    if game.mods.modOptions then write(game.mods.modOptions) end
-    if game.mods.loader and game.mods.loader.modOptions then
+    game.mods.modOptions = game.mods.modOptions or {}
+    write(game.mods.modOptions)
+    if game.mods.loader then
+      game.mods.loader.modOptions = game.mods.loader.modOptions or {}
       write(game.mods.loader.modOptions)
     end
   end
@@ -1054,11 +1127,11 @@ end
 function Config.migrateCaveSpawnMode(mod)
   local mode = Config.caveSpawnMode(mod)
   local function write(bucket)
-    if type(bucket) ~= "table" then return end
-    bucket[mod.id] = bucket[mod.id] or {}
-    local cur = bucket[mod.id].cave_spawns
+    local options = optionBucket(mod, bucket, true)
+    if not options then return end
+    local cur = options.cave_spawns
     if cur == nil or not VALID_CAVE_MODES[cur] then
-      bucket[mod.id].cave_spawns = mode
+      options.cave_spawns = mode
     end
   end
   local world = mod.world
@@ -1068,8 +1141,10 @@ function Config.migrateCaveSpawnMode(mod)
     write(game.save.options.modOptions)
   end
   if game and game.mods then
-    if game.mods.modOptions then write(game.mods.modOptions) end
-    if game.mods.loader and game.mods.loader.modOptions then
+    game.mods.modOptions = game.mods.modOptions or {}
+    write(game.mods.modOptions)
+    if game.mods.loader then
+      game.mods.loader.modOptions = game.mods.loader.modOptions or {}
       write(game.mods.loader.modOptions)
     end
   end
@@ -1169,11 +1244,6 @@ function Config.spriteFade(mod)
     local mode = coerceSpriteFade(raw)
     if mode then return mode end
   end
-  if mod and mod.options and type(mod.options.get) == "function" then
-    local v = mod.options:get("sprite_fade")
-    local mode = coerceSpriteFade(v)
-    if mode then return mode end
-  end
   -- Legacy numeric sprite_opacity (pre-1.0.0 public option).
   local legacy, legPresent = Config.peekSavedOption(mod, "sprite_opacity")
   if legPresent then
@@ -1181,9 +1251,13 @@ function Config.spriteFade(mod)
     if mode then return mode end
   end
   if mod and mod.options and type(mod.options.get) == "function" then
-    local legacyOpt = mod.options:get("sprite_opacity")
-    local mode = coerceSpriteFade(legacyOpt)
+    -- A schema-default SOLID must not mask an explicitly saved legacy alpha.
+    local v = mod.options:get("sprite_fade")
+    local mode = coerceSpriteFade(v)
     if mode then return mode end
+    local legacyOpt = mod.options:get("sprite_opacity")
+    local legacyMode = coerceSpriteFade(legacyOpt)
+    if legacyMode then return legacyMode end
   end
   return coerceSpriteFade(Config.DEFAULTS.sprite_fade) or "solid"
 end
@@ -1198,15 +1272,15 @@ end
 function Config.migrateSpriteFadeOption(mod)
   local mode = Config.spriteFade(mod)
   local function write(bucket)
-    if type(bucket) ~= "table" then return end
-    bucket[mod.id] = bucket[mod.id] or {}
-    if bucket[mod.id].sprite_fade == nil
-       or not VALID_SPRITE_FADE[bucket[mod.id].sprite_fade] then
-      bucket[mod.id].sprite_fade = mode
+    local options = optionBucket(mod, bucket, true)
+    if not options then return end
+    if options.sprite_fade == nil
+       or not VALID_SPRITE_FADE[options.sprite_fade] then
+      options.sprite_fade = mode
     end
     -- Keep legacy numeric in sync for old readers; do not delete.
-    if bucket[mod.id].sprite_opacity == nil then
-      bucket[mod.id].sprite_opacity = (mode == "faded")
+    if options.sprite_opacity == nil then
+      options.sprite_opacity = (mode == "faded")
         and (tonumber(Config.DEFAULTS.sprite_fade_alpha) or 0.72) or 1.0
     end
   end
@@ -1217,8 +1291,10 @@ function Config.migrateSpriteFadeOption(mod)
     write(game.save.options.modOptions)
   end
   if game and game.mods then
-    if game.mods.modOptions then write(game.mods.modOptions) end
-    if game.mods.loader and game.mods.loader.modOptions then
+    game.mods.modOptions = game.mods.modOptions or {}
+    write(game.mods.modOptions)
+    if game.mods.loader then
+      game.mods.loader.modOptions = game.mods.loader.modOptions or {}
       write(game.mods.loader.modOptions)
     end
   end
@@ -1356,10 +1432,10 @@ end
 
 function Config.migrateSpriteColorOption(mod)
   local function write(bucket)
-    if type(bucket) ~= "table" then return end
-    bucket[mod.id] = bucket[mod.id] or {}
-    if bucket[mod.id].sprite_color ~= "colored" then
-      bucket[mod.id].sprite_color = "colored"
+    local options = optionBucket(mod, bucket, true)
+    if not options then return end
+    if options.sprite_color ~= "colored" then
+      options.sprite_color = "colored"
     end
     -- Do not delete legacy keys (color_mode / colored_sprites stay readable).
   end
@@ -1370,8 +1446,10 @@ function Config.migrateSpriteColorOption(mod)
     write(game.save.options.modOptions)
   end
   if game and game.mods then
-    if game.mods.modOptions then write(game.mods.modOptions) end
-    if game.mods.loader and game.mods.loader.modOptions then
+    game.mods.modOptions = game.mods.modOptions or {}
+    write(game.mods.modOptions)
+    if game.mods.loader then
+      game.mods.loader.modOptions = game.mods.loader.modOptions or {}
       write(game.mods.loader.modOptions)
     end
   end

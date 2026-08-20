@@ -540,4 +540,19 @@ return function(mod)
     "unique_menu_icons: mode=%s, registered %d unique icons (%d skipped), trueColor patch: %s",
     mode.id, registered, skipped, mode.id == "original" and "not needed" or tostring(patchOk)
   )
+
+  -- VENDORED CHANGE (Scott's Tweaks): content registries are frozen after the
+  -- Loader's boot merge, so a later options_changed callback must not try to
+  -- register the new icon paths again (that raises "content is frozen after
+  -- load" and still changes no art). The saved choice is read normally next
+  -- boot, when both the icon records and their true-color patch can be built
+  -- together. Say so explicitly instead of falsely claiming a live update.
+  if mod.events and mod.events.on then
+    mod.events:on("mod.options_changed", function(payload)
+      if type(payload) ~= "table" or payload.mod ~= mod.id
+          or payload.key ~= "icon_color_mode" then return end
+      local pending = findMode(payload.value) or findMode(DEFAULT_MODE)
+      mod.log:info("unique_menu_icons: mode=%s saved; restart to apply", pending.id)
+    end)
+  end
 end

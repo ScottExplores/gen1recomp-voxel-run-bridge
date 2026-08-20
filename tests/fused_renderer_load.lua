@@ -145,5 +145,359 @@ for _, id in ipairs({
     .. (vend and vend.failed and vend.failed[id] and (" -- " .. tostring(vend.failed[id])) or ""))
 end
 
+-- One canonical schema: Scott's own settings, every Battle Art setting, and
+-- every namespaced bundled setting survive the one final define().
+local host = exports.vendorHost
+local schema = run.loader.optionSchemas.voxel_run_bridge or {}
+local schemaCount, schemaByKey, schemaDuplicates = {}, {}, 0
+for _, row in ipairs(schema) do
+  schemaCount[row.key] = (schemaCount[row.key] or 0) + 1
+  schemaByKey[row.key] = row
+  if schemaCount[row.key] > 1 then schemaDuplicates = schemaDuplicates + 1 end
+end
+T.eq(schemaDuplicates, 0, "canonical schema has no duplicate keys")
+T.eq(#schema, #(exports.optionSchema or {}),
+  "exported canonical schema matches the Loader schema")
+local ownKeys = {
+  "simple_menu", "hm_without_badges", "free_fly_without_badges",
+  "free_fly_cockpit", "gapped_land", "bag_pockets", "gen2_menus",
+  "experience_mode", "trainer_forfeit_enabled", "trainer_rematches",
+  "trainer_adaptive_dialogue", "trainer_growth", "oak_spare_starter",
+  "running_enabled", "running_speed", "running_view_bob",
+  "running_bob_intensity", "dual_screen",
+}
+for _, key in ipairs(ownKeys) do
+  T.eq(schemaCount[key], 1, "own canonical option appears once: " .. key)
+end
+for _, row in ipairs(exports.battleArtOptionSchema or {}) do
+  T.eq(schemaCount[row.key], 1,
+    "Battle Art canonical option appears once: " .. tostring(row.key))
+end
+local vendorSchema = host and host:mergedSchema() or {}
+for _, row in ipairs(vendorSchema) do
+  T.eq(schemaCount[row.key], 1,
+    "namespaced vendor option appears once: " .. tostring(row.key))
+end
+T.eq(#schema, #ownKeys + #(exports.battleArtOptionSchema or {}) + #vendorSchema,
+  "canonical schema contains every source exactly once")
+T.eq(schemaByKey.simple_menu and schemaByKey.simple_menu.default, true,
+  "BASIC is the single default visibility mode")
+T.eq(schemaByKey.simple_menu and schemaByKey.simple_menu.label,
+  "OPTIONS SHOWN", "canonical visibility flag uses the unified UI name")
+local wildPrefix = "overworld_wild_spawns:"
+T.eq(schemaByKey[wildPrefix .. "enabled"]
+    and schemaByKey[wildPrefix .. "enabled"].default, true,
+  "visible overworld Pokemon remain enabled on new installs")
+T.eq(schemaByKey[wildPrefix .. "random_encounters"]
+    and schemaByKey[wildPrefix .. "random_encounters"].default, false,
+  "classic random encounters default off on new installs")
+T.eq(schemaByKey[wildPrefix .. "enable_hidden"]
+    and schemaByKey[wildPrefix .. "enable_hidden"].default, false,
+  "sprite-less hidden encounters default off on new installs")
+
+-- Exercise the real registered screens. This proves the root, category
+-- placement, footers, and Mod Manager route rather than just their exports.
+local Screens = require("src.ui.Screens")
+Screens.invalidate()
+local stack = { values = {} }
+function stack:push(value) self.values[#self.values + 1] = value end
+function stack:pop() return table.remove(self.values) end
+function stack:top() return self.values[#self.values] end
+local writes = 0
+local game = {
+  data = run.data,
+  save = { options = { modOptions = {} }, party = {} },
+  mods = run.loader,
+  stack = stack,
+  input = { wasPressed = function() return false end,
+            isDown = function() return false end },
+  writeOptions = function() writes = writes + 1 end,
+}
+require("src.core.Game").mods = run.loader
+local function buildScreen(id)
+  if type(Screens.build) == "function" then return Screens.build(game, id) end
+  return Screens.get(game, id).new(game)
+end
+local function findLabel(rows, label)
+  for _, row in ipairs(rows or {}) do
+    if row.label == label then return row end
+  end
+end
+local function mapIds(rows)
+  local out = {}
+  for _, row in ipairs(rows or {}) do
+    if row.id then out[row.id] = row end
+  end
+  return out
+end
+
+local unified = exports.tweaksMenu
+T.check(type(unified) == "table" and unified.unified == true,
+  "fused build publishes one unified settings menu")
+local root = buildScreen(unified.screenIds.main)
+local categoryLabels = {
+  "VIEW & CAMERA", "WORLD & WEATHER", "POKEMON ART", "BATTLES",
+  "WILD & FOLLOWERS", "MOVEMENT", "MENUS & DEVICE",
+}
+for _, label in ipairs(categoryLabels) do
+  T.check(findLabel(root.rows, label) ~= nil,
+    "root contains unified category: " .. label)
+end
+local shown = findLabel(root.rows, "OPTIONS SHOWN")
+T.eq(shown and shown.value(), "BASIC", "root calls the default view BASIC")
+T.eq(root.title, "MOD SETTINGS", "unified root has a visible title")
+T.check(type(root.footer) == "string"
+    and root.footer:find("MOD SETTINGS", 1, true) ~= nil,
+  "unified root footer preserves its title")
+
+run.loader.modOptions.voxel_run_bridge =
+  run.loader.modOptions.voxel_run_bridge or {}
+run.loader.modOptions.voxel_run_bridge.simple_menu = true
+local wildBasic = buildScreen(unified.screenIds.wilds)
+local encounter = findLabel(wildBasic.rows, "ENCOUNTER MODE")
+T.eq(encounter and encounter.value(), "VISIBLE",
+  "Wild BASIC mode clearly starts with visible-only encounters")
+for _, label in ipairs({
+  "SPRITE STYLE", "GRASS VIEW", "OVERWORLD CATCH",
+}) do
+  T.check(findLabel(wildBasic.rows, label) ~= nil,
+    "Wild BASIC exposes " .. label)
+end
+T.eq(findLabel(wildBasic.rows, "HIDDEN MONS"), nil,
+  "advanced hidden encounters stay out of BASIC")
+
+run.loader.modOptions.voxel_run_bridge.simple_menu = false
+local categoryScreens = {
+  graphics = buildScreen(unified.screenIds.graphics),
+  world = buildScreen(unified.screenIds.world),
+  sprites = buildScreen(unified.screenIds.sprites),
+  battles = buildScreen(unified.screenIds.battles),
+  wilds = buildScreen(unified.screenIds.wilds),
+  movement = buildScreen(unified.screenIds.movement),
+  system = buildScreen(unified.screenIds.system),
+}
+for name, child in pairs(categoryScreens) do
+  T.check(type(child.footer) == "string"
+      and child.footer:find("BACK:", 1, true) == 1,
+    name .. " category has a visible titled footer")
+end
+local graphics = mapIds(categoryScreens.graphics.rows)
+local world = mapIds(categoryScreens.world.rows)
+local sprites = mapIds(categoryScreens.sprites.rows)
+local movement = mapIds(categoryScreens.movement.rows)
+local system = mapIds(categoryScreens.system.rows)
+T.check(movement["voxel_run_bridge:running_view_bob"] ~= nil,
+  "run head bob lives in Movement")
+T.eq(graphics["voxel_run_bridge:running_view_bob"], nil,
+  "run head bob is not mixed into View & Camera")
+T.check(world["voxel_run_bridge:gapped_land"] ~= nil,
+  "Gapped Land lives in World & Weather")
+T.check(system["voxel_run_bridge:dual_screen"] ~= nil,
+  "Thor second-screen control lives in Menus & Device")
+T.eq(sprites["voxel_run_bridge:playerView"] ~= nil, true,
+  "player battle view has one integrated control")
+T.eq(sprites["voxel_run_bridge:frontFlip"] ~= nil, true,
+  "player flip has one integrated control")
+local playerViewCount, frontFlipCount = 0, 0
+local trainerSourceCount, trainerSetCount = 0, 0
+for _, row in ipairs(categoryScreens.sprites.rows or {}) do
+  if row.id == "voxel_run_bridge:playerView" then
+    playerViewCount = playerViewCount + 1
+  elseif row.id == "voxel_run_bridge:frontFlip" then
+    frontFlipCount = frontFlipCount + 1
+  end
+  if row.label == "TRAINER ART SOURCE" then
+    trainerSourceCount = trainerSourceCount + 1
+  elseif row.label == "TRAINER ART SET" then
+    trainerSetCount = trainerSetCount + 1
+  end
+end
+T.eq(playerViewCount, 1, "player battle view is not duplicated")
+T.eq(frontFlipCount, 1, "player flip is not duplicated")
+T.eq(trainerSourceCount, 1, "trainer art source is unambiguous")
+T.eq(trainerSetCount, 1, "trainer art set is separately named")
+local iconRow = sprites["unique_menu_icons:icon_color_mode"]
+T.eq(iconRow and iconRow.value(), "ORIGINAL",
+  "unified menu uses a short icon value label")
+for _, label in ipairs({ "WILDS MENU", "FOLLOWERS MENU" }) do
+  T.eq(findLabel(categoryScreens.wilds.rows, label), nil,
+    "broken legacy submenu link is absent: " .. label)
+end
+
+-- Each persisted schema key has one logical home in the seven categories.
+-- Synthetic controls declare the raw keys they intentionally replace.
+local covered = {}
+local function cover(key)
+  if schemaByKey[key] then covered[key] = (covered[key] or 0) + 1 end
+end
+cover("simple_menu")
+for _, child in pairs(categoryScreens) do
+  for _, row in ipairs(child.rows or {}) do
+    if type(row.id) == "string" then
+      local key = row.id:match("^voxel_run_bridge:(.+)$") or row.id
+      cover(key)
+    end
+    for _, key in ipairs(row.schemaKeys or {}) do cover(key) end
+  end
+end
+for key in pairs(schemaByKey) do
+  T.eq(covered[key], 1, "unified categories cover canonical key once: " .. key)
+end
+
+-- The synthetic Wild row writes through VendorHost: all three values persist,
+-- both host/vendor events fire, and a customized hidden mode is made explicit.
+local hostEvents, vendorEvents = 0, 0
+run.loader.events:on("mod.options_changed", function(payload)
+  if payload and payload.mod == "voxel_run_bridge"
+      and type(payload.key) == "string"
+      and payload.key:find(wildPrefix, 1, true) == 1 then
+    hostEvents = hostEvents + 1
+  elseif payload and payload.mod == "overworld_wild_spawns" then
+    vendorEvents = vendorEvents + 1
+  end
+end)
+local beforeWrites = writes
+T.eq(encounter.step(game, 1), true,
+  "Encounter Mode changes VISIBLE to BOTH")
+local saved = game.save.options.modOptions.voxel_run_bridge or {}
+T.eq(saved[wildPrefix .. "enable_hidden"], false,
+  "Encounter Mode clears hidden encounters")
+T.eq(saved[wildPrefix .. "random_encounters"], true,
+  "BOTH enables classic random encounters")
+T.eq(saved[wildPrefix .. "enabled"], true,
+  "BOTH keeps visible overworld Pokemon enabled")
+T.eq(hostEvents, 3, "Encounter Mode emits three host option events")
+T.eq(vendorEvents, 3, "Encounter Mode emits three live vendor events")
+T.eq(writes, beforeWrites + 3,
+  "Encounter Mode persists each underlying vendor option")
+host:writeOption(game, "overworld_wild_spawns", "enable_hidden", true)
+T.eq(encounter.value(), "CUSTOM",
+  "hidden encounters are reported explicitly as CUSTOM")
+T.eq(encounter.step(game, 1), true,
+  "stepping CUSTOM returns to a safe visible mode")
+T.eq(host:readOption("overworld_wild_spawns", "enable_hidden"), false,
+  "safe visible mode disables sprite-less encounters")
+T.eq(host:readOption("overworld_wild_spawns", "random_encounters"), false,
+  "safe visible mode disables classic random encounters")
+T.eq(host:readOption("overworld_wild_spawns", "enabled"), true,
+  "safe visible mode retains visible Pokemon")
+
+-- Party FOLLOW/DISMISS both call this same exported follower-count path.
+-- It must update the unified key immediately; no standalone-style Wilds
+-- bucket may be created behind MOD SETTINGS' back.
+local wildRuntime = host.loaded.overworld_wild_spawns
+local wildExports = wildRuntime and wildRuntime.exports
+T.eq(wildExports and wildExports.setFollowerCount(game, 0), 0,
+  "party DISMISS backing path accepts zero followers")
+T.eq(game.save.options.modOptions.voxel_run_bridge[
+    wildPrefix .. "follower_count"], 0,
+  "party DISMISS persists the canonical host save key")
+T.eq(run.loader.modOptions.voxel_run_bridge[
+    wildPrefix .. "follower_count"], 0,
+  "party DISMISS updates MOD SETTINGS' live Loader value")
+T.eq(host:readOption("overworld_wild_spawns", "follower_count"), 0,
+  "MOD SETTINGS reads the DISMISS value immediately")
+T.eq(game.save.options.modOptions.overworld_wild_spawns, nil,
+  "party DISMISS creates no stray vendor save bucket")
+T.eq(wildExports and wildExports.setFollowerCount(game, 1), 1,
+  "party FOLLOW backing path restores one follower")
+T.eq(host:readOption("overworld_wild_spawns", "follower_count"), 1,
+  "MOD SETTINGS reads the FOLLOW value immediately")
+
+-- Upgrade migrations read one early fused build's stray vendor bucket only as
+-- a fallback, then normalize into the canonical host bucket and Loader mirror.
+local wildV = wildExports and wildExports.lib
+local WildConfig = wildV and wildV.require("config")
+local wildMod = wildV and wildV.mod
+T.check(type(WildConfig) == "table" and type(wildMod) == "table",
+  "bundled Wilds exposes its migration helpers to the fused fixture")
+local oldWildWorld = wildMod.world
+wildMod.world = { game = game }
+local saveHost = game.save.options.modOptions.voxel_run_bridge
+local liveHost = run.loader.modOptions.voxel_run_bridge
+for _, key in ipairs({
+  "sprite_style", "random_encounters", "water_spawns", "cave_spawns",
+  "enable_water_spawns", "dev_overlay", "sprite_fade", "sprite_opacity",
+  "sprite_color",
+}) do
+  saveHost[wildPrefix .. key] = nil
+  liveHost[wildPrefix .. key] = nil
+end
+game.save.options.modOptions.overworld_wild_spawns = {
+  sprite_style = "gold",
+  grass_encounters = "both",
+  enable_water_spawns = false,
+  cave_spawns = "obsolete",
+  dev_mode = true,
+  sprite_opacity = 0.5,
+  sprite_color = "classic",
+}
+WildConfig.migrateSpriteStyleOption(wildMod)
+WildConfig.migrateRandomEncountersOption(wildMod)
+WildConfig.migrateWaterDisplayMode(wildMod)
+WildConfig.migrateCaveSpawnMode(wildMod)
+WildConfig.migrateDevOverlayOption(wildMod)
+WildConfig.migrateSpriteFadeOption(wildMod)
+WildConfig.migrateSpriteColorOption(wildMod)
+local migrated = {
+  sprite_style = "pokemmo",
+  random_encounters = true,
+  water_spawns = "classic_encounters",
+  enable_water_spawns = false,
+  cave_spawns = "reachable",
+  dev_overlay = true,
+  sprite_fade = "faded",
+  sprite_opacity = 0.72,
+  sprite_color = "colored",
+}
+for key, expected in pairs(migrated) do
+  T.eq(saveHost[wildPrefix .. key], expected,
+    "Wilds migration writes canonical save key: " .. key)
+  T.eq(liveHost[wildPrefix .. key], expected,
+    "Wilds migration mirrors canonical Loader key: " .. key)
+end
+T.eq(run.loader.modOptions.overworld_wild_spawns, nil,
+  "Wilds migrations create no stray live vendor bucket")
+T.eq(host:readOption("overworld_wild_spawns", "sprite_style"), "pokemmo",
+  "MOD SETTINGS immediately reads a migrated canonical value")
+wildMod.world = oldWildWorld
+
+local standaloneGame = {
+  save = { options = {} }, mods = {}, writeOptions = function() end,
+}
+local standaloneWild = {
+  id = "overworld_wild_spawns",
+  options = { get = function() return nil end },
+  world = { game = standaloneGame },
+}
+T.eq(WildConfig._writeOptionBucket(standaloneWild, standaloneGame,
+    "follower_count", 4), true,
+  "standalone Wilds retains its ordinary option writer")
+T.eq(standaloneGame.save.options.modOptions.overworld_wild_spawns.follower_count,
+  4, "standalone Wilds retains its unprefixed save bucket")
+T.eq(standaloneGame.save.options.modOptions.voxel_run_bridge, nil,
+  "standalone Wilds never creates a Scott's Tweaks bucket")
+
+local startRows = run.loader.hooks:call("ui.start_menu.items",
+  function(_, rows) return rows end, game, {
+    { id = "vanilla.party", label = "POKEMON" },
+    { id = "vanilla.mods", label = "MODS" },
+  })
+local modSettingsCount, battleArtCount = 0, 0
+for _, row in ipairs(startRows) do
+  if row.id == "scotts_tweaks.open" and row.label == "MOD SETTINGS" then
+    modSettingsCount = modSettingsCount + 1
+  end
+  if row.label == "BATTLE ART" then battleArtCount = battleArtCount + 1 end
+end
+T.eq(modSettingsCount, 1, "Start contains one MOD SETTINGS entry")
+T.eq(battleArtCount, 0, "Start contains no competing Battle Art entry")
+
+stack.values = {}
+local ManagerState = require("src.mods.ManagerState")
+ManagerState.openOptions({ game = game }, { id = "voxel_run_bridge" })
+T.eq(stack:top() and stack:top().title, "MOD SETTINGS",
+  "Mod Manager routes the fused mod to the unified screen")
+
 run.release()
 T.finish("fused renderer load")

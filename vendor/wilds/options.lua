@@ -113,8 +113,8 @@ return {
     key = "random_encounters",
     label = "Random Enc",
     type = "toggle",
-    default = true,
-    description = "Enables or disables classic step-based random encounters. Visible overworld Pokemon remain active.",
+    default = false,
+    description = "Classic step-based random encounters. Off by default so a new install uses visible overworld Pokemon only.",
   },
   {
     key = "water_spawns",
@@ -263,8 +263,8 @@ return {
     key = "enable_hidden",
     label = "Hidden Mons",
     type = "toggle",
-    default = true,
-    description = "Allow hidden grass (or cave dust) encounter markers with no Pokemon sprite.",
+    default = false,
+    description = "Allow hidden grass or cave-dust encounters with no Pokemon sprite. Off by default so encounters are visible.",
   },
 
   -- ------- Developer (only Dev Overlay + Test Spawn)

@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.12.0 - 2026-08-19
+
+- **Fixed missing Pokemon art in consolidated installs, especially on AYN
+  Android devices.** Bundled mods now resolve their asset helpers from their
+  own `vendor/` roots instead of Scott's Tweaks' top-level folder. This
+  restores visible Wilds of Kanto encounters, followers, runtime sprite
+  sheets, and Unique Menu Icons in the party and Pokemon screens without
+  needing separately installed copies to mask the bad path.
+- **Added a partial-install warning.** The fused package contains tens of
+  thousands of sprite files, so an interrupted handheld install can leave a
+  mod that loads while entire art folders are absent. Scott's Tweaks now
+  checks representative files and reports `PARTIAL INSTALL` in its menu and
+  log when a clean reinstall is required.
+- **Fixed B-button running in 2D and every grid-based voxel view.** The speed
+  hook no longer rejects the normal walker after the engine marks a step as
+  moving, and its temporary step timing is restored before scripted movement
+  so cutscenes and NPC-driven steps keep vanilla timing. First- and
+  third-person free movement continue to use the same selected run speed.
+- **Consolidated the settings UI for the consolidated mod.** Start and the Mod
+  Manager now reach one Scott's Tweaks menu with one BASIC/ALL preference,
+  clear category names, shorter values, and no duplicate player-art rows.
+  Movement, world, Pokemon art, battles, wild/follower behavior, and
+  device/menu settings are grouped by what they affect. Wilds' own
+  FOLLOW/DISMISS actions and migrations now write that same canonical option
+  storage, so follower controls cannot disagree with MOD SETTINGS after a
+  restart. Menu icon color changes save safely and say that a restart is
+  required instead of trying to mutate the engine's frozen icon registry.
+- **Wild encounters now have one plain-language encounter mode.** New installs
+  default to visible overworld encounters: classic random battles and hidden
+  encounter markers are off. `VISIBLE`, `BOTH`, `CLASSIC`, and `OFF` map to
+  the existing Wilds options, while existing saved choices remain intact.
+
 ## 0.11.0 - 2026-08-19
 
 - **Fixed: Scott's Tweaks would not load at all** for anyone who still had the

@@ -19,12 +19,18 @@ function OptionScreen.new(game, opts)
   local rows = opts.rows
   if type(rows) == "function" then rows = rows(game) end
   if type(rows) ~= "table" then rows = {} end
+  local title = tostring(opts.title or "")
+  local footer = opts.footer
+  if footer == nil then
+    footer = title ~= "" and ("BACK: " .. title):sub(1, 18) or "BACK"
+  end
   return setmetatable({
     game = game,
     rows = rows,
     index = 1,
     scroll = 0,
     title = opts.title,
+    footer = footer,
     onCancel = opts.onCancel,
     isOpaque = true,
   }, OptionScreen)
@@ -65,7 +71,7 @@ end
 
 function OptionScreen:draw()
   OptionRows.draw(self.game, self.rows, self.index, self.scroll or 0,
-                  "BACK", #self.rows + 1)
+                  self.footer or "BACK", #self.rows + 1)
 end
 
 return OptionScreen

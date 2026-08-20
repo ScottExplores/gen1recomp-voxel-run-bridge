@@ -48,7 +48,7 @@ local GAPPED_LAND_CELL = 64
 -- Native terrain and Flora's detailed apron occupy roughly y=-2..-37.
 -- Keep the broad procedural ground below both so it only fills the void.
 local GAPPED_LAND_Y = -40
-local RELEASE_VERSION = "0.11.0"
+local RELEASE_VERSION = "0.12.0"
 
 local OPTION_DEFAULTS = {
   hm_without_badges = true,
@@ -547,8 +547,19 @@ local function optionValue(mod, key, fallback)
   return value
 end
 
-local function defineOptions(mod)
-  mod.options:define({
+-- vendorHost is passed so the bundled mods' schemas ride the same define():
+-- the engine keeps exactly one schema per mod id, so defining ours alone here
+-- would erase every bundled row from the Mod Manager (each define REPLACES
+-- the schema wholesale). Bundled keys arrive prefixed "<vendorId>:<key>".
+local function defineOptions(mod, vendorHost)
+  local schema = {
+    {
+      key = "simple_menu",
+      type = "toggle",
+      label = "OPTIONS SHOWN",
+      default = true,
+      help = "ON shows BASIC everyday controls; OFF shows ALL advanced tuning controls too. Hidden values are never changed.",
+    },
     {
       key = "hm_without_badges",
       type = "toggle",
@@ -679,7 +690,31 @@ local function defineOptions(mod)
       default = false,
       help = "Use the physical AYN Thor lower display for menus when it is attached. Single-screen systems stay unchanged.",
     },
-  })
+  }
+
+  local seen = {}
+  for _, row in ipairs(schema) do seen[row.key] = true end
+  local function append(rows, source)
+    for _, row in ipairs(rows or {}) do
+      assert(type(row) == "table" and type(row.key) == "string",
+        tostring(source) .. " option row needs a key")
+      assert(not seen[row.key],
+        ("duplicate canonical option key %s from %s"):format(
+          tostring(row.key), tostring(source)))
+      seen[row.key] = true
+      schema[#schema + 1] = row
+    end
+  end
+
+  -- Battle Art deliberately publishes rather than defines this contribution
+  -- when fused, so the Loader sees one complete schema instead of a sequence
+  -- of partial replacements.
+  append(mod.exports and mod.exports.battleArtOptionSchema, "Battle Art")
+  if vendorHost and type(vendorHost.mergedSchema) == "function" then
+    append(vendorHost:mergedSchema(), "bundled mod")
+  end
+  mod.options:define(schema)
+  mod.exports.optionSchema = schema
 end
 
 local function constructScreen(factory, builtin, ...)
@@ -1969,10 +2004,16 @@ end
 return function(mod)
   -- The fused renderer registers render pipelines and must be up before any
   -- option definition or feature module consults it.
+  -- Integrity first: a half-copied install must say so in the log and the
+  -- menu before anything downstream fails in stranger ways.
+  do
+    local check = loadOwn(mod, "modules/integrity.lua")
+    if type(check) == "function" then pcall(check, mod) end
+  end
   local vendorHost = newVendorHost(mod)
   installBattleArt(hostedHandle(mod, vendorHost))
   installVendoredMods(mod, vendorHost)
-  defineOptions(mod)
+  defineOptions(mod, vendorHost)
   installFeatureModules(mod)
   -- These are ordinary bag/battle features and must remain available even
   -- when the player is using 2D mode or has no supported voxel renderer.

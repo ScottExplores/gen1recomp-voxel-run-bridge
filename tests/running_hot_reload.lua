@@ -144,6 +144,65 @@ local cameraLift = FirstPerson.frame(player)
 T.check(cameraLift ~= 7, "refreshed entry applies distance-based bob")
 T.eq(player.lift, 7, "camera bob never mutates player lift")
 
+-- Exercise the engine's real grid path. Player:tryMove sets moving=true
+-- before movement.speed is called, which is the ordering that used to make
+-- every 2D/orbital-view step reject the held B button.
+local Runtime = require("src.mods.Runtime")
+local Data = T.fixtures.fresh()
+local Collision = require("src.world.Collision")
+local Player = require("src.world.Player")
+Collision.load(Data)
+Data.field.playerSprites = { walk = "SPRITE_FIX_PLAYER" }
+local openMap = {
+  def = { tileset = "FIX_OUT" },
+  inBounds = function(_, x, y)
+    return x >= 0 and y >= 0 and x < 20 and y < 20
+  end,
+  isWalkableCell = function() return true end,
+  isWaterCell = function() return false end,
+  cellTile = function() return 0 end,
+}
+local gridPlayer = Player.new(Data, 5, 5, "down")
+T.eq(gridPlayer:tryMove("down", openMap, {}), "moved",
+  "held B starts a real grid step")
+T.eq(gridPlayer.stepFramesCur, 11,
+  "held B shortens a 2D grid step from 16 to 11 frames")
+local manualTicks = 0
+while gridPlayer.moving and manualTicks < 30 do
+  manualTicks = manualTicks + 1
+  gridPlayer:update()
+end
+T.eq(manualTicks, 11, "the real running step lands in 11 updates")
+
+-- ScriptRunner emits this before it queues/resumes its movement. The handler
+-- must restore Scott's retained duration so direct scripted moves stay in
+-- lockstep with their 16-frame NPC escorts.
+Runtime.emit("script.started", {
+  ctx = { game = Game, overworld = { player = gridPlayer } },
+})
+T.eq(gridPlayer.stepFramesCur, 16,
+  "script start restores Scott's completed run to vanilla duration")
+gridPlayer.targetX, gridPlayer.targetY = gridPlayer.cellX, gridPlayer.cellY + 1
+gridPlayer.moving = true
+gridPlayer.progress = 0
+local scriptedTicks = 0
+while gridPlayer.moving and scriptedTicks < 30 do
+  scriptedTicks = scriptedTicks + 1
+  gridPlayer:update()
+end
+T.eq(scriptedTicks, 16,
+  "a scripted step after running still takes the vanilla 16 updates")
+
+-- The ordinary idle boundary provides the same restoration even when no
+-- script begins immediately after the run.
+T.eq(gridPlayer:tryMove("down", openMap, {}), "moved",
+  "a second held-B grid step starts")
+while gridPlayer.moving do gridPlayer:update() end
+Runtime.call("input.step", function() end,
+  { overworld = { player = gridPlayer } }, 1 / 60)
+T.eq(gridPlayer.stepFramesCur, 16,
+  "the next idle input boundary restores the vanilla duration")
+
 local shoesManifestPath = "mods/running_shoes/manifest.json"
 local shoesEntryPath = "mods/running_shoes/main.lua"
 files[shoesManifestPath] = delegateManifest("running_shoes")

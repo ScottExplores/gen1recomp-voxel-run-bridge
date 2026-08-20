@@ -248,7 +248,10 @@ end
 -- SIMPLE is the default: the everyday screens only. ALL adds the renderer
 -- tuning pages back. This hides rows, it never changes their values, so
 -- switching back to ALL finds every setting exactly as it was left.
-local SIMPLE_KEY = "simpleSettings"
+-- The fused host and this standalone fallback share one visibility flag. That
+-- keeps an old Battle Art screen id, the Mod Manager route, and MOD SETTINGS
+-- from remembering three different ideas of BASIC versus ALL.
+local SIMPLE_KEY = "simple_menu"
 
 local function simpleMode()
   local ok, value = pcall(mod.options.get, mod.options, SIMPLE_KEY)
@@ -265,8 +268,9 @@ local function mainRows()
     end
   end
   out[#out + 1] = {
-    label = "SETTINGS",
-    value = function() return simpleMode() and "SIMPLE" or "ALL" end,
+    id = mod.id .. ":" .. SIMPLE_KEY,
+    label = "OPTIONS SHOWN",
+    value = function() return simpleMode() and "BASIC" or "ALL" end,
     step = function(game)
       return writeOption(game, { key = SIMPLE_KEY }, not simpleMode())
     end,
@@ -424,7 +428,10 @@ local function installStartEntry()
     local out = next(game, items)
     if type(out) ~= "table" or not state.sprite:integrated() then return out end
     for _, item in ipairs(out) do
-      if item.id == "scotts_sprite_hub.open" or item.label == "BATTLE ART" then
+      if item.id == "scotts_sprite_hub.open"
+          or item.id == "scotts_tweaks.open"
+          or item.label == "BATTLE ART"
+          or item.label == "MOD SETTINGS" then
         return out
       end
     end
@@ -458,6 +465,16 @@ local function installManagerRoute()
   end
   hook.open = function(game)
     state.sprite.game = game
+    -- In the fused package Tweaks registers this screen later in the same
+    -- entry load. By the time a player can open Mod Manager it is present, so
+    -- every route reaches the same categorized menu. A standalone Battle Art
+    -- install has no such screen and keeps its historical fallback.
+    local tweaks = mod.exports and mod.exports.tweaksMenu
+    local main = tweaks and tweaks.screenIds and tweaks.screenIds.main
+    if main then
+      local ok, result = pcall(push, game, main)
+      if ok then return result end
+    end
     push(game, SCREEN.main)
   end
 end
@@ -500,9 +517,17 @@ end
 function SettingsMenu.optionsRow()
   return {
     id = mod.id .. ":settingsMenu",
-    label = "BATTLE ART",
+    label = "MOD SETTINGS",
     value = function() return "OPEN" end,
-    activate = function(game) SettingsMenu.open(game) end,
+    activate = function(game)
+      -- One entry point for the whole fused build: the unified MOD SETTINGS
+      -- screen. Falls back to this renderer's own menu if the unified screen
+      -- is not registered (a standalone Battle Art install).
+      local tweaks = mod.exports and mod.exports.tweaksMenu
+      local main = tweaks and tweaks.screenIds and tweaks.screenIds.main
+      if main then return push(game, main) end
+      return SettingsMenu.open(game)
+    end,
   }
 end
 
@@ -535,6 +560,15 @@ function SettingsMenu.export()
     activePack = function() return state.sprite:activePack() end,
     ownership = function() return state.sprite:ownership() end,
     open = SettingsMenu.open,
+    schema = function() return state.schema end,
+    -- The unified MOD SETTINGS screen composes this renderer's rows into its
+    -- own categories, so the row builders are public: descriptors by schema
+    -- key, the render-pipeline ladder rows, and the integrated sprite-pack
+    -- rows, plus the sub-screen ids it links to (Crystal, sprite pack).
+    rowsFor = function(keys, skip) return appendKeyRows({}, keys, skip) end,
+    pipelineRow = pipelineRow,
+    openRow = openRow,
+    spriteMenu = function() return state.sprite end,
   }
 end
 

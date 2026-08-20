@@ -105,7 +105,7 @@ API-2 loader, verifies the stable ID/new display name, the new content and
 settings rows, checks the gapped-land compatibility status, invokes both HM
 hooks alongside Free Fly and a Pokemon Final provider, and runs the real
 priority-sorted HUD chain to prove only the cockpit picture is suppressed.
-Its current matrix contains 173 checks per supported engine fixture. Pass `compat` for the
+Its current matrix contains 187 checks per supported engine fixture. Pass `compat` for the
 v0.1.75 fixture and `native` for v0.1.83+ to assert the exact Trade Stone
 dispatcher. Run it from an engine
 checkout with:

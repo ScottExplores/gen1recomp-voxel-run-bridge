@@ -680,7 +680,12 @@ end
 for _, row in ipairs(ScottKanto.optionRows()) do
   schema[#schema + 1] = row
 end
-mod.options:define(schema)
+-- A standalone Battle Art install owns its schema directly. In Scott's
+-- Tweaks the renderer is fused into the host id, whose one canonical schema
+-- also contains gameplay and bundled-mod rows. Publish our contribution and
+-- let main.lua perform that single final define after every vendor has loaded.
+mod.exports.battleArtOptionSchema = schema
+if mod.id ~= "voxel_run_bridge" then mod.options:define(schema) end
 ScottKanto.install()
 
 -- Read the raw pre-1.7.7 keys before duplicateFix's schema default can be

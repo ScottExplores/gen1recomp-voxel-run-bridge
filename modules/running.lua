@@ -19,6 +19,7 @@ local STRIDE_DISTANCE = 22
 local BASE_AMPLITUDE = 0.65
 local BOB_TICK_MARKER = "_scottsTweaksRunningBobTick"
 local BOB_FRAME_MARKER = "_scottsTweaksRunningBobFrame"
+local RUN_STEP_MARKER = "_scottsTweaksRunningStepFrames"
 local unpackValues = table.unpack or unpack
 
 local function pack(...)
@@ -99,10 +100,26 @@ return function(mod, context)
   local function enabled()
     return option("running_enabled", true) == true
   end
+  -- Per-frame check for the first-person bob: FreeMove has no grid step, so
+  -- the moving flag stays false there and the gate only excludes grid steps
+  -- and scripted movement.
   local function wantsRun(ctx)
     if not enabled() or not ctx or ctx.onBike or ctx.surfing then return false end
     local player = ctx.player
     if player and (player.moving or player.inputLocked) then return false end
+    return pressed(ctx.input, "b")
+  end
+  -- Per-step check for the movement.speed wrap. The engine marks the player
+  -- moving BEFORE it raises the hook (src/world/Player.lua sets moving = true
+  -- a few lines above the Runtime.call), so a moving-gate here rejects every
+  -- legitimate 2D step and the wrap never fires -- which is exactly how the
+  -- bundled build shipped with 2D running dead on every platform. The hook
+  -- only fires when a step is genuinely starting, so input lock is the only
+  -- state left to exclude.
+  local function wantsRunStep(ctx)
+    if not enabled() or not ctx or ctx.onBike or ctx.surfing then return false end
+    local player = ctx.player
+    if player and player.inputLocked then return false end
     return pressed(ctx.input, "b")
   end
   local function multiplier()
@@ -110,11 +127,79 @@ return function(mod, context)
   end
 
   if not speedDelegated then
+    -- Player:tryMove stores the hook's answer in stepFramesCur, but scripted
+    -- movement starts without consulting movement.speed and reuses that field.
+    -- Remember only the value Scott changed, then put the pre-Scott duration
+    -- back once the manual step lands. The marker survives an F5 generation;
+    -- the equality check keeps us from overwriting a later owner's decision.
+    local trackedPlayer
+    local function restoreStepFrames(player)
+      if type(player) ~= "table" then return false end
+      local record = rawget(player, RUN_STEP_MARKER)
+      if trackedPlayer == player then trackedPlayer = nil end
+      if type(record) ~= "table" or record.owner ~= mod.id then return false end
+      rawset(player, RUN_STEP_MARKER, nil)
+      local applied = finite(record.applied, nil)
+      local base = finite(record.base, nil)
+      if not applied or not base or player.stepFramesCur ~= applied then
+        return false
+      end
+      player.stepFramesCur = math.max(1, math.floor(base))
+      return true
+    end
+
+    local function livePlayer(game, ev)
+      if trackedPlayer then return trackedPlayer end
+      local ctx = type(ev) == "table" and ev.ctx or nil
+      local overworld = type(ctx) == "table" and ctx.overworld or nil
+      if type(overworld) == "table" and type(overworld.player) == "table" then
+        return overworld.player
+      end
+      overworld = type(game) == "table" and game.overworld or nil
+      if type(overworld) == "table" and type(overworld.player) == "table" then
+        return overworld.player
+      end
+      overworld = type(Game) == "table" and Game.overworld or nil
+      return type(overworld) == "table" and overworld.player or nil
+    end
+
     mod.hooks:wrap("movement.speed", function(nextFn, frames, ctx)
+      local gridPlayer = type(ctx) == "table" and not ctx.freeMove
+        and not ctx.continuous and type(ctx.player) == "table" and ctx.player
+        or nil
+      -- A fresh manual step supersedes any retained duration from the prior
+      -- one, including a stale marker inherited across a hot reload.
+      if gridPlayer then restoreStepFrames(gridPlayer) end
       local value = finite(nextFn(frames, ctx), frames)
-      if not wantsRun(ctx) then return value end
-      return math.max(1, math.floor(value / multiplier() + 0.5))
+      if not wantsRunStep(ctx) then return value end
+      local applied = math.max(1, math.floor(value / multiplier() + 0.5))
+      if gridPlayer then
+        local base = math.max(1, math.floor(value))
+        if applied ~= base then
+          trackedPlayer = gridPlayer
+          rawset(gridPlayer, RUN_STEP_MARKER, {
+            owner = mod.id, base = base, applied = applied,
+          })
+        end
+      end
+      return applied
     end, 100)
+
+    -- The fixed input seam runs before gameplay, so an idle player is reset
+    -- before any new manual or scripted move can inherit the run duration.
+    mod.hooks:wrap("input.step", function(nextFn, game, dt)
+      local results = pack(nextFn(game, dt))
+      local player = livePlayer(game)
+      if player and not player.moving then restoreStepFrames(player) end
+      return unpackValues(results, 1, results.n)
+    end, 100)
+
+    -- A script can be queued on the same tick a step lands, before the next
+    -- input seam. Restore immediately; its first scripted move is started only
+    -- after script.started has been emitted.
+    mod.events:on("script.started", function(ev)
+      restoreStepFrames(livePlayer(nil, ev))
+    end)
   end
 
   local bobState = {
@@ -239,7 +324,7 @@ return function(mod, context)
 
   local feature = {
     installed = true,
-    version = context and context.releaseVersion or "0.11.0",
+    version = context and context.releaseVersion or "0.12.0",
     alwaysAvailable = true,
     speedDelegated = speedDelegated,
     speedProvider = speedDelegated and "running_shoes" or mod.id,
