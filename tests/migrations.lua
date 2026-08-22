@@ -38,7 +38,7 @@ local dualBucket = { enabled = true, sideBySide = true }
 local game = {
   save = {
     options = { modOptions = {
-      voxel_run_bridge = { running_speed = 2 },
+      voxel_run_bridge = { running_speed = 2, experience_mode = "party" },
       trainer_forfeit = {
         rematches = false, adaptive_dialogue = false,
         trainer_growth = "off",
@@ -52,7 +52,9 @@ local game = {
       gen1recomp_ds = dualBucket,
     },
   },
-  mods = { modOptions = { voxel_run_bridge = { running_speed = 2 } } },
+  mods = { modOptions = { voxel_run_bridge = {
+    running_speed = 2, experience_mode = "party",
+  } } },
   writeOptions = function() writes = writes + 1 end,
 }
 package.loaded["src.core.Game"] = nil
@@ -65,7 +67,9 @@ local options = game.save.options.modOptions.voxel_run_bridge
 
 check(type(own.legacy_import_v2) == "table",
   "migration records a per-save feature marker")
-for _, feature in ipairs({ "trainer", "oak", "running", "dual" }) do
+for _, feature in ipairs({
+    "experience_modes_v3", "trainer", "oak", "running", "dual",
+  }) do
   eq(own.legacy_import_v2[feature], true,
     feature .. " migration records completion")
 end
@@ -86,6 +90,10 @@ eq(options.running_view_bob, false, "0.x view-bob value imports")
 eq(options.running_bob_intensity, 0.75,
   "0.x bob intensity imports")
 eq(options.dual_screen, true, "legacy dual enabled value imports")
+eq(options.experience_mode, "all",
+  "legacy PARTY ALL value canonicalizes to ALL in the save")
+eq(game.mods.modOptions.voxel_run_bridge.experience_mode, "all",
+  "legacy PARTY ALL value canonicalizes in the live Loader")
 eq(game.mods.modOptions.voxel_run_bridge.dual_screen, true,
   "imports mirror into the live Loader cache")
 eq(writes, 1, "all imported options persist in one write")
@@ -103,16 +111,22 @@ eq(writes, 1, "a repeated migration performs no write")
 local game2 = {
   save = {
     options = { modOptions = {
-      voxel_run_bridge = { dual_screen = false },
+      voxel_run_bridge = { dual_screen = false, experience_mode = "lead" },
     } },
     modData = { gen1recomp_ds = { enabled = true } },
   },
-  mods = { modOptions = { voxel_run_bridge = { dual_screen = false } } },
+  mods = { modOptions = { voxel_run_bridge = {
+    dual_screen = false, experience_mode = "lead",
+  } } },
   writeOptions = function() writes = writes + 1 end,
 }
 api.run(game2)
 eq(game2.save.options.modOptions.voxel_run_bridge.dual_screen, false,
   "an explicit Tweaks dual-screen choice wins over legacy state")
+eq(game2.save.options.modOptions.voxel_run_bridge.experience_mode, "buddy",
+  "legacy LEAD ONLY value canonicalizes to BUDDY")
+eq(game2.mods.modOptions.voxel_run_bridge.experience_mode, "buddy",
+  "legacy LEAD ONLY canonicalization reaches the stock Mod Manager cache")
 eq(game2.save.modData.gen1recomp_ds.enabled, true,
   "explicit-choice migration still preserves the old dual bucket")
 

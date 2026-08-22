@@ -38,7 +38,47 @@ local function ids(rows)
   return out
 end
 
-local drawCalls = { rectangles = 0, raster = 0, text = {} }
+local function pngInfo(relative)
+  local handle = assert(io.open(sourceRoot .. "/" .. relative, "rb"),
+    "missing packaged PNG " .. relative)
+  local header = handle:read(26)
+  handle:close()
+  check(header and header:sub(1, 8) == "\137PNG\r\n\26\n",
+    relative .. " has a PNG signature")
+  local function be32(offset)
+    local a, b, c, d = header:byte(offset, offset + 3)
+    return ((a * 256 + b) * 256 + c) * 256 + d
+  end
+  return be32(17), be32(21), header:byte(26)
+end
+
+local bagPngW, bagPngH, bagPngColor = pngInfo(
+  "vendor/modern_bag_ui/assets/scotts_pocket_bag_sheet.png")
+eq(bagPngW, 1536, "backpack sheet width preserves three equal cells")
+eq(bagPngH, 1024, "backpack sheet height preserves two equal cells")
+eq(bagPngColor, 6, "backpack sheet carries real RGBA transparency")
+local weavePngW, weavePngH, weavePngColor = pngInfo(
+  "vendor/modern_bag_ui/assets/pocket_blue_weave.png")
+eq(weavePngW, 1254, "blue weave packaged width")
+eq(weavePngH, 1254, "blue weave packaged height")
+eq(weavePngColor, 2, "blue weave is an opaque RGB texture")
+
+local drawCalls = {
+  rectangles = 0, raster = 0, text = {}, images = {}, draws = {},
+}
+local trueColorMarks = {}
+local assetRequests = {}
+local function fakeImage(name, width, height)
+  return {
+    name = name,
+    getDimensions = function() return width, height end,
+    setFilter = function(self, min, mag)
+      self.minFilter, self.magFilter = min, mag
+    end,
+  }
+end
+local bagSheetImage = fakeImage("bag-sheet", 1536, 1024)
+local blueWeaveImage = fakeImage("blue-weave", 1254, 1254)
 local displayWidth, displayHeight = 1280, 720
 love = {
   graphics = {
@@ -55,9 +95,22 @@ love = {
     print = function(text)
       drawCalls.text[#drawCalls.text + 1] = tostring(text)
     end,
-    draw = function()
+    newQuad = function(x, y, width, height, imageWidth, imageHeight)
+      return {
+        x = x, y = y, width = width, height = height,
+        imageWidth = imageWidth, imageHeight = imageHeight,
+        getViewport = function(self)
+          return self.x, self.y, self.width, self.height
+        end,
+      }
+    end,
+    draw = function(image, quad, x, y, rotation, sx, sy)
       drawCalls.raster = drawCalls.raster + 1
-      error("the bundled backpack must not draw a raster asset")
+      drawCalls.images[#drawCalls.images + 1] = image and image.name
+      drawCalls.draws[#drawCalls.draws + 1] = {
+        image = image and image.name, quad = quad,
+        x = x, y = y, rotation = rotation, sx = sx, sy = sy,
+      }
     end,
   },
   image = {
@@ -270,6 +323,11 @@ package.preload["src.render.PaletteFX"] = function()
       return data and data.palettes and data.palettes.palettes
         and data.palettes.palettes[name]
     end,
+    markTrueColor = function(x, y, width, height)
+      trueColorMarks[#trueColorMarks + 1] = {
+        x = x, y = y, width = width, height = height,
+      }
+    end,
   }
 end
 package.preload["src.ui.Theme"] = function()
@@ -344,7 +402,16 @@ hostMod = {
   },
   assets = {
     path = function(_, relative) return sourceRoot .. "/" .. relative end,
-    image = function() error("procedural backpack must not request host image") end,
+    image = function(_, relative)
+      assetRequests[#assetRequests + 1] = relative
+      if relative == "vendor/modern_bag_ui/assets/scotts_pocket_bag_sheet.png" then
+        return bagSheetImage
+      end
+      if relative == "vendor/modern_bag_ui/assets/pocket_blue_weave.png" then
+        return blueWeaveImage
+      end
+      error("unexpected host image " .. tostring(relative))
+    end,
     list = function() return {} end,
     info = function() return nil end,
   },
@@ -537,7 +604,8 @@ input.pressed.right = nil
 eq(bag.modernBagPocket, 2, "one Right press advances exactly one pocket")
 eq(baseRightUpdates, 0, "pocket input does not reach a second lower owner")
 
--- Pocket skin draws entirely from primitives at landscape and portrait sizes.
+-- Pocket skin draws the generated backpack and blue weave at landscape and
+-- portrait sizes while retaining ordinary primitives for frames and fallback.
 optionValues["modern_bag_ui:skin"] = nil
 displayWidth, displayHeight = 1280, 720
 local landscapeW, landscapeH = bag:uiSize()
@@ -545,11 +613,29 @@ eq(landscapeW, 256, "landscape UI uses responsive width")
 eq(landscapeH, 144, "landscape UI retains native height")
 eq(bag:modernBagLayoutInfo().rows, 5, "landscape Pocket skin shows five rows")
 local beforeRectangles = drawCalls.rectangles
+local beforeLandscapeRaster = drawCalls.raster
 local beforeLandscapeText = #drawCalls.text
 bag:draw()
 check(drawCalls.rectangles > beforeRectangles,
-  "procedural backpack contributes primitive drawing")
-eq(drawCalls.raster, 0, "Pocket skin uses no raster backpack")
+  "Pocket skin retains primitive framing")
+eq(drawCalls.raster, beforeLandscapeRaster + 2,
+  "Pocket skin draws generated weave and active backpack")
+local firstWeaveDraw = drawCalls.draws[#drawCalls.draws - 1]
+eq(firstWeaveDraw and firstWeaveDraw.sx, firstWeaveDraw and firstWeaveDraw.sy,
+  "blue weave uses one uniform scale after aspect-ratio crop")
+eq(#trueColorMarks, 1,
+  "generated backpack marks one standard true-color re-blit zone")
+eq(trueColorMarks[1] and trueColorMarks[1].width,
+  trueColorMarks[1] and trueColorMarks[1].height,
+  "generated backpack true-color zone matches its square frame")
+check(contains(assetRequests,
+  "vendor/modern_bag_ui/assets/scotts_pocket_bag_sheet.png"),
+  "Pocket skin requests packaged six-state backpack sheet")
+check(contains(assetRequests,
+  "vendor/modern_bag_ui/assets/pocket_blue_weave.png"),
+  "Pocket skin requests packaged blue weave texture")
+eq(bagSheetImage.minFilter, "nearest", "backpack sheet keeps hard pixels")
+eq(blueWeaveImage.minFilter, "nearest", "blue weave keeps hard pixels")
 eq(bag.modernBagClassicPocketArt, "items", "draw reports active backpack state")
 eq(bag.modernBagClassicPocketRegion, "items",
   "draw reports the highlighted procedural compartment")
@@ -624,15 +710,39 @@ local portrait = bag:modernBagLayoutInfo()
 check(portrait.stacked == true, "portrait Pocket skin uses stacked layout")
 eq(portrait.rows, 10, "portrait layout exposes ten rows")
 bag:draw()
-eq(drawCalls.raster, 0, "portrait Pocket skin remains procedural")
+eq(drawCalls.raster, beforeLandscapeRaster + 12,
+  "every Pocket draw keeps generated texture and backpack paired")
 
 optionValues["modern_bag_ui:skin"] = "modern"
 check(bag:modernBagLayoutInfo().skin ~= "classic_pocket",
   "Modern layout is selected live")
+local beforeModernRaster = drawCalls.raster
 bag:draw()
-eq(drawCalls.raster, 0, "Modern layout does not introduce backpack raster art")
+eq(drawCalls.raster, beforeModernRaster,
+  "Modern layout does not introduce Pocket raster art")
 optionValues["modern_bag_ui:skin"] = nil
 displayWidth, displayHeight = 1280, 720
+
+-- Every public pocket must select its exact 512x512 frame in the 3x2 sheet.
+-- This catches a visually plausible but semantically shuffled sprite sheet.
+local expectedFrames = {
+  { key = "all", x = 0, y = 0 },
+  { key = "items", x = 512, y = 0 },
+  { key = "medicine", x = 1024, y = 0 },
+  { key = "balls", x = 0, y = 512 },
+  { key = "machines", x = 512, y = 512 },
+  { key = "key", x = 1024, y = 512 },
+}
+for index, expected in ipairs(expectedFrames) do
+  bag.modernBagPocket = index
+  bag:modernBagRefresh()
+  bag:draw()
+  local bagDraw = drawCalls.draws[#drawCalls.draws]
+  local quad = bagDraw and bagDraw.image == "bag-sheet" and bagDraw.quad
+  check(quad and quad.x == expected.x and quad.y == expected.y
+      and quad.width == 512 and quad.height == 512,
+    expected.key .. " selects its exact generated backpack frame")
+end
 
 -- Every native PC operation must keep its callback and receive the same six
 -- pocket decorator. Opening the wrapper must not alter native PC capacity.

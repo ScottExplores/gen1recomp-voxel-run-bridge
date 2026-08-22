@@ -57,6 +57,11 @@ local function verifyEngineContract(profile)
     profile.label .. " Renderer.lua missing")
   local hooks = assert(read(profile.path .. "/src/mods/Hooks.lua"),
     profile.label .. " Hooks.lua missing")
+  local battle = assert(read(profile.path .. "/src/battle/BattleState.lua"),
+    profile.label .. " BattleState.lua missing")
+  local activity = assert(read(profile.path
+      .. "/mobile/android/love/src/main/java/org/love2d/android/GameActivity.java"),
+    profile.label .. " GameActivity.java missing")
   check(second:find("function SecondScreen.available()", 1, true),
     profile.label .. " publishes live availability")
   check(second:find("function SecondScreen.push(imageData, w, h)", 1, true),
@@ -71,6 +76,18 @@ local function verifyEngineContract(profile)
     profile.label .. " renderer calls public compose seam")
   check(hooks:find("a.priority > b.priority", 1, true),
     profile.label .. " highest-priority presenter is outermost")
+  check(activity:find("public static void setSecondaryEnabled", 1, true),
+    profile.label .. " publishes native presentation activation")
+  check(activity:find("return secondaryPresentation != null;", 1, true),
+    profile.label .. " reports unavailable until activation creates a presentation")
+  check(battle:find("Font.drawBox(0, 12, 20, 6)", 1, true),
+    profile.label .. " keeps dialogue in the classic y=96..143 band")
+  check(battle:find("Font.drawBox(0, 8, 11, 5)", 1, true),
+    profile.label .. " keeps TYPE/PP at the classic y=64 start")
+  check(battle:find("Font.drawBox(4, 12, 16, 6)", 1, true),
+    profile.label .. " keeps the move list joined below TYPE/PP")
+  check(battle:find("Font.drawBox(0, 7, 16, 6)", 1, true),
+    profile.label .. " keeps Mimic controls in the classic y=56 band")
 end
 
 for _, profile in ipairs(engineRoots) do verifyEngineContract(profile) end
@@ -252,14 +269,26 @@ local function fakeGraphics()
   return graphics
 end
 
-local function fakeBridge()
+local function fakeBridge(opts)
+  opts = opts or {}
   local bridge = {
-    availableFlag = true, enables = {}, pushes = {}, touchPolls = 0,
-    failPush = false,
+    availableFlag = opts.availableFlag ~= false,
+    enables = {}, pushes = {}, touchPolls = 0,
+    failPush = false, enablePending = false,
   }
   function bridge.available() return bridge.availableFlag end
   function bridge.setEnabled(on)
     bridge.enables[#bridge.enables + 1] = on == true
+    if opts.asyncEnable then
+      bridge.enablePending = on == true
+      if not on then bridge.availableFlag = false end
+    elseif opts.enableControlsAvailability then
+      bridge.availableFlag = on == true
+    end
+  end
+  function bridge.completeEnable()
+    if bridge.enablePending then bridge.availableFlag = true end
+    bridge.enablePending = false
   end
   function bridge.push(image, width, height)
     bridge.pushes[#bridge.pushes + 1] = {
@@ -285,7 +314,7 @@ end
 local function makeFixture(opts)
   opts = opts or {}
   local graphics = opts.graphics or fakeGraphics()
-  local bridge = opts.bridge or fakeBridge()
+  local bridge = opts.bridge or fakeBridge(opts.bridgeOptions)
   local hooks = opts.hooks or Hooks.new()
   local events = opts.events or Events.new()
   local optionValues = opts.optionValues or { dual_screen = true }
@@ -490,6 +519,50 @@ eq(integerFit.width, 320, "Modern UI receives a readable 320px playfield")
 eq(integerFit.height, 288, "Modern UI receives a readable 288px playfield")
 eq(Thor.enabledValue("off"), false, "OFF option string is false")
 eq(Thor.enabledValue("on"), true, "ON option string is true")
+local dialogueRegion = assert(Thor.battlePanelRegion("messages", 160, 144))
+eq(dialogueRegion.y, 96, "ordinary battle wording owns the bottom 48px band")
+eq(dialogueRegion.height, 48, "ordinary battle wording keeps its full box")
+local moveRegion = assert(Thor.battlePanelRegion("moveSelect", 160, 144))
+eq(moveRegion.y, 64, "move controls begin at the TYPE/PP panel")
+eq(moveRegion.height, 80, "TYPE/PP and move list remain one joined cluster")
+eq(Thor.battlePanelRegion("messages", 304, 144), nil,
+  "wide and unknown battle layouts retain their complete surface")
+
+-- Android's native Presentation does not exist until setEnabled(true) posts
+-- to its UI thread.  A saved ON option must issue that request before asking
+-- available(), then take over the same menu once the asynchronous attach
+-- completes; no OFF/ON toggle or close/reopen cycle is involved.
+local startupBridge = fakeBridge({ availableFlag = false, asyncEnable = true })
+local startup = makeFixture({ bridge = startupBridge })
+installFixture(startup, loadThor())
+local startupMenu = startup.context("menu")
+eq(startup.frame(startupMenu).handled, false,
+  "cold menu falls through while Android completes its attach")
+eq(#startupBridge.enables, 1,
+  "saved ON issues one native enable request on the first compose")
+eq(startupBridge.enables[1], true,
+  "cold-start native request uses the saved ON value")
+eq(startupBridge.enablePending, true,
+  "cold-start request is pending on the simulated Android UI thread")
+startupBridge.completeEnable()
+startup.clock.value = 0.04
+eq(startup.frame(startupMenu).handled, true,
+  "the same already-open menu activates after native attach")
+eq(#startupBridge.enables, 1,
+  "automatic attach does not repeat or require an option toggle")
+eq(#startupBridge.pushes, 1,
+  "already-open menu reaches the lower display immediately after attach")
+eq(startup.controller.status().topSource, "blank",
+  "a neutral primary lets a cold menu split before the first world frame")
+local startupTop = startup.graphics.screenDraws[1]
+  and startup.graphics.screenDraws[1].source
+check(startupTop and startupTop.clears == 1 and #startupTop.draws == 0,
+  "cold-menu primary is a clean neutral surface")
+startup.clock.value = 0.08
+eq(startup.frame(startup.context("live")).handled, true,
+  "the first live frame replaces the neutral primary without reopening UI")
+eq(startup.controller.status().topSource, "worldOverride",
+  "cold-start handoff adopts the first staged world normally")
 
 -- Full physical path: Battle Art arena and move effect stay on top while the
 -- finished classic/Modern UI and later HUD overlays are captured below.
@@ -580,6 +653,68 @@ eq(status.controllerOnly, true, "public status records controller-only policy")
 eq(status.touchPolling, false, "public status records no touch translation")
 eq(status.outputPolicy, "logical_10_9_integer_scaled",
   "public status explains device-neutral output policy")
+
+-- Staged classic battles compact only their control band toward the hinge.
+-- The TYPE/PP panel and move list travel together, while a full-screen battle
+-- submenu (waitingUI) keeps the ordinary centered surface.
+local panelFixture = makeFixture()
+local panelBattle = { phase = "messages" }
+panelFixture.mod.exports.battleStage = {
+  apiVersion = 2,
+  state = function()
+    return { battle = panelBattle, staged = true, ready = true }
+  end,
+  animationSurface = function() return nil end,
+}
+installFixture(panelFixture, loadThor())
+local panelCtx = panelFixture.context("live")
+eq(panelFixture.frame(panelCtx).handled, true,
+  "staged dialogue frame owns physical composition")
+local panelLower = panelFixture.bridge.pushes[1].source
+local panelBlit = assert(panelLower.blits[1], "dialogue panel blit missing")
+eq(panelBlit.args[7], -180,
+  "dialogue source origin moves its y=96 box to the hinge margin")
+eq(panelBlit.args[9], Thor.BATTLE_PANEL_TOP,
+  "dialogue destination begins at the lower screen top margin")
+eq(panelBlit.args[11], 96,
+  "dialogue scissor keeps the complete 48px box at crisp 2x")
+
+panelBattle.phase = "moveSelect"
+panelFixture.clock.value = 1
+eq(panelFixture.frame(panelCtx).handled, true,
+  "move-selection frame keeps physical composition")
+panelBlit = assert(panelLower.blits[1], "move panel blit missing")
+eq(panelBlit.args[7], -116,
+  "move source origin places TYPE/PP at the same hinge margin")
+eq(panelBlit.args[9], Thor.BATTLE_PANEL_TOP,
+  "TYPE/PP panel starts where ordinary dialogue starts")
+eq(panelBlit.args[11], 160,
+  "move scissor keeps the joined 80px control cluster at crisp 2x")
+eq(panelBlit.args[7] + 96 * panelBlit.args[2], 76,
+  "move-list panel follows immediately below TYPE/PP at authored spacing")
+
+panelBattle.waitingUI = true
+panelFixture.clock.value = 2
+eq(panelFixture.frame(panelCtx).handled, true,
+  "full-screen battle submenu keeps physical presentation")
+panelBlit = assert(panelLower.blits[1], "full submenu blit missing")
+eq(panelBlit.args[7], 36,
+  "full-screen battle submenu retains ordinary centered placement")
+eq(panelBlit.args[9], 0,
+  "full-screen battle submenu retains the complete output scissor")
+eq(panelBlit.args[11], Thor.OUTPUT_HEIGHT,
+  "full-screen battle submenu is never cropped to the dialogue band")
+
+panelBattle.waitingUI = nil
+panelBattle.game = { stack = { top = function() return { isOpaque = true } end } }
+panelFixture.clock.value = 3
+eq(panelFixture.frame(panelCtx).handled, true,
+  "an arbitrary overlay above battle keeps physical presentation")
+panelBlit = assert(panelLower.blits[1], "stack-overlay blit missing")
+eq(panelBlit.args[7], 36,
+  "live stack identity prevents cropping settings and other overlays")
+eq(panelBlit.args[11], Thor.OUTPUT_HEIGHT,
+  "stack overlay keeps the complete lower-screen UI surface")
 
 -- Battle Stage v3 is armed before Thor publishes a physical frame. The first
 -- compose arrived after the engine already rendered uiCanvas, so it falls
@@ -1015,7 +1150,7 @@ local function realLoaderRegression(engineRoot)
   local files = {
     [prefix .. "manifest.json"] = [[{
       "id":"voxel_run_bridge","name":"Scott's Tweaks Thor Loader Test",
-      "version":"0.12.3","api":2,"entry":"main.lua",
+      "version":"0.12.4","api":2,"entry":"main.lua",
       "profile":"content","priority":200,"dependencies":[],
       "optional_dependencies":[],"conflicts":[],"games":["gen1"],
       "permissions":[]
@@ -1195,7 +1330,7 @@ local function realFusedFreeFlyRegression(engineRoot)
   local files = {
     [prefix .. "manifest.json"] = [[{
       "id":"voxel_run_bridge","name":"Scott's Tweaks Fused Flight Test",
-      "version":"0.12.3","api":2,"entry":"main.lua",
+      "version":"0.12.4","api":2,"entry":"main.lua",
       "profile":"content","priority":200,"dependencies":[],
       "optional_dependencies":[],"conflicts":[],"games":["gen1"],
       "permissions":["engine_internals"]

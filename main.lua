@@ -49,7 +49,7 @@ local GAPPED_LAND_CELL = 64
 -- Native terrain and Flora's detailed apron occupy roughly y=-2..-37.
 -- Keep the broad procedural ground below both so it only fills the void.
 local GAPPED_LAND_Y = -40
-local RELEASE_VERSION = "0.12.3"
+local RELEASE_VERSION = "0.12.4"
 
 local OPTION_DEFAULTS = {
   hm_without_badges = true,
@@ -137,7 +137,7 @@ local GOLD_PACK_DESCRIPTIONS = {
   GOOD_ROD = "A GOOD ROD FOR FISHING FOR POKéMON.",
   SUPER_ROD = "THE BEST ROD FOR FISHING FOR POKéMON.",
   EXP_ALL = "SHARES BATTLE EXP WITH THE PARTY.",
-  [EXP_SHARE_ID] = "SHARES EXP WHEN EXP. MODE IS EXP.SHARE.",
+  [EXP_SHARE_ID] = "SHARES ONE EXP AWARD WITH A BUDDY OR THE PARTY.",
   [TRADE_STONE_ID] = "EVOLVES A POKéMON THAT NORMALLY EVOLVES BY TRADE.",
 }
 
@@ -679,15 +679,14 @@ local function defineOptions(mod, vendorHost)
     {
       key = EXPERIENCE_MODE_OPTION,
       type = "choice",
-      label = "EXP. MODE",
+      label = "EXP. SHARE",
       default = "vanilla",
       choices = {
-        { "VANILLA", "vanilla" },
-        { "LEAD ONLY", "lead" },
-        { "PARTY ALL", "party" },
-        { "EXP.SHARE", "share" },
+        { "OFF", "vanilla" },
+        { "BUDDY", "buddy" },
+        { "ALL", "all" },
       },
-      help = "VANILLA keeps normal rules. LEAD ONLY rewards the active Pokemon. PARTY ALL gives full EXP to every healthy party member. EXP.SHARE permanently unlocks its bag item.",
+      help = "OFF keeps normal battle participation. BUDDY splits one award between the active Pokemon and its next healthy party mate. ALL splits one award across every healthy party Pokemon. Either sharing mode permanently unlocks its bag item.",
     },
     {
       key = "trainer_forfeit_enabled",
@@ -1266,7 +1265,7 @@ local function installInventoryFeatures(mod)
     list.onChoose = function(item, ...)
       if item and item.value == EXP_SHARE_ID then
         showUiMessage(game,
-          "EXP.SHARE works when\nEXP. MODE is set to\nEXP.SHARE.")
+          "Set EXP. SHARE to\nBUDDY or ALL in\nMOD SETTINGS.")
         return
       end
       return baseChoose(item, ...)
@@ -1424,7 +1423,7 @@ local function installInventoryFeatures(mod)
       end
       if item and item.value == EXP_SHARE_ID then
         showUiMessage(game,
-          "EXP.SHARE works when\nEXP. MODE is set to\nEXP.SHARE.")
+          "Set EXP. SHARE to\nBUDDY or ALL in\nMOD SETTINGS.")
         return
       end
       return baseChoose(item, ...)
@@ -1558,8 +1557,30 @@ end
 
 local function installExperienceModes(mod)
   local Bag = require("src.inventory.Bag")
+
+  -- v0.12.3 exposed four overlapping choices. Keep every saved value valid,
+  -- but present one simpler OFF/BUDDY/ALL control from this release onward:
+  -- LEAD ONLY becomes the requested two-Pokemon Buddy share, while both old
+  -- party-wide choices become the requested All share.
+  local function normalizedMode(value)
+    if value == "buddy" or value == "lead" then return "buddy" end
+    if value == "all" or value == "party" or value == "share" then
+      return "all"
+    end
+    return "vanilla"
+  end
+
+  local function selectedMode()
+    return normalizedMode(optionValue(
+      mod, EXPERIENCE_MODE_OPTION, "vanilla"))
+  end
+
+  local function sharing(mode)
+    return mode == "buddy" or mode == "all"
+  end
+
   local state = {
-    mode = optionValue(mod, EXPERIENCE_MODE_OPTION, "vanilla"),
+    mode = selectedMode(),
     item = EXP_SHARE_ID,
     itemUnlocked = false,
     pending = false,
@@ -1574,9 +1595,9 @@ local function installExperienceModes(mod)
   end
 
   local function ensureShareItem(save, data)
-    state.mode = optionValue(mod, EXPERIENCE_MODE_OPTION, "vanilla")
-    if state.mode ~= "share" then
-      state.reason = "mode_not_share"
+    state.mode = selectedMode()
+    if not sharing(state.mode) then
+      state.reason = "sharing_off"
       return false
     end
     if not (save and save.inventory and data and data.items
@@ -1634,29 +1655,55 @@ local function installExperienceModes(mod)
     return true
   end
 
-  local function withExpAll(save, value, fn)
-    local inventory = save and save.inventory
-    if not inventory then return fn() end
-    local existed = inventory.EXP_ALL ~= nil
-    local previous = inventory.EXP_ALL
-    inventory.EXP_ALL = value
-    local result
-    local ok, err = xpcall(function() result = pack(fn()) end, traceback)
-    if existed then inventory.EXP_ALL = previous else inventory.EXP_ALL = nil end
-    if not ok then error(err, 0) end
-    return unpackValues(result, 1, result.n)
+  local function eligible(mon)
+    return type(mon) == "table" and (tonumber(mon.hp) or 0) > 0
+      and mon.isEgg ~= true
   end
 
-  local function copiedAward(ctx, alive)
-    local copy = {}
-    for key, value in pairs(ctx) do copy[key] = value end
-    copy.alive = alive
-    copy.participants = 1
-    return copy
+  local function partyRecipients(mode, battle, party)
+    local recipients = {}
+    if mode == "all" then
+      for _, mon in ipairs(party) do
+        if eligible(mon) then recipients[#recipients + 1] = mon end
+      end
+      return recipients
+    end
+
+    -- Buddy starts with the Pokemon currently battling, then uses the next
+    -- eligible party slot. If the active slot is the last healthy one, wrap
+    -- once so switching Pokemon does not silently turn sharing off.
+    -- Gen 1 wraps the active party record in battle.player.mon. Gen 2's
+    -- public battle.exp_award context exposes the party record directly as
+    -- battle.player. Accept both shapes so a switch never silently pays slot
+    -- one instead of the Pokemon actually in battle.
+    local player = battle and battle.player
+    local active = player and (player.mon or player)
+    local activeIndex
+    for index, mon in ipairs(party) do
+      if mon == active then activeIndex = index break end
+    end
+    local firstIndex = activeIndex
+    if not (firstIndex and eligible(party[firstIndex])) then
+      firstIndex = nil
+      for index, mon in ipairs(party) do
+        if eligible(mon) then firstIndex = index break end
+      end
+    end
+    if not firstIndex then return recipients end
+    recipients[1] = party[firstIndex]
+    for offset = 1, #party - 1 do
+      local index = ((firstIndex - 1 + offset) % #party) + 1
+      local mon = party[index]
+      if eligible(mon) then
+        recipients[2] = mon
+        break
+      end
+    end
+    return recipients
   end
 
   mod.hooks:wrap("battle.exp_award", function(nextFn, ctx)
-    local mode = optionValue(mod, EXPERIENCE_MODE_OPTION, "vanilla")
+    local mode = selectedMode()
     state.mode = mode
     if mode == "vanilla" or type(ctx) ~= "table"
         or type(ctx.applyShare) ~= "function" then
@@ -1664,33 +1711,30 @@ local function installExperienceModes(mod)
     end
     local battle = ctx.battle
     local game = battle and battle.game
-    local save = game and game.save
+    -- Gen 1 BattleState owns `game`; Gen 2 Battle owns save/data/party
+    -- directly. battle.exp_award intentionally promises one shared hook
+    -- across both paths, so consume either documented shape.
+    local save = (game and game.save) or (battle and battle.save)
+    local data = (game and game.data) or (battle and battle.data)
     if not save then return nextFn(ctx) end
 
-    if mode == "share" then
-      ensureShareItem(save, game.data)
-      return withExpAll(save, 1, function() return nextFn(ctx) end)
+    ensureShareItem(save, data)
+    local party = (battle and battle.party) or save.party or {}
+    local recipients = partyRecipients(mode, battle, party)
+    local split = #recipients
+    for _, mon in ipairs(recipients) do
+      -- applyShare is the public replacement seam on Gen1Recomp 0.1.75+
+      -- (and its Gen 2 battle path): it preserves the engine's own leveling,
+      -- move-learning, traded bonus, messages, and battle.exp_gained events.
+      -- Calling it directly also avoids forging or temporarily editing the
+      -- real Route 15 EXP.ALL item.
+      ctx.applyShare(mon, split, true)
     end
-
-    local alive = {}
-    if mode == "lead" then
-      local mon = battle.player and battle.player.mon
-      if mon and (mon.hp or 0) > 0 then alive[1] = mon end
-    elseif mode == "party" then
-      for _, mon in ipairs(save.party or {}) do
-        if (mon.hp or 0) > 0 then alive[#alive + 1] = mon end
-      end
-    else
-      return nextFn(ctx)
-    end
-    return withExpAll(save, nil, function()
-      return nextFn(copiedAward(ctx, alive))
-    end)
   end, 1000)
 
   local function lifecycle(payload)
-    if optionValue(mod, EXPERIENCE_MODE_OPTION, "vanilla") ~= "share" then
-      state.mode = optionValue(mod, EXPERIENCE_MODE_OPTION, "vanilla")
+    state.mode = selectedMode()
+    if not sharing(state.mode) then
       return
     end
     local game = payload and payload.game
@@ -1707,11 +1751,28 @@ local function installExperienceModes(mod)
     mod.events:on("mod.options_changed", function(payload)
       if payload and payload.mod == mod.id
           and payload.key == EXPERIENCE_MODE_OPTION then
-        state.mode = payload.value
+        state.mode = normalizedMode(payload.value)
         lifecycle({ game = Game, save = Game.save })
       end
     end)
   end
+end
+
+-- Gen1Recomp 0.1.83+ owns the correctly positioned caught-ball glyph beside
+-- the enemy name and asks this hook whether players want it. Enabling that
+-- native seam covers both flat and staged HUDs without drawing a second icon.
+-- Registering an unused hook name is harmless on 0.1.75; BattleHud supplies a
+-- staged-only primitive fallback there.
+local function installCaughtMarker(mod)
+  mod.hooks:wrap("battle.caught_marker_visible", function(nextFn, battle)
+    nextFn(battle)
+    return true
+  end, 0)
+  mod.exports.caughtMarker = {
+    installed = true,
+    nativeHook = true,
+    fallback = "staged_pre_0.1.83",
+  }
 end
 
 -- POKEMON_FINAL and DRAMATIC_SHAPE deliberately publish a module loader for
@@ -2449,6 +2510,7 @@ return function(mod)
   -- when the player is using 2D mode or has no supported voxel renderer.
   installInventoryFeatures(mod)
   installExperienceModes(mod)
+  installCaughtMarker(mod)
   installBadgeFreeFieldMoves(mod)
   installFreeFlyImmediateFlight(mod)
   installFreeFlyCockpitControl(mod)

@@ -1069,6 +1069,23 @@ function Voxel3D.seams(on)
         on and VoxelGrid.DARK or 0)
 end
 
+-- Whether the next tightly scoped pass receives the scene's shadow map.
+-- Cards may still CAST into that map; this controls only the lookup performed
+-- while they are drawn. Thin camera-facing cards otherwise compare against
+-- their own packed depth and mobile precision turns the equality into moving
+-- moire bands. Keeping face/day shading live while setting sunDark to zero
+-- removes only that unstable self-sample.
+function Voxel3D.shadowReceptionStrength(on)
+  return (on ~= false and ShadowMap.active())
+         and Voxel3D.SHADOW_ALPHA or 0
+end
+
+function Voxel3D.shadowReception(on)
+  if not (active and activeShader) then return end
+  local strength = Voxel3D.shadowReceptionStrength(on)
+  pcall(activeShader.send, activeShader, "sunDark", strength)
+end
+
 -- Capture effects temporarily draw emissive particles and the suction beam.
 -- Keep this state change paired so the ordinary voxel pass resumes with
 -- depth writes enabled immediately afterward.

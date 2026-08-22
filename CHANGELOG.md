@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.12.4 - 2026-08-22
+
+- **Fixed saved-ON Thor startup.** The physical lower-display presenter now
+  requests Android's native Presentation before testing attachment, so a cold
+  launch no longer needs an OFF/ON toggle or a menu exit/reopen. Menus that
+  open before the first world frame use a neutral upper surface until gameplay
+  is ready; single-display systems remain unchanged.
+- **Moved active lower-screen battle controls toward the hinge.** Dialogue and
+  command bands begin near the top of the Thor's lower display, with TYPE/PP
+  and the joined move list directly below. Full-screen Bag, Party, settings,
+  naming, and other overlays remain centered and uncropped.
+- **Removed moving bands from staged Pokémon cards.** Thin player/opponent
+  billboards no longer sample their own mobile-precision shadow depth while
+  the camera moves. They still cast arena silhouettes and retain normal face
+  and day lighting.
+- **Made staged battle status easier to read.** Player and opponent HP/level
+  cards receive a subtle translucent tint instead of a black slab. The player
+  card gains a Gold/Crystal-style EXP progress bar below HP, and owned wild or
+  Safari species show the engine's correctly positioned caught Poké Ball in
+  both flat and staged battles. Flat status backing and EXP presentation remain
+  native.
+- **Upgraded the Pocket Bag art.** POCKET now loads Scott's original generated
+  six-state backpack sheet and woven-blue rail texture with nearest filtering.
+  The six existing All/Items/Medicine/Balls/TMs/Key views, responsive PC lists,
+  and native inventory behavior remain unchanged; the prior primitives remain
+  only as a missing/undecodable-asset fallback. Generation prompts and asset
+  provenance ship beside the files.
+- **Simplified EXP.SHARE to OFF, BUDDY, and ALL.** BUDDY evenly splits one
+  defeated-Pokémon award between the active Pokémon and its next eligible
+  party mate; ALL evenly splits it among every conscious non-Egg party member.
+  Legacy LEAD ONLY maps to BUDDY, while PARTY ALL and EXP.SHARE map to ALL.
+  Gen 1's real EXP.ALL inventory and story state are never edited.
+
 ## 0.12.3 - 2026-08-21
 
 - **Added the requested responsive Pocket Bag and matching PC lists.** The

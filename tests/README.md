@@ -9,9 +9,13 @@ sprite-card canvas paths use 1:1 DPI with nearest filtering for Android/AYN:
 luajit tests\art_rendering.lua <mod-root>
 ```
 
-The suite currently contains 244 checks and also installs the real staged-battle
+The suite currently contains 275 checks and also installs the real staged-battle
 wrappers: split mode must omit lower-screen Pokemon, trainer, and move OAM
-while preserving the upper animation surface and lower text/HUD. Its setting
+while preserving the upper animation surface and lower text/HUD. It verifies
+that translucent status backing and the right-anchored EXP bar are staged-only,
+while the engine-owned caught marker works without a duplicate staged glyph,
+and that Pokemon cards decline the moving self-shadow sample without losing
+their arena casts. Its setting
 checks also prove one- and two-key sprite ownership edits roll back save, live,
 and cached values after a failed device write. The combined Crystal/Battle Art
 trainer, player-view, and Crystal-mode shortcuts likewise persist once and
@@ -116,11 +120,12 @@ lower screen-factory composition, copied/idempotent Trade Stone stock, and a
 live BUY BAG count without mutating stock or inventory. This remains the
 partial-install fallback contract.
 
-`modern_bag_integration.lua` is the 174-check release contract for the normal
+`modern_bag_integration.lua` is the 195-check release contract for the normal
 bundled Bag/PC owner. It verifies the default Pocket and selectable Modern
 skins, All plus five category views, Scott-specific classification fallbacks,
 native callback multi-returns, PC Withdraw/Deposit/Toss decoration, native
-per-pocket/x99 and PC-50 limits, procedural no-raster backpack drawing,
+per-pocket/x99 and PC-50 limits, packaged six-state backpack and blue-weave
+loading with nearest filtering,
 landscape and portrait sizing, idempotent reload ownership, and
 standalone-provider stand-down under both runtimes:
 
@@ -129,11 +134,13 @@ luajit tests\modern_bag_integration.lua <mod-root>
 lua tests\modern_bag_integration.lua <mod-root>
 ```
 
-`experience_trade.lua` is the focused 144-check EXP/item suite. It covers the
-four-mode schema, idempotent EXP.SHARE unlock and PC/full-bag recovery,
-vanilla/lead/party/share allocation, error-safe EXP.ALL restoration, all four
-Trade Stone evolutions, invalid and battle use, standard ITEM evolution, and
-the namespaced v0.1.75 effect bridge with bag pockets both on and off.
+`experience_trade.lua` is the focused 172-check EXP/item suite. It covers the simplified
+OFF/BUDDY/ALL schema, legacy-value migration, exact Buddy and All recipient
+selection, fainted Pokemon, Eggs, one-Pokemon parties, participant-history
+independence, idempotent EXP.SHARE unlock and PC/full-bag recovery, untouched
+EXP.ALL/story state, all four Trade Stone evolutions, invalid and battle use,
+standard ITEM evolution, and the namespaced v0.1.75 effect bridge with bag
+pockets both on and off.
 
 `gapped_land.lua` is the focused, ROM-free 61-check suite for that visual
 layer. Run it from the repository root with either supported Lua runtime:
@@ -190,7 +197,7 @@ public render/display seams in both 0.1.88 and 0.1.96, stock single-screen
 fallthrough, physical lower-display routing, frozen upper/live lower menu
 composition, scaling, fault recovery, legacy `gen1recomp_ds` delegation,
 same-facade identity, and two real API-2 Loader entries. Select each fixture
-as the live Loader once; every invocation contains 250 checks and runs under
+as the live Loader once; every invocation contains 294 checks and runs under
 both LuaJIT and Lua 5.1:
 
 ```powershell
@@ -205,7 +212,7 @@ API-2 loader, verifies the stable ID/new display name, the new content and
 settings rows, checks the gapped-land compatibility status, invokes both HM
 hooks alongside Free Fly and a Pokemon Final provider, and runs the real
 priority-sorted HUD chain to prove only the cockpit picture is suppressed.
-Its current matrix contains 192 checks per supported engine fixture. Pass `compat` for the
+Its current matrix contains 195 checks per supported engine fixture. Pass `compat` for the
 v0.1.75 fixture and `native` for v0.1.83+ to assert the exact Trade Stone
 dispatcher. Run it from an engine
 checkout with:

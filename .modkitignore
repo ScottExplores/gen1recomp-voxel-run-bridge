@@ -80,3 +80,4 @@ vendor/dynamic_scaling/main.lua.bak
 tests/wilds_behavior_tick_alloc.lua
 tests/modern_bag_integration.lua
 dist/voxel_run_bridge-0.12.3.zip
+dist/voxel_run_bridge-0.12.4.zip

@@ -18,13 +18,14 @@ Scott's Tweaks adaptations:
 - compile sibling source under PUC Lua 5.1 as well as LuaJIT;
 - compose previously registered BagMenu and PlayerPC factories;
 - retain native inventory, PC, and quantity limits;
-- draw an original generic five-compartment backpack procedurally with LOVE
-  rectangle primitives instead of distributing or loading upstream raster
-  artwork;
+- load Scott's original generated six-state five-compartment backpack and
+  woven-blue rail texture, with the prior LOVE primitives retained only as a
+  decode/missing-asset fallback; neither image uses upstream raster artwork;
 - preserve Scott-compatible item-category fallbacks and lower-controller
   return values;
 - use a 160x144 UI surface on an attached physical AYN Thor lower display;
 - make screen registration and decoration safe to repeat.
 
 The upstream PNG, manifest, tests, documentation, and automation are not part
-of this vendored component.
+of this vendored component. Generation details for Scott's two original image
+assets are recorded in [`ASSET_PROVENANCE.md`](ASSET_PROVENANCE.md).

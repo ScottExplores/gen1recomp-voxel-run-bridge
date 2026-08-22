@@ -1,4 +1,4 @@
--- Focused ROM-free contracts for Scott's Tweaks 0.12.3.
+-- Focused ROM-free contracts for Scott's Tweaks 0.12.4.
 -- Run from the mod root with Lua 5.1 or LuaJIT:
 --   lua5.1 tests/experience_trade.lua
 --   luajit tests/experience_trade.lua
@@ -335,14 +335,21 @@ local function setGame(save)
 end
 
 local function battleCtx(save, lead, alive)
-  local applyShare = function() end
+  local awards = {}
+  local applyShare = function(mon, split, announce)
+    awards[#awards + 1] = {
+      mon = mon,
+      split = split,
+      announce = announce,
+    }
+  end
   return {
     battle = { game = setGame(save), player = { mon = lead } },
     participants = 4,
     alive = alive or {},
     applyShare = applyShare,
     compatibilitySentinel = "kept",
-  }, applyShare
+  }, applyShare, awards
 end
 
 local function stackFixture()
@@ -371,18 +378,33 @@ local function menuAction(label)
   return nil
 end
 
-test("EXP schema has four explicit modes and defaults to vanilla", function()
+test("EXP.SHARE schema is one simple OFF/BUDDY/ALL choice", function()
   local row = schemaRow("experience_mode")
-  check(type(row) == "table", "EXP. MODE option is registered")
-  eq(row.type, "choice", "EXP. MODE option type")
-  eq(row.default, "vanilla", "EXP. MODE default")
-  eq(#row.choices, 4, "EXP. MODE choice count")
+  check(type(row) == "table", "EXP. SHARE option is registered")
+  eq(row.type, "choice", "EXP. SHARE option type")
+  eq(row.label, "EXP. SHARE", "EXP. SHARE option label")
+  eq(row.default, "vanilla", "EXP. SHARE defaults off")
+  eq(#row.choices, 3, "EXP. SHARE choice count")
   local seen = {}
   for _, choice in ipairs(row.choices) do seen[choice[2]] = choice[1] end
-  eq(seen.vanilla, "VANILLA", "vanilla choice")
-  eq(seen.lead, "LEAD ONLY", "lead choice")
-  eq(seen.party, "PARTY ALL", "party choice")
-  eq(seen.share, "EXP.SHARE", "share choice")
+  eq(seen.vanilla, "OFF", "off choice")
+  eq(seen.buddy, "BUDDY", "buddy choice")
+  eq(seen.all, "ALL", "all choice")
+  eq(seen.lead, nil, "legacy lead is not a duplicate visible choice")
+  eq(seen.party, nil, "legacy party is not a duplicate visible choice")
+  eq(seen.share, nil, "legacy share is not a duplicate visible choice")
+end)
+
+test("caught-species marker enables the engine-owned battle glyph", function()
+  local downstream = 0
+  local visible = hooks["battle.caught_marker_visible"](function()
+    downstream = downstream + 1
+    return false
+  end, { kind = "wild" })
+  eq(downstream, 1, "caught marker composes with the existing hook chain")
+  eq(visible, true, "Scott's Tweaks enables the native caught marker")
+  eq(mod.exports.caughtMarker.nativeHook, true,
+    "caught marker publishes its native-hook ownership")
 end)
 
 test("custom item registrations keep stable references and shop price", function()
@@ -485,7 +507,7 @@ test("v0.1.75 compatibility wrapper is namespaced and delegates other mods exact
 end)
 
 test("EXP.SHARE grant is idempotent, repairs v0.1.75 order, and never sets story flags", function()
-  optionValues.experience_mode = "share"
+  optionValues.experience_mode = "all"
   local flags = { EVENT_BEAT_BROCK = true }
   local save = newSave({ flags = flags, _simulateV75Add = true })
   setGame(save)
@@ -504,7 +526,7 @@ test("EXP.SHARE grant is idempotent, repairs v0.1.75 order, and never sets story
 end)
 
 test("full bag defers EXP.SHARE and retries without losing or forging progression", function()
-  optionValues.experience_mode = "share"
+  optionValues.experience_mode = "buddy"
   local flags = { EVENT_GOT_POKEDEX = true }
   local save = newSave({ flags = flags, _rejectAdds = true })
   setGame(save)
@@ -568,90 +590,177 @@ test("vanilla EXP mode is an exact one-call passthrough", function()
   eq(save.flags, flags, "vanilla preserves story state")
 end)
 
-test("lead-only EXP supplies one active recipient and restores a real EXP.ALL count", function()
-  optionValues.experience_mode = "lead"
-  local lead = { species = "PIKACHU", hp = 12 }
-  local bench = { species = "PIDGEY", hp = 9 }
+test("Buddy splits one award between the active Pokemon and its next eligible mate", function()
+  optionValues.experience_mode = "buddy"
+  local wrap = { species = "PIDGEY", hp = 9 }
+  local fainted = { species = "RATTATA", hp = 0 }
+  local active = { species = "PIKACHU", hp = 12 }
+  local egg = { species = "TOGEPI", hp = 1, isEgg = true }
+  local buddy = { species = "BULBASAUR", hp = 15 }
   local save = newSave({
     inventory = { EXP_ALL = 7 },
-    party = { lead, bench },
+    party = { wrap, fainted, active, egg, buddy },
     flags = { EVENT_BEAT_LT_SURGE = true },
   })
-  local ctx, applyShare = battleCtx(save, lead, { lead, bench })
-  local calls = 0
-  local result = pack(hooks["battle.exp_award"](function(received)
-    calls = calls + 1
-    check(received ~= ctx, "lead mode copies ctx")
-    eq(received.battle, ctx.battle, "lead ctx keeps battle")
-    eq(received.applyShare, applyShare, "lead ctx keeps applyShare")
-    eq(received.compatibilitySentinel, "kept", "lead ctx keeps extension fields")
-    eq(received.participants, 1, "lead divisor is one")
-    eq(#received.alive, 1, "lead has one recipient")
-    eq(received.alive[1], lead, "active Pokemon is lead recipient")
-    eq(save.inventory.EXP_ALL, nil, "lead temporarily suppresses EXP.ALL")
-    return "lead", nil, 23
-  end, ctx))
-  eq(calls, 1, "lead downstream call count")
-  eq(result.n, 3, "lead preserves result arity")
-  eq(result[2], nil, "lead preserves nil return")
-  eq(save.inventory.EXP_ALL, 7, "lead restores real EXP.ALL count")
-  eq(ctx.participants, 4, "lead leaves original ctx unchanged")
-  eq(#ctx.alive, 2, "lead leaves original recipient list unchanged")
-  eq(save.flags.EVENT_GOT_EXP_ALL, nil, "lead mode does not forge story state")
+  local ctx, _, awards = battleCtx(save, active, { wrap, active, buddy })
+  ctx.participants = 9
+  local downstream = 0
+  hooks["battle.exp_award"](function()
+    downstream = downstream + 1
+  end, ctx)
+  eq(downstream, 0, "Buddy replaces the vanilla distribution")
+  eq(#awards, 2, "Buddy has exactly two recipients")
+  eq(awards[1].mon, active, "active Pokemon receives the first share")
+  eq(awards[2].mon, buddy, "next eligible slot receives the buddy share")
+  eq(awards[1].split, 2, "active gets half of one award")
+  eq(awards[2].split, 2, "buddy gets half of one award")
+  eq(awards[1].announce, true, "active gain uses the native message")
+  eq(awards[2].announce, true, "buddy gain uses the native message")
+  eq(ctx.participants, 9, "historical participant count is not mutated")
+  eq(#ctx.alive, 3, "historical participant list is not mutated")
+  eq(save.inventory.EXP_ALL, 7, "real EXP.ALL count is never edited")
+  eq(save.flags.EVENT_GOT_EXP_ALL, nil, "Buddy does not forge story state")
+  eq(save.inventory.SCOTTS_EXP_SHARE, 1,
+    "Buddy mode owns the visible EXP.SHARE item")
 end)
 
-test("party EXP supplies every healthy party member at a full-share divisor", function()
-  optionValues.experience_mode = "party"
+test("Buddy honors the Gen 2 battle.exp_award context shape", function()
+  optionValues.experience_mode = "buddy"
+  local first = { species = "CHIKORITA", hp = 16 }
+  local active = { species = "PIDGEY", hp = 12 }
+  local buddy = { species = "WOOPER", hp = 14 }
+  local save = newSave({ party = { first, active, buddy }, flags = {} })
+  local ctx, _, awards = battleCtx(save, first, { first })
+  ctx.battle = {
+    -- Gen 2 Battle intentionally has no .game and stores these directly.
+    save = save,
+    data = Game.data,
+    party = save.party,
+    player = active,
+  }
+  local downstream = 0
+  hooks["battle.exp_award"](function() downstream = downstream + 1 end, ctx)
+  eq(downstream, 0, "Gen 2 Buddy replaces vanilla distribution")
+  eq(#awards, 2, "Gen 2 Buddy has exactly two recipients")
+  eq(awards[1].mon, active, "Gen 2 direct player record is the active recipient")
+  eq(awards[2].mon, buddy, "Gen 2 Buddy uses the next eligible party slot")
+  eq(awards[1].split, 2, "Gen 2 active receives half of one award")
+  eq(awards[2].split, 2, "Gen 2 buddy receives half of one award")
+  eq(save.inventory.SCOTTS_EXP_SHARE, 1,
+    "Gen 2 direct save/data shape still owns the indicator item")
+end)
+
+test("Buddy handles one eligible Pokemon, a fainted active, and party wrap", function()
+  optionValues.experience_mode = "buddy"
+  local only = { species = "PIKACHU", hp = 12 }
+  local fainted = { species = "RATTATA", hp = 0 }
+  local egg = { species = "TOGEPI", hp = 1, isEgg = true }
+  local singleSave = newSave({ party = { only, fainted, egg }, flags = {} })
+  local singleCtx, _, singleAwards = battleCtx(singleSave, only, { only })
+  hooks["battle.exp_award"](function() error("must not delegate") end,
+    singleCtx)
+  eq(#singleAwards, 1, "single healthy party has one recipient")
+  eq(singleAwards[1].mon, only, "single healthy Pokemon receives EXP")
+  eq(singleAwards[1].split, 1, "single healthy Pokemon gets the full award")
+
+  local first = { species = "BULBASAUR", hp = 15 }
+  local lastActive = { species = "CHARMANDER", hp = 17 }
+  local wrapSave = newSave({ party = { first, fainted, lastActive }, flags = {} })
+  local wrapCtx, _, wrapAwards = battleCtx(wrapSave, lastActive, { lastActive })
+  hooks["battle.exp_award"](function() error("must not delegate") end,
+    wrapCtx)
+  eq(#wrapAwards, 2, "last active slot still has two Buddy recipients")
+  eq(wrapAwards[1].mon, lastActive, "last active slot remains first recipient")
+  eq(wrapAwards[2].mon, first, "Buddy wraps to the first eligible slot")
+
+  local faintActive = { species = "SQUIRTLE", hp = 0 }
+  local survivor = { species = "PIDGEY", hp = 8 }
+  local faintSave = newSave({ party = { faintActive, survivor }, flags = {} })
+  local faintCtx, _, faintAwards = battleCtx(
+    faintSave, faintActive, { faintActive })
+  hooks["battle.exp_award"](function() error("must not delegate") end,
+    faintCtx)
+  eq(#faintAwards, 1, "fainted active is excluded")
+  eq(faintAwards[1].mon, survivor, "next healthy Pokemon receives the award")
+  eq(faintAwards[1].split, 1, "sole survivor gets a full award")
+end)
+
+test("All splits one award evenly across every eligible party Pokemon", function()
+  optionValues.experience_mode = "all"
+  local lead = { species = "PIKACHU", hp = 12 }
+  local fainted = { species = "RATTATA", hp = 0 }
+  local egg = { species = "TOGEPI", hp = 1, isEgg = true }
+  local bench = { species = "PIDGEY", hp = 9 }
+  local third = { species = "BULBASAUR", hp = 14 }
+  local save = newSave({
+    inventory = { EXP_ALL = 5 },
+    party = { lead, fainted, egg, bench, third },
+    flags = {},
+  })
+  local ctx, _, awards = battleCtx(save, lead, { lead })
+  ctx.participants = 6
+  local downstream = 0
+  hooks["battle.exp_award"](function() downstream = downstream + 1 end, ctx)
+  eq(downstream, 0, "All replaces the vanilla distribution")
+  eq(#awards, 3, "All excludes fainted Pokemon and eggs")
+  eq(awards[1].mon, lead, "All preserves first eligible party order")
+  eq(awards[2].mon, bench, "All preserves second eligible party order")
+  eq(awards[3].mon, third, "All preserves third eligible party order")
+  for index, award in ipairs(awards) do
+    eq(award.split, 3, "All recipient " .. index .. " gets one-third")
+    eq(award.announce, true,
+      "All recipient " .. index .. " uses the native message")
+  end
+  eq(save.inventory.EXP_ALL, 5, "All never edits the real EXP.ALL count")
+  eq(save.flags.EVENT_GOT_EXP_ALL, nil, "All does not forge story state")
+  eq(save.inventory.SCOTTS_EXP_SHARE, 1,
+    "All mode owns the visible EXP.SHARE item")
+end)
+
+test("legacy saved EXP choices migrate behavior without duplicate menu choices", function()
+  local lead = { species = "PIKACHU", hp = 12 }
+  local buddy = { species = "PIDGEY", hp = 9 }
+  local third = { species = "BULBASAUR", hp = 14 }
+  for _, legacy in ipairs({ "lead", "party", "share" }) do
+    optionValues.experience_mode = legacy
+    local save = newSave({ party = { lead, buddy, third }, flags = {} })
+    local ctx, _, awards = battleCtx(save, lead, { lead })
+    hooks["battle.exp_award"](function() error("must not delegate") end, ctx)
+    local expectedMode = legacy == "lead" and "buddy" or "all"
+    local expectedCount = legacy == "lead" and 2 or 3
+    eq(mod.exports.experience.mode, expectedMode,
+      legacy .. " save reports its canonical mode")
+    eq(#awards, expectedCount,
+      legacy .. " save keeps an intentional recipient mapping")
+    eq(save.inventory.SCOTTS_EXP_SHARE, 1,
+      legacy .. " save unlocks the indicator item")
+  end
+end)
+
+test("sharing errors propagate without touching EXP.ALL or story state", function()
+  optionValues.experience_mode = "all"
   local lead = { species = "PIKACHU", hp = 12 }
   local bench = { species = "PIDGEY", hp = 9 }
-  local fainted = { species = "RATTATA", hp = 0 }
-  local save = newSave({ party = { lead, fainted, bench }, flags = {} })
-  local ctx, applyShare = battleCtx(save, lead, { lead })
-  local calls = 0
-  hooks["battle.exp_award"](function(received)
-    calls = calls + 1
-    eq(received.participants, 1, "party full-share divisor is one")
-    eq(received.applyShare, applyShare, "party ctx keeps applyShare")
-    eq(#received.alive, 2, "party excludes fainted Pokemon")
-    eq(received.alive[1], lead, "party keeps first healthy Pokemon")
-    eq(received.alive[2], bench, "party keeps second healthy Pokemon")
-    eq(save.inventory.EXP_ALL, nil, "party keeps absent EXP.ALL absent")
-  end, ctx)
-  eq(calls, 1, "party downstream call count")
-  eq(save.inventory.EXP_ALL, nil, "party restores absent EXP.ALL as nil")
-  eq(save.flags.EVENT_GOT_EXP_ALL, nil, "party mode does not forge story state")
-end)
-
-test("share EXP uses vanilla ctx with temporary EXP.ALL and restores on success or error", function()
-  optionValues.experience_mode = "share"
-  local lead = { species = "PIKACHU", hp = 12 }
-  local save = newSave({ party = { lead }, flags = {} })
+  local flags = { EVENT_BEAT_SABRINA = true }
+  local save = newSave({
+    inventory = { EXP_ALL = 9 }, party = { lead, bench }, flags = flags,
+  })
   local ctx = battleCtx(save, lead, { lead })
   local calls = 0
-  local result = pack(hooks["battle.exp_award"](function(received)
+  ctx.applyShare = function()
     calls = calls + 1
-    eq(received, ctx, "share keeps vanilla ctx identity")
-    eq(save.inventory.EXP_ALL, 1, "share presents temporary EXP.ALL to vanilla")
-    return "share", nil, 31
-  end, ctx))
-  eq(calls, 1, "share downstream call count")
-  eq(result.n, 3, "share preserves result arity")
-  eq(result[2], nil, "share preserves nil return")
-  eq(save.inventory.EXP_ALL, nil, "share removes temporary absent EXP.ALL")
-  eq(save.inventory.SCOTTS_EXP_SHARE, 1, "share mode also owns its visible item")
-
-  save.inventory.EXP_ALL = 9
+    if calls == 2 then error("award exploded") end
+  end
   local ok, err = pcall(function()
-    hooks["battle.exp_award"](function()
-      eq(save.inventory.EXP_ALL, 1, "share error path sees temporary EXP.ALL")
-      error("award exploded")
-    end, ctx)
+    hooks["battle.exp_award"](function() error("must not delegate") end, ctx)
   end)
-  eq(ok, false, "downstream EXP error is rethrown")
+  eq(ok, false, "applyShare error is rethrown")
   check(tostring(err):find("award exploded", 1, true),
-    "downstream EXP error text is preserved")
-  eq(save.inventory.EXP_ALL, 9, "share error restores real EXP.ALL count")
-  eq(save.flags.EVENT_GOT_EXP_ALL, nil, "share mode does not forge story state")
+    "applyShare error text is preserved")
+  eq(calls, 2, "sharing stops at the failing recipient")
+  eq(save.inventory.EXP_ALL, 9, "error path never edits real EXP.ALL")
+  eq(save.flags, flags, "error path preserves story table identity")
+  eq(save.flags.EVENT_GOT_EXP_ALL, nil, "error path forges no story state")
 end)
 
 test("v0.1.75 BagMenu fallback consumes Trade Stone and evolves via ITEM", function()

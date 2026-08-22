@@ -17,6 +17,9 @@ local ThorDualScreen = {
   -- stays well below the cost of a native-resolution buffer.
   OUTPUT_WIDTH = 400,
   OUTPUT_HEIGHT = 360,
+  -- Keep the battle controls close to the hinge instead of centering the
+  -- original bottom-of-Game-Boy-screen placement on Thor's lower panel.
+  BATTLE_PANEL_TOP = 12,
   PUSH_HZ = 30,
   COMPOSE_PRIORITY = 20000,
   HUD_PRIORITY = 20000,
@@ -30,6 +33,17 @@ local PRIMARY_WORLD_OVERLAY_OPTIONS = {
   target = "primary",
   presentation = "ayn_thor",
   fullComposite = true,
+}
+
+-- BattleState's classic UI owns these exact source bands.  Moving the band as
+-- one piece preserves the authored merged borders: TYPE/PP remains above the
+-- move list, while ordinary wording/command boxes retain their full 20x6
+-- bottom row.  Full-screen battle submenus are deliberately excluded below.
+local BATTLE_PANEL_REGIONS = {
+  messages = { y = 96, height = 48 },
+  menu = { y = 96, height = 48 },
+  moveSelect = { y = 64, height = 80 },
+  mimicSelect = { y = 56, height = 88 },
 }
 
 local unpackValues = table.unpack or unpack
@@ -143,6 +157,19 @@ local function integerContain(sourceWidth, sourceHeight,
     height = height,
     scaleX = scale,
     scaleY = scale,
+  }
+end
+
+local function battlePanelRegion(phase, uiWidth, uiHeight)
+  if tonumber(uiWidth) ~= 160 or tonumber(uiHeight) ~= 144 then return nil end
+  local region = BATTLE_PANEL_REGIONS[phase]
+  if not region then return nil end
+  return {
+    x = 0,
+    y = region.y,
+    width = 160,
+    height = region.height,
+    phase = phase,
   }
 end
 
@@ -271,14 +298,22 @@ local function stageApi(mod)
   return validStageApi(stage) and stage or nil
 end
 
-local function animationSurface(mod)
+local function stageState(mod)
   local stage = stageApi(mod)
   if not stage then return nil end
-  local okState, state = pcall(stage.state)
-  if not okState or type(state) ~= "table" or state.battle == nil
+  local ok, state = pcall(stage.state)
+  if not ok or type(state) ~= "table" or state.battle == nil
       or state.staged == false then
     return nil
   end
+  return state
+end
+
+local function animationSurface(mod)
+  local stage = stageApi(mod)
+  if not stage then return nil end
+  local state = stageState(mod)
+  if not state then return nil end
   local okSurface, surface = pcall(stage.animationSurface, state.battle)
   if not okSurface or type(surface) ~= "table" then return nil end
   local canvasWidth, canvasHeight = dimensions(surface.canvas)
@@ -298,6 +333,22 @@ local function animationSurface(mod)
     pw = framebufferWidth,
     ph = framebufferHeight,
   }
+end
+
+local function activeBattlePanel(mod, uiWidth, uiHeight)
+  local state = stageState(mod)
+  local battle = state and state.battle or nil
+  -- Bag, party, naming, settings and yes/no screens can sit over a battle
+  -- while its phase still says "messages".  Prefer the live stack identity
+  -- when exposed, with waitingUI as the compatibility fallback; those screens
+  -- must retain their complete 160x144 surface.
+  if type(battle) ~= "table" or battle.waitingUI then return nil end
+  local stack = battle.game and battle.game.stack or nil
+  if type(stack) == "table" and type(stack.top) == "function" then
+    local ok, top = pcall(stack.top, stack)
+    if ok and top ~= battle then return nil end
+  end
+  return battlePanelRegion(battle.phase, uiWidth, uiHeight)
 end
 
 local function setSplitPresentation(mod, active)
@@ -646,7 +697,13 @@ function ThorDualScreen.install(mod, opts)
         and dimensions(ctx.worldCanvas) then
       source, sourceKind = ctx.worldCanvas, "worldCanvas"
     else
-      return runtime.topValid
+      -- A save can boot directly into a menu before any world frame has been
+      -- captured.  The old path refused presentation until the player closed
+      -- that menu, which made a saved ON setting look broken even after the
+      -- native panel had attached.  A neutral primary surface lets the menu
+      -- appear below immediately; the first world frame replaces it normally.
+      if runtime.topValid then return true end
+      sourceKind = "blank"
     end
 
     local targetWidth = integer(ctx.pw,
@@ -656,8 +713,17 @@ function ThorDualScreen.install(mod, opts)
     local canvas, replacementOrError = freshTopCanvas(targetWidth, targetHeight)
     if not canvas then return false, replacementOrError end
     local replacement = replacementOrError == true
-    local rendered, renderError = renderWorldInto(canvas, ctx, source,
-      sourceKind, targetWidth, targetHeight)
+    local rendered, renderError
+    if sourceKind == "blank" then
+      rendered, renderError = graphicsGuard(graphics, function()
+        graphics.setCanvas(canvas)
+        neutralGraphics(graphics)
+        graphics.clear(0, 0, 0, 1)
+      end)
+    else
+      rendered, renderError = renderWorldInto(canvas, ctx, source,
+        sourceKind, targetWidth, targetHeight)
+    end
     if not rendered then
       if replacement then release(canvas) end
       return false, renderError
@@ -683,6 +749,24 @@ function ThorDualScreen.install(mod, opts)
     uiWidth, uiHeight = uiWidth or 160, uiHeight or 144
     local transform = integerContain(uiWidth, uiHeight,
       ThorDualScreen.OUTPUT_WIDTH, ThorDualScreen.OUTPUT_HEIGHT)
+    local panel = activeBattlePanel(mod, uiWidth, uiHeight)
+    local drawX, drawY = transform.x, transform.y
+    local boxX, boxY = 0, 0
+    local boxWidth, boxHeight = ThorDualScreen.OUTPUT_WIDTH,
+      ThorDualScreen.OUTPUT_HEIGHT
+    if panel then
+      -- Treat the selected source band as one joined control cluster.  The
+      -- source canvas origin moves upward while a tight scissor omits the
+      -- now-empty battle-picture area; TYPE/PP and moves therefore stay joined
+      -- and ordinary dialogue begins at a small hinge-side margin.
+      drawX = transform.x - panel.x * transform.scaleX
+      drawY = ThorDualScreen.BATTLE_PANEL_TOP
+        - panel.y * transform.scaleY
+      boxX = transform.x
+      boxY = ThorDualScreen.BATTLE_PANEL_TOP
+      boxWidth = panel.width * transform.scaleX
+      boxHeight = panel.height * transform.scaleY
+    end
     local ok, err = graphicsGuard(graphics, function()
       graphics.setCanvas(canvas)
       neutralGraphics(graphics)
@@ -692,21 +776,26 @@ function ThorDualScreen.install(mod, opts)
         local drew, drawError = pcall(ctx.renderer.blitCanvas, ctx.renderer,
           ctx.uiCanvas, transform.scaleX, transform.scaleY,
           ctx.zones, transform.scaleX, transform.scaleY,
-          transform.x, transform.y,
-          0, 0, ThorDualScreen.OUTPUT_WIDTH,
-          ThorDualScreen.OUTPUT_HEIGHT, 1, 1)
+          drawX, drawY,
+          boxX, boxY, boxWidth, boxHeight, 1, 1)
         if not drew then error(drawError, 0) end
       elseif ctx.uiCanvas then
-        graphics.draw(ctx.uiCanvas, transform.x, transform.y, 0,
+        if panel and type(graphics.setScissor) == "function" then
+          graphics.setScissor(boxX, boxY, boxWidth, boxHeight)
+        end
+        graphics.draw(ctx.uiCanvas, drawX, drawY, 0,
           transform.scaleX, transform.scaleY)
+        if panel and type(graphics.setScissor) == "function" then
+          graphics.setScissor()
+        end
       end
     end)
     if not ok then return false, err end
     return true, {
       width = ThorDualScreen.OUTPUT_WIDTH,
       height = ThorDualScreen.OUTPUT_HEIGHT,
-      gameX = transform.x,
-      gameY = transform.y,
+      gameX = drawX,
+      gameY = drawY,
       gameWidth = transform.width,
       gameHeight = transform.height,
       scale = transform.scaleX,
@@ -728,10 +817,16 @@ function ThorDualScreen.install(mod, opts)
         height = ThorDualScreen.OUTPUT_HEIGHT,
       },
       game = {
-        x = transform.x, y = transform.y,
+        x = drawX, y = drawY,
         width = transform.width, height = transform.height,
       },
       _scottsTweaksThorLower = true,
+      _scottsTweaksThorBattlePanel = panel and {
+        phase = panel.phase,
+        sourceY = panel.y,
+        sourceHeight = panel.height,
+        top = ThorDualScreen.BATTLE_PANEL_TOP,
+      } or nil,
     }
   end
 
@@ -886,6 +981,15 @@ function ThorDualScreen.install(mod, opts)
       requestBattleSplit(false)
       return downstream
     end
+    -- Android creates its Presentation only after setEnabled(true).  Asking
+    -- available() first deadlocked a cold boot: false prevented the enable
+    -- request, so only a manual OFF/ON option change could ever attach it.
+    -- Issue the saved ON request once as soon as the compose seam publishes
+    -- its bridge; availability may turn true later on Android's UI thread.
+    if not requestBridge(true) then
+      requestBattleSplit(false)
+      return downstream
+    end
     if not bridgeAvailable(runtime.bridge) then
       requestBattleSplit(false)
       -- Keep the already-issued native enable request latched across a
@@ -903,7 +1007,6 @@ function ThorDualScreen.install(mod, opts)
     local splitWasReady = runtime.splitRequested == true
     local splitReady = requestBattleSplit(true)
     if splitReady and not splitWasReady then return downstream end
-    if not requestBridge(true) then return downstream end
 
     local topReady, topError = updateTop(ctx)
     if not topReady then
@@ -1126,5 +1229,6 @@ ThorDualScreen.cover = cover
 ThorDualScreen.contain = contain
 ThorDualScreen.integerContain = integerContain
 ThorDualScreen.enabledValue = enabledValue
+ThorDualScreen.battlePanelRegion = battlePanelRegion
 
 return ThorDualScreen

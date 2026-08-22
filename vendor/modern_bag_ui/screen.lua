@@ -66,9 +66,9 @@ return function(mod, priorBagMenu)
     key = "Key",
   }
 
-  -- VENDORED CHANGE (Scott's Tweaks): the procedural backpack has five real
-  -- compartments. All is a neutral combined view; the remaining categories
-  -- each own one distinct region. No raster or cartridge art is bundled.
+  -- VENDORED CHANGE (Scott's Tweaks): the generated backpack sheet has one
+  -- neutral frame and five highlighted compartment frames. The exact state
+  -- names stay public for the integration/diagnostic seam below.
   local CLASSIC_BAG_REGIONS = {
     all = "all",
     items = "items",
@@ -134,6 +134,14 @@ return function(mod, priorBagMenu)
 
   local inkShader -- false when shaders are unavailable
   local classicLabelFont -- false when direct TTF labels are unavailable
+  local classicSpriteShader -- false when alpha-cutout shaders are unavailable
+  local classicAssetsTried = false
+  local classicBagSheet -- false when the generated sheet cannot be loaded
+  local classicBagQuads = {}
+  local classicBagCellW, classicBagCellH
+  local classicBlueWeave -- false when the generated texture cannot be loaded
+  local classicBlueWeaveW, classicBlueWeaveH
+  local classicBlueWeaveQuads = {}
 
   local function gray(value)
     love.graphics.setColor(value, value, value, 1)
@@ -291,6 +299,109 @@ return function(mod, priorBagMenu)
       width, height = love.graphics.getDimensions()
     end
     return tonumber(width) or 160, tonumber(height) or SCREEN_H
+  end
+
+  -- The image generator intentionally supplied a faint colored presentation
+  -- glow around the hard-edged backpack pixels. At Bag-menu scale that halo
+  -- muddies the white display card, so the runtime keeps only confidently
+  -- opaque pixels without changing the generated artwork on disk.
+  local function shaderForClassicSprite()
+    if classicSpriteShader == nil then
+      if not love.graphics.newShader then
+        classicSpriteShader = false
+      else
+        local ok, shader = pcall(love.graphics.newShader, [[
+          vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
+            vec4 pixel = Texel(tex, tc);
+            if (pixel.a < 0.50) discard;
+            return pixel * color;
+          }
+        ]])
+        classicSpriteShader = ok and shader or false
+      end
+    end
+    return classicSpriteShader or nil
+  end
+
+  local function loadClassicAssets()
+    if classicAssetsTried then return end
+    classicAssetsTried = true
+
+    local okBag, bag = pcall(function()
+      return mod.assets:image("assets/scotts_pocket_bag_sheet.png")
+    end)
+    if okBag and bag then
+      if bag.setFilter then pcall(bag.setFilter, bag, "nearest", "nearest") end
+      local okSize, sheetW, sheetH = pcall(bag.getDimensions, bag)
+      local cellW = okSize and sheetW and sheetW / 3 or nil
+      local cellH = okSize and sheetH and sheetH / 2 or nil
+      if cellW and cellH and love.graphics.newQuad then
+        local frames = {
+          all = { 0, 0 }, items = { 1, 0 }, medicine = { 2, 0 },
+          balls = { 0, 1 }, machines = { 1, 1 }, key = { 2, 1 },
+        }
+        local okQuads = true
+        for key, frame in pairs(frames) do
+          local okQuad, quad = pcall(love.graphics.newQuad,
+            frame[1] * cellW, frame[2] * cellH,
+            cellW, cellH, sheetW, sheetH)
+          if not okQuad or not quad then okQuads = false break end
+          classicBagQuads[key] = quad
+        end
+        if okQuads then
+          classicBagSheet = bag
+          classicBagCellW = cellW
+          classicBagCellH = cellH
+        end
+      end
+    end
+    if not classicBagSheet then
+      classicBagSheet = false
+      classicBagQuads = {}
+    end
+
+    local okWeave, weave = pcall(function()
+      return mod.assets:image("assets/pocket_blue_weave.png")
+    end)
+    if okWeave and weave then
+      if weave.setFilter then pcall(weave.setFilter, weave, "nearest", "nearest") end
+      local okSize, width, height = pcall(weave.getDimensions, weave)
+      if okSize and width and height and width > 0 and height > 0 then
+        classicBlueWeave = weave
+        classicBlueWeaveW, classicBlueWeaveH = width, height
+      else
+        classicBlueWeave = false
+      end
+    else
+      classicBlueWeave = false
+    end
+  end
+
+  local function classicWeaveQuad(width, height)
+    if not (classicBlueWeave and love.graphics.newQuad
+        and width > 0 and height > 0) then return nil end
+    local key = tostring(width) .. "x" .. tostring(height)
+    if classicBlueWeaveQuads[key] ~= nil then
+      return classicBlueWeaveQuads[key] or nil
+    end
+
+    -- Center-crop the square source to the rail's aspect ratio, then apply one
+    -- uniform scale. Stretching the full square into the narrow rail turns its
+    -- woven diamonds into tall lozenges on the Thor.
+    local targetAspect = width / height
+    local sourceAspect = classicBlueWeaveW / classicBlueWeaveH
+    local cropW, cropH = classicBlueWeaveW, classicBlueWeaveH
+    if targetAspect < sourceAspect then
+      cropW = cropH * targetAspect
+    elseif targetAspect > sourceAspect then
+      cropH = cropW / targetAspect
+    end
+    local cropX = (classicBlueWeaveW - cropW) / 2
+    local cropY = (classicBlueWeaveH - cropH) / 2
+    local ok, quad = pcall(love.graphics.newQuad, cropX, cropY,
+      cropW, cropH, classicBlueWeaveW, classicBlueWeaveH)
+    classicBlueWeaveQuads[key] = ok and quad or false
+    return ok and quad or nil
   end
 
   -- VENDORED CHANGE (Scott's Tweaks): a 256px responsive Bag only fits the
@@ -1112,6 +1223,23 @@ return function(mod, priorBagMenu)
     gray(BLACK)
     love.graphics.rectangle("fill", 0, 0, layout.width, layout.headerH)
 
+    loadClassicAssets()
+    if classicBlueWeave and love.graphics.draw then
+      local quad = classicWeaveQuad(layout.railW, layout.railH)
+      if quad then
+        local _, _, cropW, cropH = quad:getViewport()
+        local scale = layout.railW / cropW
+        love.graphics.push("all")
+        gray(WHITE)
+        love.graphics.draw(classicBlueWeave, quad,
+          layout.railX, layout.railY, 0, scale, scale)
+        love.graphics.pop()
+        return
+      end
+    end
+
+    -- Safe fallback for runtimes or incomplete installations that cannot
+    -- decode the generated PNG.
     gray(LIGHT)
     love.graphics.rectangle("fill", layout.railX, layout.railY,
       layout.railW, layout.railH)
@@ -1158,12 +1286,38 @@ return function(mod, priorBagMenu)
     return margin, bagY, bagH, pocketY, pocketH
   end
 
-  -- VENDORED CHANGE (Scott's Tweaks): the upstream Pocket skin loaded and
-  -- recolored a 34x21 PNG derived from a supplied screenshot. This fork draws
-  -- an original generic five-compartment pixel backpack entirely from LOVE
-  -- rectangle primitives. Every compartment remains visible in neutral All;
-  -- one becomes solid black for each real pocket.
+  -- VENDORED CHANGE (Scott's Tweaks): use Scott's original generated six-frame
+  -- sheet (neutral plus one frame per real pocket). The primitive version is
+  -- deliberately retained below as a compatibility fallback, never as a
+  -- dependency on the upstream screenshot-derived raster.
   local function drawClassicPocketBag(key, x, y, width, height)
+    loadClassicAssets()
+    local quad = classicBagQuads[key]
+    if classicBagSheet and quad and love.graphics.draw then
+      local cellW = classicBagCellW
+      local cellH = classicBagCellH
+      local scale = math.min(math.max(1, width - 2) / cellW,
+        math.max(1, height - 2) / cellH)
+      local drawW, drawH = cellW * scale, cellH * scale
+      local dx = math.floor(x + (width - drawW) / 2)
+      local dy = math.floor(y + (height - drawH) / 2)
+      love.graphics.push("all")
+      gray(WHITE)
+      local shader = shaderForClassicSprite()
+      if shader and love.graphics.setShader then love.graphics.setShader(shader) end
+      love.graphics.draw(classicBagSheet, quad, dx, dy, 0, scale, scale)
+      love.graphics.pop()
+      -- The surrounding Pocket rail intentionally uses Game Boy palette zones,
+      -- but the generated frame's red/green/orange/violet/cyan highlights are
+      -- literal authored colors. Re-blit this small square through the engine's
+      -- standard true-color seam so the enclosing GREENMON zone cannot collapse
+      -- all six states back into one green luminance ramp.
+      if type(PaletteFX.markTrueColor) == "function" then
+        pcall(PaletteFX.markTrueColor, dx, dy, drawW, drawH)
+      end
+      return true
+    end
+
     local bagW = math.max(26, math.min(34, math.floor(width - 6)))
     local bagH = math.max(19, math.min(23, math.floor(height - 5)))
     local bx = math.floor(x + (width - bagW) / 2)

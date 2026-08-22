@@ -175,8 +175,8 @@ T.eq(run.mod and run.mod.manifest.id, "voxel_run_bridge",
   "stable updater identity is retained")
 T.eq(run.mod and run.mod.manifest.name, "Scott's Tweaks",
   "new display name is loaded")
-T.eq(run.mod and run.mod.manifest.version, "0.12.3",
-  "loader selected version 0.12.3")
+T.eq(run.mod and run.mod.manifest.version, "0.12.4",
+  "loader selected version 0.12.4")
 -- The consolidated build bundles All Pokemon Catchable 151 and Dynamic Scaling, which repatch
 -- encounter tables and pokemon records. The loader warns when a mod writes to
 -- pokemon while claiming otherwise, and a link partner must know, so the flag
@@ -248,8 +248,14 @@ T.eq(experienceOption and experienceOption.type, "choice",
   "EXP mode uses a choice")
 T.eq(experienceOption and experienceOption.default, "vanilla",
   "EXP mode defaults to vanilla")
-T.eq(experienceOption and #(experienceOption.choices or {}), 4,
-  "EXP mode exposes all four choices")
+T.eq(experienceOption and #(experienceOption.choices or {}), 3,
+  "EXP.SHARE exposes only OFF, BUDDY, and ALL")
+T.eq(experienceOption and experienceOption.choices[1][1], "OFF",
+  "EXP.SHARE begins with OFF")
+T.eq(experienceOption and experienceOption.choices[2][1], "BUDDY",
+  "EXP.SHARE exposes Buddy sharing")
+T.eq(experienceOption and experienceOption.choices[3][1], "ALL",
+  "EXP.SHARE exposes party-wide sharing")
 T.eq(cockpitOption and cockpitOption.type, "toggle",
   "Free Fly cockpit control uses a toggle")
 T.eq(cockpitOption and cockpitOption.default, false,
@@ -694,7 +700,7 @@ T.check(type(pokemonFinalExports) == "table",
   "Pokemon Final test-double exports are published")
 T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.owner, "voxel_run_bridge",
   "Pokemon Final FreeMove receives Scott's bridge marker")
-T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.12.3",
+T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.12.4",
   "Pokemon Final bridge marker carries the update version")
 T.eq(type(exported.hmWithoutBadges), "function",
   "live HM option accessor is published")

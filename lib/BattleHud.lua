@@ -32,11 +32,14 @@ local BattleHud = {}
 -- How solid the frost is over the world behind it, and how far the tint
 -- pushes it toward the far end from the text.
 --
--- Keep the backplates fully transparent. Contrast still comes from the
--- luminance verdict below, which switches the engine's glyphs between black
--- and white without placing a translucent slab over the arena.
+-- The status cards need only a quiet footing, not another opaque Game Boy
+-- window.  Frost stays off (avoiding a per-frame downsample on mobile) and a
+-- lightly coloured translucent wash separates the HP/level ink from grass,
+-- roofs and caves without hiding the arena.
 BattleHud.FROST = 0.0
-BattleHud.TINT = 0.0
+BattleHud.TINT = 0.24
+BattleHud.PANEL_DARK = { 0.035, 0.070, 0.120 }
+BattleHud.PANEL_LIGHT = { 0.940, 0.965, 1.000 }
 
 -- The luminance the glyphs flip at, with a dead band so a drift across it
 -- settles rather than strobes.
@@ -262,19 +265,172 @@ function BattleHud.panel(rect, box, dark, world)
   -- destination canvas or blend state at all; premultiplied driver paths can
   -- otherwise retain RGB from a transparent sample as a dim veil.
   if BattleHud.FROST <= 0 and BattleHud.TINT <= 0 then return true end
-  if not (frost and box and box.scale and box.scale > 0) then return false end
-  local fx, fy, fw, fh = mapper(world)(rect, box)
   local ok = pcall(function()
-    local quad = love.graphics.newQuad(fx, fy, fw, fh, frostW, frostH)
-    love.graphics.setColor(1, 1, 1, BattleHud.FROST)
-    love.graphics.draw(frost, quad, rect[1], rect[2], 0,
-                       rect[3] / fw, rect[4] / fh)
-    local shade = dark and 0 or 1
-    love.graphics.setColor(shade, shade, shade, BattleHud.TINT)
-    love.graphics.rectangle("fill", rect[1], rect[2], rect[3], rect[4])
+    if BattleHud.FROST > 0 and frost and box and box.scale
+       and box.scale > 0 then
+      local fx, fy, fw, fh = mapper(world)(rect, box)
+      local quad = love.graphics.newQuad(fx, fy, fw, fh, frostW, frostH)
+      love.graphics.setColor(1, 1, 1, BattleHud.FROST)
+      love.graphics.draw(frost, quad, rect[1], rect[2], 0,
+                         rect[3] / fw, rect[4] / fh)
+    end
+    if BattleHud.TINT > 0 then
+      local shade = dark and BattleHud.PANEL_DARK or BattleHud.PANEL_LIGHT
+      love.graphics.setColor(shade[1], shade[2], shade[3], BattleHud.TINT)
+      love.graphics.rectangle("fill", rect[1], rect[2], rect[3], rect[4])
+    end
     love.graphics.setColor(1, 1, 1, 1)
   end)
   return ok
+end
+
+-- ------- later-generation status details
+--
+-- Red has no in-battle EXP row of its own.  The modern status card borrows
+-- Gold/Crystal's placement: an eight-tile progress channel under the player
+-- HP numbers, filled from right to left.  The calculation still uses Red's
+-- live growth curve and level cap, so this is presentation only -- no EXP or
+-- level state is touched.
+BattleHud.EXP_RECT = { 80, 91, 64, 2 }
+BattleHud.CAUGHT_POS = { 80, 8 }
+
+local growthModule = nil
+
+local function growth()
+  if growthModule == false then return nil end
+  if growthModule == nil then
+    local ok, loaded = pcall(require, "src.pokemon.Growth")
+    growthModule = ok and loaded or false
+  end
+  return growthModule or nil
+end
+
+function BattleHud.playerExpFraction(battle)
+  local battler = battle and battle.player
+  local mon = battler and battler.mon
+  local level = mon and tonumber(mon.level)
+  if not (mon and level and level >= 1) then return nil end
+
+  local data = battle.data or {}
+  local cap = tonumber(data.constants and data.constants.levelCap) or 100
+  if level >= cap then return 1 end
+  local def = battler.def or (data.pokemon and data.pokemon[mon.species])
+  local Growth = growth()
+  if not (def and Growth and type(Growth.expForLevel) == "function") then
+    return nil
+  end
+
+  local okBase, base = pcall(Growth.expForLevel, def.growthRate, level,
+                             data.growth_rates)
+  local okNext, nextLevel = pcall(Growth.expForLevel, def.growthRate,
+                                  level + 1, data.growth_rates)
+  if not (okBase and okNext and tonumber(base) and tonumber(nextLevel))
+     or nextLevel <= base then return nil end
+  local earned = tonumber(mon.exp or mon.experience) or base
+  return math.max(0, math.min(1, (earned - base) / (nextLevel - base)))
+end
+
+local function statusHudVisible(battle)
+  if type(battle and battle.statusHUDVisible) == "function" then
+    local ok, visible = pcall(battle.statusHUDVisible, battle)
+    if ok and visible == false then return false end
+  end
+  return true
+end
+
+local function playerHudLive(battle, slide)
+  if not (battle and battle.player) or (slide or 0) ~= 0
+     or battle.safari or battle.demo or battle.showPlayerBack then
+    return false
+  end
+  return statusHudVisible(battle)
+end
+
+local function enemyHudLive(battle, slide)
+  if not (battle and battle.enemy) or (slide or 0) ~= 0
+     or battle.showEnemyTrainer or battle.enemySendingOut
+     or battle.introBalls or battle.enemy.fainted then return false end
+  if type(battle.growInScale) == "function" then
+    local ok, scale = pcall(battle.growInScale, battle, battle.enemy)
+    if ok and scale then return false end
+  end
+  return statusHudVisible(battle)
+end
+
+function BattleHud.ownedOpponent(battle)
+  if not (battle and battle.enemy and battle.enemy.mon) then return false end
+  local wild = battle.kind == "wild" or battle.kind == "safari"
+               or battle.wild == true or battle.safari and true or false
+  if not wild then return false end
+  local save = battle.game and battle.game.save
+  local dex = save and save.pokedex
+  local species = battle.enemy.mon.species
+  return (dex and ((dex.owned and dex.owned[species])
+                   or (dex.caught and dex.caught[species]))) and true or false
+end
+
+function BattleHud.nativeCaughtMarker(battle)
+  return type(battle and battle.caughtMarkerVisible) == "function"
+    and type(battle and battle.drawCaughtBall) == "function"
+end
+
+local function drawExpBar(g, fraction)
+  local r = BattleHud.EXP_RECT
+  local pixels = math.floor(math.max(0, math.min(1, fraction)) * r[3])
+  -- A deep-blue translucent frame, a pale empty channel, then Crystal-blue
+  -- progress anchored to the right like FillInExpBar/PlaceExpBar.
+  g.setColor(0.025, 0.060, 0.110, 0.84)
+  g.rectangle("fill", r[1] - 1, r[2] - 1, r[3] + 2, r[4] + 2)
+  g.setColor(0.72, 0.82, 0.88, 0.62)
+  g.rectangle("fill", r[1], r[2], r[3], r[4])
+  if pixels > 0 then
+    g.setColor(0.20, 0.62, 1.00, 1)
+    g.rectangle("fill", r[1] + r[3] - pixels, r[2], pixels, r[4])
+  end
+end
+
+-- Original 7x7 status glyph rather than a scaled UI icon: it remains crisp
+-- at every integer HUD rung and needs no new image asset or texture upload.
+local function drawCaughtBall(g)
+  local x, y = BattleHud.CAUGHT_POS[1], BattleHud.CAUGHT_POS[2]
+  g.setColor(0.04, 0.05, 0.07, 0.96)
+  g.rectangle("fill", x + 2, y, 3, 1)
+  g.rectangle("fill", x + 1, y + 1, 5, 1)
+  g.rectangle("fill", x, y + 2, 7, 3)
+  g.rectangle("fill", x + 1, y + 5, 5, 1)
+  g.rectangle("fill", x + 2, y + 6, 3, 1)
+  g.setColor(0.94, 0.22, 0.22, 1)
+  g.rectangle("fill", x + 2, y + 1, 3, 1)
+  g.rectangle("fill", x + 1, y + 2, 5, 1)
+  g.setColor(0.96, 0.98, 1.00, 1)
+  g.rectangle("fill", x + 1, y + 4, 5, 1)
+  g.rectangle("fill", x + 2, y + 5, 3, 1)
+  g.setColor(0.82, 0.90, 1.00, 1)
+  g.rectangle("fill", x + 3, y + 3, 1, 1)
+end
+
+-- Drawn immediately after the engine's own HUD, into the same 160x144 layer.
+-- That makes the extras follow snapped desktop/Thor placement, fallback GB
+-- placement, both player-card orientations and every HUD shader as one unit.
+function BattleHud.drawStatusExtras(battle, slide)
+  local g = love and love.graphics
+  if not g then return { exp = nil, caught = false } end
+  local oldColor = g.getColor and { g.getColor() } or { 1, 1, 1, 1 }
+  local fraction = playerHudLive(battle, slide)
+                   and BattleHud.playerExpFraction(battle) or nil
+  local caught = enemyHudLive(battle, slide)
+                 and BattleHud.ownedOpponent(battle) or false
+  local caughtFallback = caught and not BattleHud.nativeCaughtMarker(battle)
+  if fraction ~= nil then drawExpBar(g, fraction) end
+  if caughtFallback then drawCaughtBall(g) end
+  g.setColor(oldColor[1] or 1, oldColor[2] or 1,
+             oldColor[3] or 1, oldColor[4] or 1)
+  return {
+    exp = fraction,
+    caught = caught,
+    caughtFallback = caughtFallback,
+    caughtNative = caught and not caughtFallback,
+  }
 end
 
 -- ------- flipping the glyphs

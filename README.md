@@ -1,8 +1,9 @@
 # Scott's Tweaks
 
-**0.12.3 adds a responsive Pocket-style Bag and matching PC item lists.** It
-bundles and adapts Modern Bag UI 0.4.1, keeps the requested backpack look as
-the default, and retains a selectable modern skin. The 3D voxel Kanto
+**0.12.4 polishes the physical-Thor and staged-battle experience.** It adds
+automatic saved-ON lower-screen startup, hinge-aligned battle controls, clean
+moving Pokemon cards, clearer status panels, EXP/caught indicators, a simpler
+Buddy/All EXP.SHARE, and a generated six-state Pocket backpack. The 3D voxel Kanto
 renderer, visible wild Pokemon, followers,
 animated battle sprites, menu
 icons, Free Fly integration, and Scott's gameplay tweaks are bundled so one
@@ -15,21 +16,29 @@ is broader, but its internal mod ID remains `voxel_run_bridge`. Existing
 installations therefore update in place, keep their settings, and do not
 become a duplicate mod.
 
-Version 0.12.3 keeps the existing updater identity and provides one categorized
+Version 0.12.4 keeps the existing updater identity and provides one categorized
 **START > MOD MENUS > MOD SETTINGS** home for all of its settings. Its
 features are:
 
 - **Responsive Bag and PC:** press D-pad Left or Right through ALL, ITEMS,
   MEDICINE, POKé BALLS, TM/HM, and KEY ITEMS. The Pocket skin uses an original
-  five-compartment backpack; the optional Modern skin uses compact tabs. PC
-  withdraw, deposit, and toss lists use the same organization.
+  generated six-state backpack and blue weave; the optional Modern skin uses
+  compact tabs. PC withdraw, deposit, and toss lists use the same organization.
+- **Cleaner staged Pokémon:** moving battle cards no longer receive their own
+  unstable mobile shadow sample, removing the camera-motion bands while their
+  normal arena shadows and lighting remain.
+- **Clearer battle status:** staged HP/level cards gain a subtle translucent
+  backing and the player's EXP progress below HP. Current engines use their
+  native Poké Ball glyph to mark caught wild species in both flat and staged
+  battles; the staged renderer supplies a compatibility glyph on older builds.
 - **Built-in Pack and Pokegear:** Red's ITEM row appears as PACK, followed by
   CLOCK, MAP, PHONE, and RADIO Pokégear cards adapted to Red. It is entirely
   built in and never asks for a Gold ROM.
 - **Shop counts:** the BUY screen shows how many of the selected item are
   already in the bag.
-- **Experience modes:** choose VANILLA, LEAD ONLY, PARTY ALL, or EXP.SHARE.
-  Selecting EXP.SHARE permanently unlocks a visible key item in the bag.
+- **EXP.SHARE:** choose OFF, BUDDY (the active Pokemon plus its next healthy
+  party mate), or ALL healthy party Pokemon. Either sharing mode permanently
+  unlocks a visible key item in the bag.
 - **Trade Stone:** every Gen 1 mart sells a ₽500 stone that evolves Kadabra,
   Machoke, Graveler, or Haunter through the normal evolution sequence.
 - **Trainer forfeits and rematches:** pay ¥200 to leave an ordinary trainer
@@ -130,7 +139,7 @@ other Scott's Tweaks feature remains active.
 The default **BAG LOOK: POCKET** view organizes the live Gen 1 inventory into
 **ALL**, **ITEMS**, **MEDICINE**, **POKé BALLS**, **TM/HM**, and **KEY ITEMS**.
 All is a neutral combined view; the other five views select one compartment on
-Scott's original primitive-drawn backpack. **BAG LOOK: MODERN** presents the
+Scott's original generated pixel backpack. **BAG LOOK: MODERN** presents the
 same categories as compact responsive tabs. Press D-pad Left or Right to
 change views. SELECT still reorders items by identity, so filtered row numbers
 never corrupt the authoritative acquisition order.
@@ -174,23 +183,30 @@ Gen 1 Modern UI should stay installed. It can present the native Bag, Kanto
 Map, and all of its other supported screens normally. Scott's Thor presenter
 sends those same UI canvases to the lower screen without a second renderer.
 
-## Experience modes
+## EXP.SHARE
 
-**EXP. MODE** is a four-way setting:
+**EXP. SHARE** is one three-way setting:
 
-- **VANILLA** (default) leaves Gen 1 participation and a legitimately owned
-  EXP.ALL completely unchanged.
-- **LEAD ONLY** gives the award to the active, conscious Pokemon.
-- **PARTY ALL** gives one full award to each conscious party member.
-- **EXP.SHARE** uses Gen 1's split-share math and permanently unlocks a
-  passive **EXP.SHARE** key item in the bag.
+- **OFF** (default) leaves normal battle participation and a legitimately
+  owned EXP.ALL completely unchanged.
+- **BUDDY** splits one defeated-Pokemon award between the active Pokemon and
+  its next conscious, non-Egg party mate. If only one is eligible, it receives
+  the full award.
+- **ALL** splits one award evenly across every conscious, non-Egg Pokemon in
+  the party.
 
-The custom EXP.SHARE item is an indicator; the Scott's Tweaks option remains
-authoritative. If the bag is full, sharing still works and the item is added
-when room becomes available. Changing modes does not remove it. The adapter
-temporarily uses the engine's own EXP.ALL allocation path for one award and
-then restores the exact real inventory value, so it never grants or consumes
-the Route 15 EXP.ALL or changes its story event.
+Either sharing mode permanently unlocks the passive **EXP.SHARE** key item in
+the bag. The item is an indicator; this one setting remains authoritative. If
+the bag is full, sharing still works and the item is added when room becomes
+available. Changing modes does not remove it. Scott's Tweaks calls the
+engine's public per-Pokemon EXP award seam directly, so leveling, move
+learning, traded bonuses, and messages remain native while the real Route 15
+EXP.ALL item and its story event are never granted, consumed, or edited.
+
+Existing saves migrate without another setting: the former **LEAD ONLY** value
+behaves as **BUDDY**, while former **PARTY ALL** and **EXP.SHARE** values behave
+as **ALL**. The next save lifecycle writes the canonical value into both the
+save and live Mod Manager so every settings screen reports the same choice.
 
 ## Trade Stone
 
@@ -219,7 +235,7 @@ special canopy scenery so it does not flatten places that are supposed to be
 enclosed or water-covered.
 
 The renderer is selected by its stable mod ID and then checked for the required
-capabilities rather than trusted by display name alone. Version 0.12.3 targets
+capabilities rather than trusted by display name alone. Version 0.12.4 targets
 Pokemon Final, the verified Dramatic Shape 1.8.0-1.8.2 renderer contract, and
 Battle Art Voxel Fork's published renderer modules.
 If an active voxel provider does not expose the required renderer modules,
@@ -365,10 +381,21 @@ missing second display, the game remains a normal single-screen layout. It
 does not merge or redistribute the private upstream-derived Dual Screen or
 Battle Art implementations.
 
+When a saved **ON** preference starts on Android, Scott's Tweaks now requests
+the native Presentation first and then checks attachment, so the lower display
+comes up during cold boot without an OFF/ON toggle or leaving and reopening an
+already-visible menu. A menu opened before the first world frame receives a
+neutral upper image until live gameplay is available instead of blocking the
+lower presentation.
+
 During staged battles, the lower panel keeps wording, menus, and HUD chrome.
 Pokemon cards, trainer cards, and move-effect sprites stay in the upper arena
-instead of being duplicated below. Disabling the option or unplugging the
-second display immediately restores the ordinary single-screen composition.
+instead of being duplicated below. Dialogue and command bands start near the
+hinge at the top of the lower display; TYPE/PP and the move list stay joined
+directly below that band, bringing the active choices toward the middle of the
+device. Full-screen Bag, Party, and settings surfaces remain centered.
+Disabling the option or unplugging the second display immediately restores the
+ordinary single-screen composition.
 
 If the older `gen1recomp_ds` mod is still enabled, its presenter remains the
 owner and this row reads **OTHER MOD** without accepting edits. Disable that
@@ -379,20 +406,20 @@ Scott's Tweaks choice was already saved.
 ## Install or update
 
 If Voxel Run Bridge or any earlier Scott's Tweaks release is installed, open
-Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.12.3
+Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.12.4
 update. It will appear as **Scott's Tweaks** afterward without creating a
 second entry.
 
 For a first installation:
 
 1. Open **MODS -> Import mod .zip** and choose
-   `voxel_run_bridge-0.12.3.zip`.
+   `voxel_run_bridge-0.12.4.zip`.
 2. Enable **Scott's Tweaks**, then restart the game if the manager asks.
 3. Open **START > MOD MENUS > MOD SETTINGS**. The Pocket Bag, trainer
    features, Oak's starter, B running, light run bob, gapped land, badge-free
    HMs, Free Fly Now, visible wild Pokemon, and one follower default on.
-   Classic random battles and hidden encounter markers default off. EXP
-   defaults to Vanilla; Fly Cockpit and Thor Second Screen default off;
+   Classic random battles and hidden encounter markers default off. EXP.SHARE
+   defaults OFF; Fly Cockpit and Thor Second Screen default off;
    Pack + Pokegear defaults on; run speed defaults to 1.5X and
    bob to 0.5X.
 4. Use the bundled Free Fly for free-roaming flight; no separate mod is needed.
@@ -459,17 +486,17 @@ Use the `dev` branch of
 ```powershell
 python tools/modkit.py validate C:\path\to\voxel_run_bridge --strict --base fixture
 python tools/modkit.py lint C:\path\to\voxel_run_bridge
-python tools/modkit.py pack C:\path\to\voxel_run_bridge -o C:\path\to\dist\voxel_run_bridge-0.12.3.zip --base fixture
+python tools/modkit.py pack C:\path\to\voxel_run_bridge -o C:\path\to\dist\voxel_run_bridge-0.12.4.zip --base fixture
 ```
 
 The archive keeps `manifest.json`, `main.lua`, `LICENSE`, notices, and the
 `modules/` directory at its root. Gen1Recomp's importer mounts those paths
 unchanged; development tests and unrelated workspace files are excluded.
 
-Version 0.12.3 is configured for Gen1Recomp's built-in GitHub update checks via
+Version 0.12.4 is configured for Gen1Recomp's built-in GitHub update checks via
 `ScottExplores/gen1recomp-voxel-run-bridge`.
 
-The download is deliberately named `voxel_run_bridge-0.12.3.zip` so the
+The download is deliberately named `voxel_run_bridge-0.12.4.zip` so the
 launcher selects it first from the matching GitHub release. Its internal ID
 remains `voxel_run_bridge`, so existing installs and saved settings update in
 place rather than appearing as a second mod.
@@ -494,8 +521,9 @@ Battle Art packages is included.
 The responsive Bag/PC presentation adapts MIT-licensed Modern Bag UI 0.4.1 by
 ish hodaszi/piftee. Its exact upstream license and commit are preserved beside
 the adapted source and in the notices file. The upstream reference-derived PNG
-is not distributed; Scott's five-compartment backpack is drawn at runtime from
-original geometric primitives.
+is not distributed; Scott's six-state five-compartment backpack and woven-blue
+rail are newly generated project assets with their prompts recorded beside
+the files.
 
 No ROM, extracted graphics, save data, or other game content is included or
 requested by Scott's Tweaks.

@@ -76,6 +76,31 @@ return function(mod, context)
       didWork = true
     end
 
+    -- 0.12.3 stored four EXP values. Runtime behavior can normalize them on
+    -- read, but Gen1Recomp's stock Mod Manager matches schema choices against
+    -- the raw Loader value and would display OFF for a legacy `lead`, `party`,
+    -- or `share` save. Canonicalize both durable and live mirrors once so the
+    -- stock page, organized page, and battle hook all report the same choice.
+    feature("experience_modes_v3", {}, function()
+      local ownOptions = optionBucket(save, mod.id)
+      local raw = type(ownOptions) == "table"
+        and ownOptions.experience_mode or nil
+      local canonical
+      if raw == "lead" then
+        canonical = "buddy"
+      elseif raw == "party" or raw == "share" then
+        canonical = "all"
+      end
+      if canonical then
+        local ok = context.settings:set(
+          game, "experience_mode", canonical, false)
+        if ok then
+          changedOptions = true
+          imported[#imported + 1] = "experience_mode"
+        end
+      end
+    end)
+
     feature("trainer", { "trainer_forfeit" }, function()
       local trainerData = save.modData.trainer_forfeit
       if own.trainer_memory == nil and type(trainerData) == "table"

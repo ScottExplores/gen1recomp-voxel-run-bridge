@@ -453,7 +453,7 @@ function graphics.getColor() return 1, 1, 1, 1 end
 local previousLove = rawget(_G, "love")
 _G.love = { graphics = graphics }
 
-local picCalls, textCalls, hudCalls = 0, 0, 0
+local picCalls, textCalls, hudCalls, hudExtraCalls = 0, 0, 0, 0
 local animCalls = {}
 local BattleState = {
   update = function() end,
@@ -508,6 +508,7 @@ local fakeModules = {
   BattleDOF = { invalidate = function() end },
   BattleHud = {
     invalidate = function() end,
+    drawStatusExtras = function() hudExtraCalls = hudExtraCalls + 1 end,
     flipGlyphs = function(_, _, draw) return draw() end,
     layerTexture = function(_, _, _, draw)
       draw()
@@ -615,10 +616,17 @@ BattleState.drawTextArea(stagedBattle)
 eq(textCalls, 1, "staged lower wording is drawn exactly once")
 BattleState.drawHUDs(stagedBattle)
 eq(hudCalls, 1, "staged lower HUD is drawn exactly once")
+eq(hudExtraCalls, 1,
+  "staged lower HUD receives its EXP/caught detail pass exactly once")
 local flatBattle = { dramaticShapeShot = nil }
 BattleState.drawPicsLayer(flatBattle)
 eq(picCalls, 1,
   "split mode does not suppress ordinary flat-battle pictures")
+local extrasBeforeFlat = hudExtraCalls
+BattleState.drawHUDs(flatBattle)
+eq(hudCalls, 2, "flat battle retains the engine HUD draw")
+eq(hudExtraCalls, extrasBeforeFlat,
+  "flat/native battle does not receive staged status-card additions")
 
 -- The same installed renderer publishes the selected orientation as explicit
 -- per-card metadata. Trainers stay authored even if every Pokemon switch is
@@ -719,6 +727,179 @@ for _, name in ipairs(moduleNames) do
   package.loaded[name], package.preload[name] = oldLoaded[name], oldPreload[name]
 end
 _G.love = previousLove
+
+-- The staged status cards add three presentation-only pieces: a translucent
+-- wash, Gold/Crystal's right-anchored EXP progress, and a caught-species ball.
+-- Exercise their real module with no ROM or engine state and prove the flat
+-- renderer gate above remains the only route into them.
+local hudRectangles, hudColor = {}, { 1, 1, 1, 1 }
+local hudGraphics = {}
+function hudGraphics.setColor(r, g, b, a)
+  if type(r) == "table" then
+    hudColor = { r[1] or 1, r[2] or 1, r[3] or 1, r[4] or 1 }
+  else
+    hudColor = { r or 1, g or 1, b or 1, a == nil and 1 or a }
+  end
+end
+function hudGraphics.getColor()
+  return hudColor[1], hudColor[2], hudColor[3], hudColor[4]
+end
+function hudGraphics.rectangle(mode, x, y, w, h)
+  hudRectangles[#hudRectangles + 1] = {
+    mode = mode, x = x, y = y, w = w, h = h,
+    color = { hudColor[1], hudColor[2], hudColor[3], hudColor[4] },
+  }
+end
+_G.love = { graphics = hudGraphics }
+
+local growthName = "src.pokemon.Growth"
+local oldGrowthLoaded, oldGrowthPreload = package.loaded[growthName],
+                                           package.preload[growthName]
+package.loaded[growthName] = nil
+package.preload[growthName] = function()
+  return { expForLevel = function(_, level) return level * 100 end }
+end
+local RealBattleHud = assert(loadfile(root .. "/lib/BattleHud.lua"))({
+  require = function(name)
+    assert(name == "BattlePresentation", "unexpected BattleHud dependency")
+    return { suppressed = function() return false end }
+  end,
+})
+
+eq(RealBattleHud.TINT, 0.24,
+  "status backing is deliberately subtle rather than opaque")
+eq(RealBattleHud.panel({ 8, 0, 80, 32 }, nil, true, true), true,
+  "tint-only status panel needs no frost buffer on mobile")
+eq(#hudRectangles, 1, "one status panel draws one translucent wash")
+eq(hudRectangles[1].color[4], 0.24,
+  "status wash uses the authored translucent alpha")
+eq(hudRectangles[1].color[1], RealBattleHud.PANEL_DARK[1],
+  "world status wash uses the high-contrast blue-charcoal tint")
+
+hudRectangles = {}
+local hudMon = { species = "TESTMON", level = 10, exp = 1050 }
+local hudBattle = {
+  kind = "wild",
+  game = { save = { pokedex = { owned = { TESTMON = true } } } },
+  data = { constants = { levelCap = 100 }, growth_rates = {} },
+  player = { mon = hudMon, def = { growthRate = "TEST" } },
+  enemy = { mon = { species = "TESTMON" }, fainted = false },
+  statusHUDVisible = function() return true end,
+  growInScale = function() return false end,
+}
+local extras = RealBattleHud.drawStatusExtras(hudBattle, 0)
+eq(extras.exp, 0.5, "player EXP bar measures progress inside this level")
+eq(extras.caught, true, "owned wild species receives a caught marker")
+eq(#hudRectangles, 13,
+  "EXP track plus the seven-pixel caught glyph use bounded primitive draws")
+local foundProgress, foundBall = false, false
+for _, rect in ipairs(hudRectangles) do
+  if rect.x == 112 and rect.y == 91 and rect.w == 32 and rect.h == 2 then
+    foundProgress = rect.color[3] == 1
+  end
+  if rect.x == 82 and rect.y == 8 and rect.w == 3 and rect.h == 1 then
+    foundBall = true
+  end
+end
+check(foundProgress,
+  "half-full EXP progress fills 32 pixels inward from the right edge")
+check(foundBall, "caught marker keeps its crisp seven-pixel silhouette")
+
+-- 0.1.83+ draws its own correctly positioned caught ball when Scott's hook
+-- enables it. The staged extras must recognize that capability and avoid a
+-- second primitive icon while retaining the EXP bar.
+hudRectangles = {}
+hudBattle.caughtMarkerVisible = function() return true end
+hudBattle.drawCaughtBall = function() end
+extras = RealBattleHud.drawStatusExtras(hudBattle, 0)
+eq(extras.caughtNative, true,
+  "native caught-marker capability owns the staged icon")
+eq(extras.caughtFallback, false,
+  "native caught-marker capability suppresses the primitive fallback")
+eq(#hudRectangles, 3,
+  "native caught marker leaves only the EXP frame, channel, and progress")
+hudBattle.caughtMarkerVisible = nil
+hudBattle.drawCaughtBall = nil
+
+hudMon.exp = 900
+eq(RealBattleHud.playerExpFraction(hudBattle), 0,
+  "EXP progress clamps below the current level")
+hudMon.exp = 1200
+eq(RealBattleHud.playerExpFraction(hudBattle), 1,
+  "EXP progress clamps at the next-level edge")
+hudMon.level, hudMon.exp = 100, 999999
+eq(RealBattleHud.playerExpFraction(hudBattle), 1,
+  "level-cap progress is complete without asking for level 101")
+hudMon.level, hudMon.exp = 10, 1050
+
+hudBattle.kind = "trainer"
+eq(RealBattleHud.ownedOpponent(hudBattle), false,
+  "trainer parties do not display the wild caught-species marker")
+hudBattle.kind = "wild"
+hudBattle.game.save.pokedex.owned.TESTMON = nil
+eq(RealBattleHud.ownedOpponent(hudBattle), false,
+  "an unowned wild species has no caught marker")
+hudBattle.game.save.pokedex.caught = { TESTMON = true }
+eq(RealBattleHud.ownedOpponent(hudBattle), true,
+  "caught-key saves are accepted alongside Gen 1's owned-key saves")
+hudRectangles = {}
+hudBattle.introBalls = true
+extras = RealBattleHud.drawStatusExtras(hudBattle, 0)
+eq(extras.caught, false,
+  "caught marker waits for the opponent HUD after intro ball rows clear")
+hudBattle.introBalls = nil
+hudRectangles = {}
+extras = RealBattleHud.drawStatusExtras(hudBattle, 1)
+eq(extras.exp, nil, "EXP bar stays hidden while the battle HUD is sliding")
+eq(extras.caught, false,
+  "caught marker stays hidden while the opponent HUD is sliding")
+eq(#hudRectangles, 0, "hidden staged details leave no floating primitives")
+
+package.loaded[growthName], package.preload[growthName] =
+  oldGrowthLoaded, oldGrowthPreload
+_G.love = previousLove
+
+-- The moving lines in the photographs are not voxel-grid seams: the card
+-- pass already brackets those off. They are packed shadow-map self-samples on
+-- a paper-thin billboard. Test the real shadow strength policy and assert that
+-- BattleScene brackets only the two card draws, preserving their caster pass.
+local shadowActive = true
+local shadowModules = {
+  Mat4 = { identity = function() return {} end }, VoxelState = {},
+  ShadowMap = { active = function() return shadowActive end },
+  VoxelGrid = {}, WorldCurve = {}, Sky = {}, DayNight = {}, GlassMask = {},
+  PixelCanvas = {},
+}
+local RealVoxel3D = assert(loadfile(root .. "/lib/Voxel3D.lua"))({
+  require = function(name)
+    local dependency = shadowModules[name]
+    assert(dependency, "unexpected Voxel3D dependency: " .. tostring(name))
+    return dependency
+  end,
+})
+RealVoxel3D.SHADOW_ALPHA = 0.68
+eq(RealVoxel3D.shadowReceptionStrength(false), 0,
+  "battle cards decline every packed shadow-map self-sample")
+eq(RealVoxel3D.shadowReceptionStrength(true), 0.68,
+  "ordinary scene geometry restores the configured live shadow strength")
+shadowActive = false
+eq(RealVoxel3D.shadowReceptionStrength(true), 0,
+  "an unavailable shadow map restores to the safe zero strength")
+
+local battleSceneSource = read("lib/BattleScene.lua")
+local shadowsOff = battleSceneSource:find(
+  "Voxel3D.shadowReception(false)", 1, true)
+local cardLoop = shadowsOff and battleSceneSource:find(
+  "for _, card in ipairs", shadowsOff, true)
+local shadowsOn = cardLoop and battleSceneSource:find(
+  "Voxel3D.shadowReception(true)", cardLoop, true)
+check(shadowsOff and cardLoop and shadowsOn
+      and shadowsOff < cardLoop and cardLoop < shadowsOn,
+  "shadow reception is disabled only around the Pokemon card draw loop")
+local casterLoop = battleSceneSource:find(
+  "ShadowMap.draw(BattleBillboard.mesh(), card.tex", 1, true)
+check(casterLoop and casterLoop < shadowsOff,
+  "Pokemon silhouettes still cast onto the arena before reception is gated")
 
 -- LÖVE canvases default to the window DPI. On the AYN/Android backend that
 -- means a logical 16x16 cache can read back at a larger physical size and be

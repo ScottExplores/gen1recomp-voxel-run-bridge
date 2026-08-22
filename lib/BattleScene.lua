@@ -594,6 +594,13 @@ function BattleScene.render(state, arena, textures, token, battle)
     -- and no glass either: the cards wear the battle screen, not the
     -- tileset atlas, so the mask's coordinates mean nothing on them
     Voxel3D.glass(false)
+    -- A paper-thin billboard casting into and then sampling the same packed
+    -- shadow map sits on a depth-equality knife edge. Desktop drivers mostly
+    -- hide it; mobile precision exposes it as horizontal/diagonal bands that
+    -- crawl while the battle camera moves. The cards still cast their exact
+    -- silhouettes onto the ground above and retain face/day shading below --
+    -- only shadow reception is bracketed off for these two draws.
+    Voxel3D.shadowReception(false)
     for _, card in ipairs(monCards(arena, groundY, textures)) do
       -- Static front illustrations retain their authored brightness instead
       -- of being dimmed or colour-cast by the clock. Only the hour tint is
@@ -626,6 +633,7 @@ function BattleScene.render(state, arena, textures, token, battle)
       end
       if card.noDayTint then Voxel3D.dayTint() end
     end
+    Voxel3D.shadowReception(true)
     Voxel3D.glass(true)
     Voxel3D.seams(true)
     -- Draw the physical Poke Ball in the same depth/flash window as the

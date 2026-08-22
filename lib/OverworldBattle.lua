@@ -1075,6 +1075,18 @@ local texCanvas = {}
 local innerPics = nil                   -- captured by install()
 local innerHUDs = nil                   -- likewise, for the snapped HUD layer
 
+-- One authored HUD draw for every staged presentation. The engine remains the
+-- owner of names, levels, HP, status and its chrome; BattleHud adds only the
+-- later-generation EXP/caught details immediately afterward so both are baked
+-- into the same snapped/Thor/fallback texture and cannot drift apart.
+local function drawStagedHUDs(battle, slide)
+  local result = innerHUDs(battle, slide)
+  if BattleHud.drawStatusExtras then
+    BattleHud.drawStatusExtras(battle, slide)
+  end
+  return result
+end
+
 local function texCanvasFor(side, w, h)
   local c = texCanvas[side]
   w, h = w or BattleScene.GB_W, h or BattleScene.GB_H
@@ -1892,12 +1904,15 @@ function OverworldBattle.install()
     -- former also owns ARENA FILL: WHITE, where white ink would disappear.
     local color = UiBackplates.hudUsesColor()
     local colorShadow = UiBackplates.hudUsesColorShadow()
-    if not (self.dramaticShapeShot and (self.dramaticShapeDark or color)) then
+    if not self.dramaticShapeShot then
       return innerHUDs(self, slide)
+    end
+    if not (self.dramaticShapeDark or color) then
+      return drawStagedHUDs(self, slide)
     end
     local battle = self
     BattleHud.flipGlyphs(BattleScene.GB_W, BattleScene.GB_H, function()
-      innerHUDs(battle, slide)
+      drawStagedHUDs(battle, slide)
     end, color, nil, colorShadow)
   end
 
@@ -1942,7 +1957,7 @@ function OverworldBattle.hudTexture(battle, slide, dark, inverted, colorShadow)
   battle.colorMode = function() return false end
   local ok, layer = pcall(BattleHud.layerTexture,
                           BattleScene.GB_W, BattleScene.GB_H, dark,
-                          function() innerHUDs(battle, slide) end,
+                          function() drawStagedHUDs(battle, slide) end,
                           inverted, colorShadow, battle)
   battle.colorMode = had
   return ok and layer or nil
@@ -1999,7 +2014,12 @@ function OverworldBattle.snapHUDs(battle, shot)
     g.setCanvas(shot.canvas)
     g.setBlendMode("alpha")
     for key, rect in pairs(live) do
-      BattleHud.panel(rect, shot, panelDark, true)
+      -- Text boxes own their selected WHITE/HALF/BLACK/OFF paper in the UI
+      -- canvas. The new translucent wash belongs only to the two status
+      -- cards; laying it under text would silently change TEXTBOX FILL: OFF.
+      if key == "enemy" or key == "player" then
+        BattleHud.panel(rect, shot, panelDark, true)
+      end
     end
     g.setColor(1, 1, 1, 1)
     for side, band in pairs(OverworldBattle.HUD_BAND) do
@@ -2051,7 +2071,9 @@ function OverworldBattle.drawHudPanels(battle)
   if not next(live) then return end
   battle.dramaticShapeDark = true
   for key, r in pairs(live) do
-    BattleHud.panel(r, shot, true)
+    if key == "enemy" or key == "player" then
+      BattleHud.panel(r, shot, true)
+    end
   end
 end
 

@@ -103,6 +103,43 @@ return function(mod, context)
       end,
     }
   end
+
+  local expChoices
+
+  local function normalizedExpChoice(value)
+    if value == "lead" then return "buddy" end
+    if value == "party" or value == "share" then return "all" end
+    return value
+  end
+
+  -- Older releases saved LEAD ONLY, PARTY ALL, or EXP.SHARE values. Show and
+  -- step those saves as their new equivalent immediately, without adding
+  -- duplicate legacy rows to the simplified player-facing choice.
+  local function experienceChoice(unavailable)
+    local row = choice("experience_mode", "EXP. SHARE", expChoices,
+      unavailable)
+    row.value = function()
+      local reason = unavailable and unavailable()
+      if reason then return reason end
+      local current = normalizedExpChoice(settings:get("experience_mode"))
+      for _, entry in ipairs(expChoices) do
+        if entry[2] == current then return entry[1] end
+      end
+      return "OFF"
+    end
+    row.step = function(game, direction)
+      if unavailable and unavailable() then return false end
+      local current = normalizedExpChoice(settings:get("experience_mode"))
+      local index = 1
+      for i, entry in ipairs(expChoices) do
+        if entry[2] == current then index = i break end
+      end
+      direction = direction and direction < 0 and -1 or 1
+      index = ((index - 1 + direction) % #expChoices) + 1
+      return set(game, "experience_mode", expChoices[index][2])
+    end
+    return row
+  end
   local function delegated(exportKey)
     return function()
       local feature = mod.exports[exportKey]
@@ -140,9 +177,8 @@ return function(mod, context)
     { "1.5X", 0.375 }, { "2X", 0.5 }, { "3X", 0.75 },
     { "4X", 1 },
   }
-  local expChoices = {
-    { "VANILLA", "vanilla" }, { "LEAD ONLY", "lead" },
-    { "PARTY ALL", "party" }, { "EXP.SHARE", "share" },
+  expChoices = {
+    { "OFF", "vanilla" }, { "BUDDY", "buddy" }, { "ALL", "all" },
   }
   local growthChoices = { { "OFF", "off" }, { "GENTLE", "gentle" } }
 
@@ -526,7 +562,7 @@ return function(mod, context)
   local function battlesRows()
     local rows = {}
     addAll(rows, baRows({ "battles", "letsgo" }), true)
-    add(rows, mark(choice("experience_mode", "EXP. MODE", expChoices), true))
+    add(rows, mark(experienceChoice(), true))
     addAll(rows, baRows({ "hudScale", "spriteLight", "hudColor", "arenaFill",
       "backdropOffset", "bossBg", "textboxFill" }), false)
     add(rows, mark(toggle("trainer_forfeit_enabled", "PAID FORFEIT",
@@ -705,7 +741,7 @@ return function(mod, context)
     else
       add(rows, toggle("bag_pockets", "LEGACY BAG FALLBACK"))
     end
-    add(rows, choice("experience_mode", "EXP. MODE", expChoices))
+    add(rows, experienceChoice())
     return rows
   end
   local function legacyTrainerRows()
