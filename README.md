@@ -1,7 +1,8 @@
 # Scott's Tweaks
 
-**0.12.2 adds a Crystal-style Pack and four-card Pokégear, and moves Free
-Fly's first-person mount to the Thor's upper display.** The 3D voxel Kanto
+**0.12.3 adds a responsive Pocket-style Bag and matching PC item lists.** It
+bundles and adapts Modern Bag UI 0.4.1, keeps the requested backpack look as
+the default, and retains a selectable modern skin. The 3D voxel Kanto
 renderer, visible wild Pokemon, followers,
 animated battle sprites, menu
 icons, Free Fly integration, and Scott's gameplay tweaks are bundled so one
@@ -14,16 +15,17 @@ is broader, but its internal mod ID remains `voxel_run_bridge`. Existing
 installations therefore update in place, keep their settings, and do not
 become a duplicate mod.
 
-Version 0.12.2 keeps the existing updater identity and provides one categorized
+Version 0.12.3 keeps the existing updater identity and provides one categorized
 **START > MOD MENUS > MOD SETTINGS** home for all of its settings. Its
 features are:
 
-- **Built-in Pack and Pokegear:** Red's ITEM row appears as a Crystal-style
-  four-pocket PACK, followed by CLOCK, MAP, PHONE, and RADIO Pokégear cards
-  adapted to Red. It is entirely built in and never asks for a Gold ROM.
-- **Classic bag pockets:** press D-pad Left or Right to move in Gold order
-  through ITEMS, BALLS, KEY ITEMS, and TM/HM while keeping the original Gen 1
-  inventory underneath.
+- **Responsive Bag and PC:** press D-pad Left or Right through ALL, ITEMS,
+  MEDICINE, POKé BALLS, TM/HM, and KEY ITEMS. The Pocket skin uses an original
+  five-compartment backpack; the optional Modern skin uses compact tabs. PC
+  withdraw, deposit, and toss lists use the same organization.
+- **Built-in Pack and Pokegear:** Red's ITEM row appears as PACK, followed by
+  CLOCK, MAP, PHONE, and RADIO Pokégear cards adapted to Red. It is entirely
+  built in and never asks for a Gold ROM.
 - **Shop counts:** the BUY screen shows how many of the selected item are
   already in the bag.
 - **Experience modes:** choose VANILLA, LEAD ONLY, PARTY ALL, or EXP.SHARE.
@@ -76,6 +78,11 @@ renderer, Battle Art source, Crystal provider, and Pokemon orientation controls.
 The player-front, player-back, and opponent battle cards have independent flip
 choices; changing one never mirrors a trainer portrait or another card.
 
+Under **MENUS & DEVICE**, **BAG LOOK** switches between **POCKET** and
+**MODERN** without changing inventory data. **PACK + POKéGEAR** independently
+controls the Start-menu PACK name and four Pokégear cards, so the two choices
+do not fight each other.
+
 Under **WILD & FOLLOWERS**, **ENCOUNTER MODE: VISIBLE** means visible overworld
 Pokemon on, classic step-based random battles off, and sprite-less hidden
 markers off. Selecting it also replaces conflicting settings from an older
@@ -118,22 +125,29 @@ waits in the lab. Yellow is deliberately unchanged.
 If `random_starters` is active, only this Oak feature stands aside; every
 other Scott's Tweaks feature remains active.
 
-## Bag pockets and shop counts
+## Bag, PC, and shop counts
 
-The default-on **CLASSIC POCKETS** option presents the Gen 1 bag as four
-tabs in Gold's order: **ITEMS**, **BALLS**, **KEY ITEMS**, and **TM/HM**. Press
-D-pad Left or Right inside the bag to change tabs. SELECT still reorders items,
-and the order is written back by item identity so filtering never corrupts the
-real bag order.
+The default **BAG LOOK: POCKET** view organizes the live Gen 1 inventory into
+**ALL**, **ITEMS**, **MEDICINE**, **POKé BALLS**, **TM/HM**, and **KEY ITEMS**.
+All is a neutral combined view; the other five views select one compartment on
+Scott's original primitive-drawn backpack. **BAG LOOK: MODERN** presents the
+same categories as compact responsive tabs. Press D-pad Left or Right to
+change views. SELECT still reorders items by identity, so filtered row numbers
+never corrupt the authoritative acquisition order.
 
-This is a view over the existing inventory, not a larger replacement bag.
-Saving, item quantities, the Gen 1 slot limit, battle item use, selling, and
-other mods' items remain owned by Gen1Recomp. Unknown custom items stay
-visible under ITEMS. With **PACK + POKéGEAR** off, turn **CLASSIC POCKETS**
-off to use the original one-list bag. PACK keeps this Red-inventory pocket
-projection active without overwriting the saved classic preference. The
-Classic Bag row stays editable while PACK is on, so it can preset the view
-that returns when PACK is later disabled.
+The same presentation applies to PC **WITHDRAW**, **DEPOSIT**, and **TOSS**
+lists while each native callback remains authoritative. This release
+deliberately retains Gen1Recomp's native Bag/PC capacities and x99 quantity
+limit; choosing a skin cannot change save mechanics or cartridge-export
+limits. Unknown custom and explicitly battle-pocket items remain visible under
+ITEMS, while custom balls, machines, non-tossable key items, and medicine use
+their matching categories.
+
+The layout responds to desktop, landscape handheld, and portrait phone
+surfaces. On a physical Thor it requests the native 160×144 menu canvas so the
+lower display receives a crisp integer-scaled Bag instead of a tiny wide
+surface. If a separately installed Modern Bag UI is enabled, that copy remains
+the sole Bag/PC owner and Scott's BAG LOOK row reports **OTHER MOD**.
 
 When BUY is open at a mart, its title includes **BAG:N** for the currently
 highlighted item. The count updates after a purchase and does not alter shop
@@ -143,12 +157,10 @@ prices or stock supplied by other mods.
 
 **PACK + POKéGEAR** defaults ON for new installs and needs no external file.
 An existing explicitly saved OFF choice remains OFF. The native Red ITEM/ITEMS
-callback is still used, but PACK presents it in a ROM-free Crystal-inspired
-20×18 layout: ITEMS, BALLS, KEY ITEMS, and TM/HM; five visible two-line rows;
-quantities where meaningful; TM/HM move names; scroll arrows; and a persistent
-description box. Each pocket remembers its own cursor and scroll position for
-the current session. Item use, battle actions, GIVE-compatible callbacks,
-shops, saving, and Red's real inventory limits are unchanged.
+callback is still used and merely appears as PACK. Bag presentation is owned by
+the separate **BAG LOOK** choice above. Item use, battle actions,
+GIVE-compatible callbacks, shops, saving, and Red's real inventory limits are
+unchanged.
 
 A separate **POKéGEAR** row appears immediately after PACK. Its four cards are
 **CLOCK**, **MAP**, **PHONE**, and **RADIO**. CLOCK uses live time; MAP opens
@@ -207,7 +219,7 @@ special canopy scenery so it does not flatten places that are supposed to be
 enclosed or water-covered.
 
 The renderer is selected by its stable mod ID and then checked for the required
-capabilities rather than trusted by display name alone. Version 0.12.2 targets
+capabilities rather than trusted by display name alone. Version 0.12.3 targets
 Pokemon Final, the verified Dramatic Shape 1.8.0-1.8.2 renderer contract, and
 Battle Art Voxel Fork's published renderer modules.
 If an active voxel provider does not expose the required renderer modules,
@@ -367,21 +379,21 @@ Scott's Tweaks choice was already saved.
 ## Install or update
 
 If Voxel Run Bridge or any earlier Scott's Tweaks release is installed, open
-Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.12.2
+Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.12.3
 update. It will appear as **Scott's Tweaks** afterward without creating a
 second entry.
 
 For a first installation:
 
 1. Open **MODS -> Import mod .zip** and choose
-   `voxel_run_bridge-0.12.2.zip`.
+   `voxel_run_bridge-0.12.3.zip`.
 2. Enable **Scott's Tweaks**, then restart the game if the manager asks.
-3. Open **START > MOD MENUS > MOD SETTINGS**. Classic bag pockets, trainer
+3. Open **START > MOD MENUS > MOD SETTINGS**. The Pocket Bag, trainer
    features, Oak's starter, B running, light run bob, gapped land, badge-free
    HMs, Free Fly Now, visible wild Pokemon, and one follower default on.
    Classic random battles and hidden encounter markers default off. EXP
    defaults to Vanilla; Fly Cockpit and Thor Second Screen default off;
-   Crystal-style Pack + Pokegear defaults on; run speed defaults to 1.5X and
+   Pack + Pokegear defaults on; run speed defaults to 1.5X and
    bob to 0.5X.
 4. Use the bundled Free Fly for free-roaming flight; no separate mod is needed.
 5. For 1ST/3RD running, enable one supported voxel provider; no separate
@@ -447,17 +459,17 @@ Use the `dev` branch of
 ```powershell
 python tools/modkit.py validate C:\path\to\voxel_run_bridge --strict --base fixture
 python tools/modkit.py lint C:\path\to\voxel_run_bridge
-python tools/modkit.py pack C:\path\to\voxel_run_bridge -o C:\path\to\dist\voxel_run_bridge-0.12.2.zip --base fixture
+python tools/modkit.py pack C:\path\to\voxel_run_bridge -o C:\path\to\dist\voxel_run_bridge-0.12.3.zip --base fixture
 ```
 
 The archive keeps `manifest.json`, `main.lua`, `LICENSE`, notices, and the
 `modules/` directory at its root. Gen1Recomp's importer mounts those paths
 unchanged; development tests and unrelated workspace files are excluded.
 
-Version 0.12.2 is configured for Gen1Recomp's built-in GitHub update checks via
+Version 0.12.3 is configured for Gen1Recomp's built-in GitHub update checks via
 `ScottExplores/gen1recomp-voxel-run-bridge`.
 
-The download is deliberately named `voxel_run_bridge-0.12.2.zip` so the
+The download is deliberately named `voxel_run_bridge-0.12.3.zip` so the
 launcher selects it first from the matching GitHub release. Its internal ID
 remains `voxel_run_bridge`, so existing installs and saved settings update in
 place rather than appearing as a second mod.
@@ -478,6 +490,12 @@ copyright notices and MIT terms are preserved in
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). The physical-Thor presenter
 is new public code; no source from the private/upstream-derived Dual Screen or
 Battle Art packages is included.
+
+The responsive Bag/PC presentation adapts MIT-licensed Modern Bag UI 0.4.1 by
+ish hodaszi/piftee. Its exact upstream license and commit are preserved beside
+the adapted source and in the notices file. The upstream reference-derived PNG
+is not distributed; Scott's five-compartment backpack is drawn at runtime from
+original geometric primitives.
 
 No ROM, extracted graphics, save data, or other game content is included or
 requested by Scott's Tweaks.

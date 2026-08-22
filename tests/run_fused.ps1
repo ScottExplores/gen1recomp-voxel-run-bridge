@@ -13,7 +13,8 @@ $list = Join-Path ([IO.Path]::GetTempPath()) 'fused_files.txt'
 
 $files = Get-ChildItem -LiteralPath $root -Recurse -File |
   Where-Object {
-    ($_.Extension -eq '.lua' -or $_.Name -eq 'manifest.json' -or $_.Name -eq 'mod.card')
+    ($_.Extension -eq '.lua' -or $_.Name -eq 'manifest.json' -or
+      $_.Name -eq 'mod.card' -or $_.Name -eq 'LICENSE')
   } |
   ForEach-Object { $_.FullName.Substring($root.Length + 1).Replace('\', '/') } |
   Where-Object {

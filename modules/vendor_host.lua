@@ -1,11 +1,11 @@
 -- Runs the bundled community mods inside Scott's Tweaks.
 --
--- Each one keeps its upstream source verbatim under vendor/<dir>/ so it stays
--- diffable against its own repository and a new upstream release is a copy,
--- not a re-port. Nothing in their code was edited to make this work: they are
--- handed a proxy mod handle whose `path` and `read` are rooted at their own
--- vendor directory, so `mod.path .. "/assets"` and `mod:read("lib/x.lua")`
--- resolve exactly where they did when the mod shipped alone.
+-- Most keep their upstream source verbatim under vendor/<dir>/ so updates stay
+-- diffable; components that need an integration adapter record those changes
+-- in their own UPSTREAM file. Every component is handed a proxy mod handle
+-- whose `path` and `read` are rooted at its own vendor directory, so
+-- `mod.path .. "/assets"` and `mod:read("lib/x.lua")` resolve exactly where
+-- they did when the mod shipped alone.
 --
 -- `find` is shimmed too. These mods probe for each other by id -- Wilds looks
 -- for BATTLE_ART_VOXEL_FORK to install its variable-geometry adapter, Scott's
@@ -23,6 +23,11 @@ local VendorHost = {}
 VendorHost.MODS = {
   { dir = "wilds",             id = "overworld_wild_spawns",  priority = 80 },
   { dir = "free_fly",          id = "free_fly", version = "1.8.0",
+    priority = 100 },
+  -- Keep Modern Bag's own schema/default authoritative. The host only
+  -- namespaces its `skin` value; a separately installed copy still wins
+  -- through the same stand-down path as every other bundled community mod.
+  { dir = "modern_bag_ui",     id = "modern_bag_ui", version = "0.4.1",
     priority = 100 },
   { dir = "choose_lead",       id = "choose_lead",            priority = 100 },
   { dir = "catchable151",      id = "all_pokemon_catchable_151_mod", priority = 100 },

@@ -1,7 +1,7 @@
 {
   "id": "voxel_run_bridge",
   "name": "Scott's Tweaks",
-  "version": "0.12.2",
+  "version": "0.12.3",
   "github": "ScottExplores/gen1recomp-voxel-run-bridge",
   "api": 2,
   "entry": "main.lua",
@@ -19,6 +19,7 @@
     "gen1recomp_ds",
     "RUN_MODE",
     "free_fly",
+    "modern_bag_ui",
     "gen1_modern_ui",
     "POKEMON_FINAL",
     "DRAMATIC_SHAPE",
@@ -31,5 +32,5 @@
   "experimental": false,
   "affects_link": true,
   "permissions": ["engine_internals"],
-  "description": "Scott's organized gameplay menu: Crystal-style four-pocket Pack and four-card Pokegear, EXP modes, Trade Stone, trainer forfeits and rematches, Oak's spare starter, B-button running with light head bob, badge-free field moves, gapped land, physical-Thor dual-screen control, and the built-in Scott's Battle Art Kanto voxel renderer: 3D Kanto, staged overworld battles, first-person movement, ceilings, horizons and weather."
+  "description": "Scott's organized gameplay menu: responsive All-plus-five-pocket Bag and PC skins, four-card Pokegear, EXP modes, Trade Stone, trainer forfeits and rematches, Oak's spare starter, B-button running with light head bob, badge-free field moves, gapped land, physical-Thor dual-screen control, and the built-in Scott's Battle Art Kanto voxel renderer: 3D Kanto, staged overworld battles, first-person movement, ceilings, horizons and weather."
 }

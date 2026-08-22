@@ -36,6 +36,7 @@ local CACHE_START_MARKER = "_scottsTweaksCacheStartHook"
 local GAPPED_LAND_OPTION = "gapped_land"
 local BAG_POCKETS_OPTION = "bag_pockets"
 local GEN2_MENUS_OPTION = "gen2_menus"
+local MODERN_BAG_ID = "modern_bag_ui"
 local EXPERIENCE_MODE_OPTION = "experience_mode"
 local EXP_SHARE_ID = "SCOTTS_EXP_SHARE"
 local TRADE_STONE_ID = "SCOTTS_TRADE_STONE"
@@ -48,7 +49,7 @@ local GAPPED_LAND_CELL = 64
 -- Native terrain and Flora's detailed apron occupy roughly y=-2..-37.
 -- Keep the broad procedural ground below both so it only fills the void.
 local GAPPED_LAND_Y = -40
-local RELEASE_VERSION = "0.12.2"
+local RELEASE_VERSION = "0.12.3"
 
 local OPTION_DEFAULTS = {
   hm_without_badges = true,
@@ -664,16 +665,16 @@ local function defineOptions(mod, vendorHost)
     {
       key = BAG_POCKETS_OPTION,
       type = "toggle",
-      label = "CLASSIC POCKETS",
+      label = "LEGACY BAG FALLBACK",
       default = true,
-      help = "Organize the classic Red bag into ITEMS, BALLS, KEY ITEMS and TM/HM pockets. Use D-pad Left or Right to change pockets. PACK + POKeGEAR keeps this projection active while its menu is on.",
+      help = "Compatibility fallback used only if Modern Bag UI is unavailable. The normal BAG LOOK setting provides the current All plus five-pocket Bag and matching PC lists.",
     },
     {
       key = GEN2_MENUS_OPTION,
       type = "toggle",
       label = "PACK + POKéGEAR",
       default = true,
-      help = "Use the Crystal-style four-pocket PACK plus CLOCK, MAP, PHONE and RADIO cards adapted to Red. No Gold ROM is required; Gen 1 Modern UI can stay on.",
+      help = "Call the Start-menu item PACK and add CLOCK, MAP, PHONE and RADIO cards adapted to Red. BAG LOOK separately controls the responsive Bag and PC skin. No Gold ROM is required.",
     },
     {
       key = EXPERIENCE_MODE_OPTION,
@@ -769,6 +770,22 @@ local function defineOptions(mod, vendorHost)
   }
 
   local seen = {}
+  -- `bag_pockets` is retained as a partial-install/legacy fallback, not a
+  -- second live setting beside Modern Bag UI. When either the bundled or a
+  -- standalone Modern Bag owns presentation, omit the obsolete row from the
+  -- canonical schema entirely; old saved values remain untouched and become
+  -- useful again automatically if that provider is ever unavailable.
+  local modernBagOwned = vendorHost
+    and ((vendorHost.loaded and vendorHost.loaded[MODERN_BAG_ID])
+      or (vendorHost.failures
+        and vendorHost.failures[MODERN_BAG_ID] == "standalone copy is installed"))
+  if modernBagOwned then
+    for index = #schema, 1, -1 do
+      if schema[index].key == BAG_POCKETS_OPTION then
+        table.remove(schema, index)
+      end
+    end
+  end
   for _, row in ipairs(schema) do seen[row.key] = true end
   local function append(rows, source)
     for _, row in ipairs(rows or {}) do
@@ -1208,6 +1225,15 @@ local function installInventoryFeatures(mod)
     mode = "screen_pockets",
     pockets = { "items", "balls", "key", "machines" },
   }
+  local modernBag = findMod(mod, MODERN_BAG_ID)
+  if modernBag then
+    pocketStatus.mode = "modern_bag_ui"
+    pocketStatus.provider = MODERN_BAG_ID
+    pocketStatus.version = modernBag.version
+    pocketStatus.pockets = {
+      "all", "items", "medicine", "balls", "machines", "key",
+    }
+  end
   local shopStatus = {
     active = true,
     tradeStone = TRADE_STONE_ID,
@@ -1226,14 +1252,53 @@ local function installInventoryFeatures(mod)
   local priorBag = mod.content.screens:get("BagMenu")
   local builtinBag = require("src.ui.BagMenu")
 
+  -- Modern Bag UI (bundled or standalone) is the single owner of pocket
+  -- navigation and drawing. Scott's layer still owns one item-specific rule:
+  -- EXP.SHARE is an informational key item, not a field action. Keep that
+  -- narrow callback without putting a second Left/Right controller or visual
+  -- skin on the same list.
+  local function decorateModernBagItemRules(game, list)
+    if type(list) ~= "table" or type(list.onChoose) ~= "function"
+        or rawget(list, "_scottsTweaksModernBagItems") then
+      return list
+    end
+    local baseChoose = list.onChoose
+    list.onChoose = function(item, ...)
+      if item and item.value == EXP_SHARE_ID then
+        showUiMessage(game,
+          "EXP.SHARE works when\nEXP. MODE is set to\nEXP.SHARE.")
+        return
+      end
+      return baseChoose(item, ...)
+    end
+    rawset(list, "_scottsTweaksModernBagItems", {
+      owner = mod.id,
+      version = RELEASE_VERSION,
+      provider = MODERN_BAG_ID,
+    })
+    return list
+  end
+
   local function decorateBag(game, opts, list)
     if type(list) ~= "table" or type(list.update) ~= "function"
-        or type(list.draw) ~= "function" or type(list.onChoose) ~= "function"
-        or not (optionEnabled(mod, BAG_POCKETS_OPTION, true)
-          or optionEnabled(mod, GEN2_MENUS_OPTION, false)) then
+        or type(list.draw) ~= "function" or type(list.onChoose) ~= "function" then
       return list
     end
     if rawget(list, "_scottsTweaksPocketLayer") then return list end
+    if rawget(list, "modernBagUI") == true
+        or type(rawget(list, "modernBagSwitchPocket")) == "function"
+        or type(rawget(list, "modernBagPockets")) == "table" then
+      pocketStatus.mode = "modern_bag_ui"
+      pocketStatus.provider = MODERN_BAG_ID
+      pocketStatus.pockets = {
+        "all", "items", "medicine", "balls", "machines", "key",
+      }
+      return decorateModernBagItemRules(game, list)
+    end
+    if not (optionEnabled(mod, BAG_POCKETS_OPTION, true)
+        or optionEnabled(mod, GEN2_MENUS_OPTION, false)) then
+      return list
+    end
     -- A lower-priority modern bag that deliberately publishes its own pocket
     -- controller remains the single owner rather than receiving a second set
     -- of Left/Right tabs.

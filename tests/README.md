@@ -113,7 +113,21 @@ classification, Crystal-style 20×18 Pack drawing, two-line rows, quantities,
 descriptions, Left/Right navigation, per-pocket cursor and scroll memory,
 ID-based global reordering, option-off passthrough, preserved Red callbacks,
 lower screen-factory composition, copied/idempotent Trade Stone stock, and a
-live BUY BAG count without mutating stock or inventory.
+live BUY BAG count without mutating stock or inventory. This remains the
+partial-install fallback contract.
+
+`modern_bag_integration.lua` is the 174-check release contract for the normal
+bundled Bag/PC owner. It verifies the default Pocket and selectable Modern
+skins, All plus five category views, Scott-specific classification fallbacks,
+native callback multi-returns, PC Withdraw/Deposit/Toss decoration, native
+per-pocket/x99 and PC-50 limits, procedural no-raster backpack drawing,
+landscape and portrait sizing, idempotent reload ownership, and
+standalone-provider stand-down under both runtimes:
+
+```powershell
+luajit tests\modern_bag_integration.lua <mod-root>
+lua tests\modern_bag_integration.lua <mod-root>
+```
 
 `experience_trade.lua` is the focused 144-check EXP/item suite. It covers the
 four-mode schema, idempotent EXP.SHARE unlock and PC/full-bag recovery,

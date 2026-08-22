@@ -175,8 +175,8 @@ T.eq(run.mod and run.mod.manifest.id, "voxel_run_bridge",
   "stable updater identity is retained")
 T.eq(run.mod and run.mod.manifest.name, "Scott's Tweaks",
   "new display name is loaded")
-T.eq(run.mod and run.mod.manifest.version, "0.12.2",
-  "loader selected version 0.12.2")
+T.eq(run.mod and run.mod.manifest.version, "0.12.3",
+  "loader selected version 0.12.3")
 -- The consolidated build bundles All Pokemon Catchable 151 and Dynamic Scaling, which repatch
 -- encounter tables and pokemon records. The loader warns when a mod writes to
 -- pokemon while claiming otherwise, and a link partner must know, so the flag
@@ -237,13 +237,13 @@ for _, row in ipairs(schema) do
 end
 T.eq(bagPocketsOption and bagPocketsOption.type, "toggle",
   "Bag Pockets uses a toggle")
-T.eq(bagPocketsOption and bagPocketsOption.label, "CLASSIC POCKETS",
-  "schema distinguishes classic pockets from PACK navigation")
+T.eq(bagPocketsOption and bagPocketsOption.label, "LEGACY BAG FALLBACK",
+  "schema labels the old four-pocket controller as a recovery fallback")
 T.eq(bagPocketsOption and bagPocketsOption.default, true,
   "Bag Pockets defaults on")
 T.check(type(bagPocketsOption and bagPocketsOption.help) == "string"
-    and bagPocketsOption.help:find("PACK + POK", 1, true) ~= nil,
-  "schema explains that PACK + Pokegear keeps its pocket projection")
+    and bagPocketsOption.help:find("Modern Bag UI", 1, true) ~= nil,
+  "schema explains that the legacy switch is only a Modern Bag fallback")
 T.eq(experienceOption and experienceOption.type, "choice",
   "EXP mode uses a choice")
 T.eq(experienceOption and experienceOption.default, "vanilla",
@@ -439,7 +439,7 @@ for _, row in ipairs(goldInventoryMenu.rows or {}) do
   if key then goldInventoryRows[key] = row end
 end
 T.check(type(goldInventoryRows.bag_pockets) == "table",
-  "organized menu keeps the saved Classic Pockets preference reachable while PACK is enabled")
+  "organized menu keeps the legacy fallback reachable when Modern Bag is absent")
 T.check(type(goldInventoryRows.experience_mode) == "table",
   "organized PACK inventory menu retains EXP mode")
 run.loader.modOptions.voxel_run_bridge.gen2_menus = false
@@ -694,7 +694,7 @@ T.check(type(pokemonFinalExports) == "table",
   "Pokemon Final test-double exports are published")
 T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.owner, "voxel_run_bridge",
   "Pokemon Final FreeMove receives Scott's bridge marker")
-T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.12.2",
+T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.12.3",
   "Pokemon Final bridge marker carries the update version")
 T.eq(type(exported.hmWithoutBadges), "function",
   "live HM option accessor is published")

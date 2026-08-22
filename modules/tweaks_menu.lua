@@ -35,6 +35,7 @@ local SCREEN_MODS_OLD = "ScottsTweaksModsOptions"
 local WILDS = "overworld_wild_spawns"
 local CRYSTAL = "crystal_animated_sprites_with_shiny_visuals"
 local FREE_FLY = "free_fly"
+local MODERN_BAG = "modern_bag_ui"
 local CHOOSE_LEAD = "choose_lead"
 local DYNAMIC = "Dynamic_Scaling"
 local ICONS = "unique_menu_icons"
@@ -266,6 +267,27 @@ return function(mod, context)
       end
     end
     return out
+  end
+  -- Modern Bag suppresses its stock OPTIONS injection while bundled, so its
+  -- one presentation choice belongs here. A standalone copy owns both the
+  -- screen and setting and therefore gets an informative, read-only row even
+  -- though its schema was intentionally never collected by this host.
+  local function modernBagSkinRow(simple)
+    local state = vendorState(MODERN_BAG)
+    if state == "standalone" then
+      return {
+        id = MODERN_BAG .. ":skin",
+        label = "BAG LOOK",
+        simple = simple,
+        value = function() return "OTHER MOD" end,
+        step = function() return false end,
+      }
+    end
+    if state ~= "bundled" then return nil end
+    return vrow(MODERN_BAG, "skin", "BAG LOOK", simple, {
+      classic_pocket = "POCKET",
+      modern = "MODERN",
+    })
   end
   local function openScreen(label, screenId, simple)
     return {
@@ -601,15 +623,19 @@ return function(mod, context)
 
   local function systemRows()
     local rows = {}
-    -- PACK always needs Scott's Red-inventory pocket projection, but the
-    -- classic preference still controls what happens after PACK is disabled.
-    -- Keep it visible and editable so enabling one feature never makes a
-    -- different persisted setting disappear from the unified menu.
-    add(rows, mark(toggle("bag_pockets", "CLASSIC POCKETS"), true))
+    -- Modern Bag is the ordinary presentation owner. Keep Scott's historical
+    -- pocket switch out of the everyday menu; it is only a recovery control
+    -- in ALL when neither the bundled nor a standalone Modern Bag is active.
+    add(rows, modernBagSkinRow(true))
+    if vendorState(MODERN_BAG) == "absent" then
+      add(rows, mark(toggle("bag_pockets", "LEGACY BAG FALLBACK"), false))
+    end
     add(rows, mark(toggle("gen2_menus", "PACK + POKéGEAR"), true))
     add(rows, mark(toggle("dual_screen", "THOR 2ND SCREEN",
       dualUnavailable), true))
     addAll(rows, baRows({ "debug" }), false)
+    -- `skin` is curated above; only future upstream options belong in ALL.
+    addAll(rows, vendorRest(MODERN_BAG, { skin = true }), false)
     return rows
   end
 
@@ -673,7 +699,12 @@ return function(mod, context)
   -- path stays the seven-category layout above.
   local function legacyInventoryRows()
     local rows = {}
-    add(rows, toggle("bag_pockets", "CLASSIC POCKETS"))
+    local bagLook = modernBagSkinRow()
+    if bagLook then
+      add(rows, bagLook)
+    else
+      add(rows, toggle("bag_pockets", "LEGACY BAG FALLBACK"))
+    end
     add(rows, choice("experience_mode", "EXP. MODE", expChoices))
     return rows
   end

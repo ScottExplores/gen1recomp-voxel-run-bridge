@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.12.3 - 2026-08-21
+
+- **Added the requested responsive Pocket Bag and matching PC lists.** The
+  organized view now has a neutral ALL tab plus ITEMS, MEDICINE, POKé BALLS,
+  TM/HM, and KEY ITEMS. PC Withdraw, Deposit, and Toss lists receive the same
+  categories while native use, target, toss, battle, and transfer callbacks
+  remain authoritative.
+- **Added one simple BAG LOOK setting.** POCKET is the new default and MODERN
+  remains selectable. PACK + POKéGEAR independently controls the Start-menu
+  label and CLOCK/MAP/PHONE/RADIO cards, removing the old pair of overlapping
+  Bag switches from the everyday menu.
+- **Preserved native storage mechanics.** The presentation does not install
+  Modern Bag UI's optional global 255-slot/x999 expansion; Gen1Recomp's normal
+  Bag/PC limits and cartridge-export behavior stay unchanged.
+- **Kept Bag ownership composable.** The bundled renderer decorates the
+  previously registered BagMenu and PlayerPC factories, and a separately
+  installed Modern Bag UI remains the sole owner when enabled. Scott's Trade
+  Stone, EXP.SHARE indicator, shop counts, and Pokégear stay available without
+  a second pocket controller.
+- **Kept the art provenance clean.** The responsive presentation is adapted
+  from MIT-licensed Modern Bag UI 0.4.1 with its full notice and exact commit
+  recorded. Its reference-derived raster backpack is not distributed;
+  Scott's Tweaks draws a new generic five-compartment backpack from primitives.
+- **Added physical-Thor sizing.** Bag and PC surfaces request 160×144 when the
+  real lower display is active, preserving the crisp integer-scaled menu path.
+
 ## 0.12.2 - 2026-08-20
 
 - **Added a Crystal-style Pack without importing ROM art.** PACK now uses the

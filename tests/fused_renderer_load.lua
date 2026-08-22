@@ -285,7 +285,7 @@ T.eq(#schema, #(exports.optionSchema or {}),
   "exported canonical schema matches the Loader schema")
 local ownKeys = {
   "simple_menu", "hm_without_badges", "free_fly_without_badges",
-  "free_fly_cockpit", "gapped_land", "bag_pockets", "gen2_menus",
+  "free_fly_cockpit", "gapped_land", "gen2_menus",
   "experience_mode", "trainer_forfeit_enabled", "trainer_rematches",
   "trainer_adaptive_dialogue", "trainer_growth", "oak_spare_starter",
   "running_enabled", "running_speed", "running_view_bob",
@@ -294,6 +294,8 @@ local ownKeys = {
 for _, key in ipairs(ownKeys) do
   T.eq(schemaCount[key], 1, "own canonical option appears once: " .. key)
 end
+T.eq(schemaCount.bag_pockets, nil,
+  "obsolete legacy Bag switch is absent while Modern Bag owns presentation")
 for _, row in ipairs(exports.battleArtOptionSchema or {}) do
   T.eq(schemaCount[row.key], 1,
     "Battle Art canonical option appears once: " .. tostring(row.key))
@@ -504,31 +506,31 @@ T.check(world["voxel_run_bridge:gapped_land"] ~= nil,
 T.check(system["voxel_run_bridge:dual_screen"] ~= nil,
   "Thor second-screen control lives in Menus & Device")
 ;(function()
-local bagPockets = system["voxel_run_bridge:bag_pockets"]
+local bagLook = system["modern_bag_ui:skin"]
 local packMenus = system["voxel_run_bridge:gen2_menus"]
-T.check(bagPockets ~= nil and packMenus ~= nil,
-  "Menus & Device exposes both Classic Bag and PACK controls")
-T.eq(bagPockets.label, "CLASSIC POCKETS",
-  "Classic pocket label fits the handheld row")
+T.check(bagLook ~= nil and packMenus ~= nil,
+  "Menus & Device exposes BAG LOOK and PACK controls")
+T.eq(bagLook.label, "BAG LOOK",
+  "the single Bag presentation label fits the handheld row")
+T.eq(bagLook.value(), "POCKET",
+  "the requested Pocket backpack is the bundled default")
 T.eq(packMenus.value(), "ON", "PACK + Pokegear uses its new-install default")
 local systemWithPack = mapIds(buildScreen(unified.screenIds.system).rows)
-local savedBagWithPack = systemWithPack["voxel_run_bridge:bag_pockets"]
-T.check(savedBagWithPack ~= nil,
-  "PACK does not hide the persisted Classic Bag preference")
-T.eq(savedBagWithPack.value(), "ON",
-  "Classic Bag row shows its saved value while PACK owns presentation")
-T.eq(savedBagWithPack.step(game, 1), true,
-  "Classic Bag preference remains editable while PACK is on")
-T.eq(savedBagWithPack.value(), "OFF",
-  "Classic Bag stores the requested post-PACK view")
+local savedBagLook = systemWithPack["modern_bag_ui:skin"]
+T.check(savedBagLook ~= nil,
+  "PACK does not hide the independent Bag presentation choice")
+T.eq(savedBagLook.step(game, 1), true,
+  "BAG LOOK remains editable while PACK is on")
+T.eq(savedBagLook.value(), "MODERN",
+  "BAG LOOK switches to the responsive Modern skin")
 T.eq(packMenus.value(), "ON",
-  "editing the saved Classic Bag preference leaves PACK enabled")
+  "editing BAG LOOK leaves PACK enabled")
 T.eq(packMenus.step(game, -1), true, "PACK + Pokegear can be disabled")
 local systemAfterPack = mapIds(buildScreen(unified.screenIds.system).rows)
-T.eq(systemAfterPack["voxel_run_bridge:bag_pockets"].value(), "OFF",
-  "disabling PACK reveals the preserved Classic Bag preference")
-T.eq(systemAfterPack["voxel_run_bridge:bag_pockets"].step(game, 1), true,
-  "Classic Bag preference can be restored for later tests")
+T.eq(systemAfterPack["modern_bag_ui:skin"].value(), "MODERN",
+  "disabling PACK preserves the independent Bag skin")
+T.eq(systemAfterPack["modern_bag_ui:skin"].step(game, -1), true,
+  "Pocket Bag can be restored for later tests")
 end)()
 ;(function()
 local catchCycle = mapIds(categoryScreens.wilds.rows)[

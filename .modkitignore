@@ -78,3 +78,5 @@ vendor/wilds/docs/analysis/WATER_FOLLOWER_FREEZE.md
 vendor/wilds/docs/analysis/future-manifest-games.example.json
 vendor/dynamic_scaling/main.lua.bak
 tests/wilds_behavior_tick_alloc.lua
+tests/modern_bag_integration.lua
+dist/voxel_run_bridge-0.12.3.zip

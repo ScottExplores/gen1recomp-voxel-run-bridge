@@ -95,10 +95,43 @@ remains with its author; inclusion here is not a relicensing.
 | Running Shoes | 1.7.0 | MadeinTaly/gen1recomp-running-shoes | MIT |
 | All Pokemon Catchable 151 | 0.3.3-beta | Wowabox (Darklinkduck) | MIT |
 | Free Fly | 1.8.0 | shanehudson-gen1recomp-mods/free_fly | no licence file |
+| Modern Bag UI | 0.4.1 | piftee/gen1recomp-modern-bag-ui | MIT |
 | Trainers Let You Choose Lead Pokemon | 2.0.1 | ZyranCZ/Trainers-Let-You-Choose-Lead-Pokemon | no licence file |
 | Unique Menu Icons | 1.5.0 | menyas/unique-menu-icons | no licence file |
 | Crystal Animated Sprites with Shiny Visuals | 2.0.1 | distilledorion-sketch/crystal_animated_sprites_with_shiny_visuals | no licence file |
 | Dynamic Scaling | 1.0.4 | (no public repository found) | no licence file |
+
+### Modern Bag UI 0.4.1
+
+Scott's Tweaks adapts the responsive Bag and PC presentation code from
+[Modern Bag UI](https://github.com/piftee/gen1recomp-modern-bag-ui), release
+0.4.1, commit `2b6082a62fda29a161458a541562dc816b155c57`. The upstream raster
+backpack is deliberately not included; Scott's Tweaks draws its own generic
+five-compartment backpack from original geometric primitives. The complete
+upstream license also ships beside the adapted source at
+`vendor/modern_bag_ui/LICENSE`:
+
+MIT License
+
+Copyright (c) 2026 ish hodaszi
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 **Wilds of Kanto asset carve-out.** Its MIT licence covers the original source
 and original project assets only. The follow-sprite and overworld art under
