@@ -1,10 +1,13 @@
 # Scott's Tweaks
 
-**0.12.4 polishes the physical-Thor and staged-battle experience.** It adds
-automatic saved-ON lower-screen startup, hinge-aligned battle controls, clean
-moving Pokemon cards, clearer status panels, EXP/caught indicators, a simpler
-Buddy/All EXP.SHARE, and a generated six-state Pocket backpack. The 3D voxel Kanto
-renderer, visible wild Pokemon, followers,
+**0.12.5 brings the Pocket Bag much closer to the supplied handheld
+reference.** It replaces the detailed generated art with a native-pixel
+white/two-green backpack, repeats a tiny two-colour blue dither, restores the
+plaque font's crisp authored size, and gives the Thor enough Bag-only width for
+full category and item names. It also includes 0.12.4's automatic saved-ON
+lower-screen startup, hinge-aligned battle controls, clean moving Pokemon
+cards, clearer status panels, EXP/caught indicators, and simpler Buddy/All
+EXP.SHARE. The 3D voxel Kanto renderer, visible wild Pokemon, followers,
 animated battle sprites, menu
 icons, Free Fly integration, and Scott's gameplay tweaks are bundled so one
 launcher update carries the full set. Separately installed copies are no
@@ -16,14 +19,17 @@ is broader, but its internal mod ID remains `voxel_run_bridge`. Existing
 installations therefore update in place, keep their settings, and do not
 become a duplicate mod.
 
-Version 0.12.4 keeps the existing updater identity and provides one categorized
+Version 0.12.5 keeps the existing updater identity and provides one categorized
 **START > MOD MENUS > MOD SETTINGS** home for all of its settings. Its
 features are:
 
 - **Responsive Bag and PC:** press D-pad Left or Right through ALL, ITEMS,
   MEDICINE, POKé BALLS, TM/HM, and KEY ITEMS. The Pocket skin uses an original
-  generated six-state backpack and blue weave; the optional Modern skin uses
-  compact tabs. PC withdraw, deposit, and toss lists use the same organization.
+  generated six-state 34×21-pixel backpack and repeating 4×4 blue dither; the
+  optional Modern skin uses compact tabs. Every state keeps one fixed backpack
+  silhouette and changes only its selected compartment. The selected Pocket
+  plaque stays large and title-case while the full category name owns the top
+  header. PC withdraw, deposit, and toss lists use the same organization.
 - **Cleaner staged Pokémon:** moving battle cards no longer receive their own
   unstable mobile shadow sample, removing the camera-motion bands while their
   normal arena shadows and lighting remain.
@@ -153,10 +159,12 @@ ITEMS, while custom balls, machines, non-tossable key items, and medicine use
 their matching categories.
 
 The layout responds to desktop, landscape handheld, and portrait phone
-surfaces. On a physical Thor it requests the native 160×144 menu canvas so the
-lower display receives a crisp integer-scaled Bag instead of a tiny wide
-surface. If a separately installed Modern Bag UI is enabled, that copy remains
-the sole Bag/PC owner and Scott's BAG LOOK row reports **OTHER MOD**.
+surfaces. On a physical Thor it requests a Bag-only 200×144 menu canvas, which
+fills the 400px display width at exact 2× while keeping the original five-row
+height. This prevents long item and pocket names from being squeezed without
+changing battle or dialogue resolution. If a separately installed Modern Bag
+UI is enabled, that copy remains the sole Bag/PC owner and Scott's BAG LOOK row
+reports **OTHER MOD**.
 
 When BUY is open at a mart, its title includes **BAG:N** for the currently
 highlighted item. The count updates after a purchase and does not alter shop
@@ -235,7 +243,7 @@ special canopy scenery so it does not flatten places that are supposed to be
 enclosed or water-covered.
 
 The renderer is selected by its stable mod ID and then checked for the required
-capabilities rather than trusted by display name alone. Version 0.12.4 targets
+capabilities rather than trusted by display name alone. Version 0.12.5 targets
 Pokemon Final, the verified Dramatic Shape 1.8.0-1.8.2 renderer contract, and
 Battle Art Voxel Fork's published renderer modules.
 If an active voxel provider does not expose the required renderer modules,
@@ -406,14 +414,14 @@ Scott's Tweaks choice was already saved.
 ## Install or update
 
 If Voxel Run Bridge or any earlier Scott's Tweaks release is installed, open
-Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.12.4
+Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.12.5
 update. It will appear as **Scott's Tweaks** afterward without creating a
 second entry.
 
 For a first installation:
 
 1. Open **MODS -> Import mod .zip** and choose
-   `voxel_run_bridge-0.12.4.zip`.
+   `voxel_run_bridge-0.12.5.zip`.
 2. Enable **Scott's Tweaks**, then restart the game if the manager asks.
 3. Open **START > MOD MENUS > MOD SETTINGS**. The Pocket Bag, trainer
    features, Oak's starter, B running, light run bob, gapped land, badge-free
@@ -486,17 +494,17 @@ Use the `dev` branch of
 ```powershell
 python tools/modkit.py validate C:\path\to\voxel_run_bridge --strict --base fixture
 python tools/modkit.py lint C:\path\to\voxel_run_bridge
-python tools/modkit.py pack C:\path\to\voxel_run_bridge -o C:\path\to\dist\voxel_run_bridge-0.12.4.zip --base fixture
+python tools/modkit.py pack C:\path\to\voxel_run_bridge -o C:\path\to\dist\voxel_run_bridge-0.12.5.zip --base fixture
 ```
 
 The archive keeps `manifest.json`, `main.lua`, `LICENSE`, notices, and the
 `modules/` directory at its root. Gen1Recomp's importer mounts those paths
 unchanged; development tests and unrelated workspace files are excluded.
 
-Version 0.12.4 is configured for Gen1Recomp's built-in GitHub update checks via
+Version 0.12.5 is configured for Gen1Recomp's built-in GitHub update checks via
 `ScottExplores/gen1recomp-voxel-run-bridge`.
 
-The download is deliberately named `voxel_run_bridge-0.12.4.zip` so the
+The download is deliberately named `voxel_run_bridge-0.12.5.zip` so the
 launcher selects it first from the matching GitHub release. Its internal ID
 remains `voxel_run_bridge`, so existing installs and saved settings update in
 place rather than appearing as a second mod.
@@ -521,9 +529,9 @@ Battle Art packages is included.
 The responsive Bag/PC presentation adapts MIT-licensed Modern Bag UI 0.4.1 by
 ish hodaszi/piftee. Its exact upstream license and commit are preserved beside
 the adapted source and in the notices file. The upstream reference-derived PNG
-is not distributed; Scott's six-state five-compartment backpack and woven-blue
-rail are newly generated project assets with their prompts recorded beside
-the files.
+is not distributed; Scott's six-state five-compartment backpack and tiny blue
+dither tile are newly generated project assets with their prompts and logical-
+pixel production cleanup recorded beside the files.
 
 No ROM, extracted graphics, save data, or other game content is included or
 requested by Scott's Tweaks.

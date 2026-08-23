@@ -120,13 +120,16 @@ lower screen-factory composition, copied/idempotent Trade Stone stock, and a
 live BUY BAG count without mutating stock or inventory. This remains the
 partial-install fallback contract.
 
-`modern_bag_integration.lua` is the 195-check release contract for the normal
+`modern_bag_integration.lua` is the 253-check release contract for the normal
 bundled Bag/PC owner. It verifies the default Pocket and selectable Modern
 skins, All plus five category views, Scott-specific classification fallbacks,
 native callback multi-returns, PC Withdraw/Deposit/Toss decoration, native
-per-pocket/x99 and PC-50 limits, packaged six-state backpack and blue-weave
-loading with nearest filtering,
-landscape and portrait sizing, idempotent reload ownership, and
+per-pocket/x99 and PC-50 limits, the packaged fixed-silhouette six-frame 34×21
+backpack sheet with distinct compartment states,
+4×4 repeating palette-safe blue dither, native-size plaque font, full
+unabridged headers and long item names, integer sprite scaling, 200×144
+physical-Thor Bag sizing, landscape and
+portrait sizing, idempotent reload ownership, and
 standalone-provider stand-down under both runtimes:
 
 ```powershell

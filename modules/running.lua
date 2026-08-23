@@ -324,7 +324,7 @@ return function(mod, context)
 
   local feature = {
     installed = true,
-    version = context and context.releaseVersion or "0.12.4",
+    version = context and context.releaseVersion or "0.12.5",
     alwaysAvailable = true,
     speedDelegated = speedDelegated,
     speedProvider = speedDelegated and "running_shoes" or mod.id,

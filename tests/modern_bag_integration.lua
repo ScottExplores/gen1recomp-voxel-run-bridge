@@ -42,32 +42,50 @@ local function pngInfo(relative)
   local handle = assert(io.open(sourceRoot .. "/" .. relative, "rb"),
     "missing packaged PNG " .. relative)
   local header = handle:read(26)
+  handle:seek("set")
+  local payload = handle:read("*a")
   handle:close()
+  local bytes = #payload
+  local checksum = 0
+  for index = 1, bytes do
+    checksum = (checksum * 131 + payload:byte(index)) % 2147483647
+  end
   check(header and header:sub(1, 8) == "\137PNG\r\n\26\n",
     relative .. " has a PNG signature")
   local function be32(offset)
     local a, b, c, d = header:byte(offset, offset + 3)
     return ((a * 256 + b) * 256 + c) * 256 + d
   end
-  return be32(17), be32(21), header:byte(26)
+  return be32(17), be32(21), header:byte(26), bytes, checksum
 end
 
-local bagPngW, bagPngH, bagPngColor = pngInfo(
+local bagPngW, bagPngH, bagPngColor, bagPngBytes,
+  bagPngChecksum = pngInfo(
   "vendor/modern_bag_ui/assets/scotts_pocket_bag_sheet.png")
-eq(bagPngW, 1536, "backpack sheet width preserves three equal cells")
-eq(bagPngH, 1024, "backpack sheet height preserves two equal cells")
+eq(bagPngW, 102, "backpack sheet keeps three native 34px cells")
+eq(bagPngH, 42, "backpack sheet keeps two native 21px cells")
 eq(bagPngColor, 6, "backpack sheet carries real RGBA transparency")
-local weavePngW, weavePngH, weavePngColor = pngInfo(
+check(bagPngBytes < 8192,
+  "native backpack sheet cannot regress to a detailed megabyte illustration")
+eq(bagPngChecksum, 956682984,
+  "backpack keeps one fixed silhouette and five distinct compartment states")
+local weavePngW, weavePngH, weavePngColor, weavePngBytes,
+  weavePngChecksum = pngInfo(
   "vendor/modern_bag_ui/assets/pocket_blue_weave.png")
-eq(weavePngW, 1254, "blue weave packaged width")
-eq(weavePngH, 1254, "blue weave packaged height")
-eq(weavePngColor, 2, "blue weave is an opaque RGB texture")
+eq(weavePngW, 4, "blue dither packages one tiny repeat tile")
+eq(weavePngH, 4, "blue dither tile remains square")
+eq(weavePngColor, 2, "blue dither is an opaque RGB tile")
+check(weavePngBytes < 512,
+  "blue dither remains a tiny repeat tile instead of a large texture")
+eq(weavePngChecksum, 1442566384,
+  "blue dither keeps its palette-safe shade-1/shade-2 color pair")
 
 local drawCalls = {
   rectangles = 0, raster = 0, text = {}, images = {}, draws = {},
 }
 local trueColorMarks = {}
 local assetRequests = {}
+local fontRequests = {}
 local function fakeImage(name, width, height)
   return {
     name = name,
@@ -75,10 +93,13 @@ local function fakeImage(name, width, height)
     setFilter = function(self, min, mag)
       self.minFilter, self.magFilter = min, mag
     end,
+    setWrap = function(self, horizontal, vertical)
+      self.wrapHorizontal, self.wrapVertical = horizontal, vertical
+    end,
   }
 end
-local bagSheetImage = fakeImage("bag-sheet", 1536, 1024)
-local blueWeaveImage = fakeImage("blue-weave", 1254, 1254)
+local bagSheetImage = fakeImage("bag-sheet", 102, 42)
+local blueWeaveImage = fakeImage("blue-weave", 4, 4)
 local displayWidth, displayHeight = 1280, 720
 love = {
   graphics = {
@@ -92,6 +113,19 @@ love = {
     push = function() end,
     pop = function() end,
     translate = function() end,
+    setFont = function() end,
+    newFont = function(path, size, hinting, dpiScale)
+      fontRequests[#fontRequests + 1] = {
+        path = path, size = size, hinting = hinting, dpiScale = dpiScale,
+      }
+      return {
+        setFilter = function(self, min, mag)
+          self.minFilter, self.magFilter = min, mag
+        end,
+        getWidth = function(_, text) return #tostring(text or "") * 7 end,
+        getHeight = function() return 15 end,
+      }
+    end,
     print = function(text)
       drawCalls.text[#drawCalls.text + 1] = tostring(text)
     end,
@@ -501,11 +535,12 @@ local order = {
 }
 local inventory = {}
 for _, id in ipairs(order) do inventory[id] = 1 end
+inventory.PLAIN_ITEM = 999
 local data = {
   constants = { bagSize = 20 }, field = { pcItemCap = 50 },
   palettes = { palettes = palettes }, moves = {},
   items = {
-    PLAIN_ITEM = { name = "PLAIN ITEM" },
+    PLAIN_ITEM = { name = "THUNDER STONE" },
     BATTLE_EXPLICIT = { name = "X TEST", bagPocket = "battle",
       pocket = "ITEM" },
     POTION = { name = "POTION" },
@@ -604,7 +639,7 @@ input.pressed.right = nil
 eq(bag.modernBagPocket, 2, "one Right press advances exactly one pocket")
 eq(baseRightUpdates, 0, "pocket input does not reach a second lower owner")
 
--- Pocket skin draws the generated backpack and blue weave at landscape and
+-- Pocket skin draws the generated backpack and blue dither at landscape and
 -- portrait sizes while retaining ordinary primitives for frames and fallback.
 optionValues["modern_bag_ui:skin"] = nil
 displayWidth, displayHeight = 1280, 720
@@ -621,21 +656,28 @@ check(drawCalls.rectangles > beforeRectangles,
 eq(drawCalls.raster, beforeLandscapeRaster + 2,
   "Pocket skin draws generated weave and active backpack")
 local firstWeaveDraw = drawCalls.draws[#drawCalls.draws - 1]
-eq(firstWeaveDraw and firstWeaveDraw.sx, firstWeaveDraw and firstWeaveDraw.sy,
-  "blue weave uses one uniform scale after aspect-ratio crop")
-eq(#trueColorMarks, 1,
-  "generated backpack marks one standard true-color re-blit zone")
-eq(trueColorMarks[1] and trueColorMarks[1].width,
-  trueColorMarks[1] and trueColorMarks[1].height,
-  "generated backpack true-color zone matches its square frame")
+eq(firstWeaveDraw and firstWeaveDraw.sx, 1,
+  "blue dither repeats at one logical pixel per UI pixel")
+eq(firstWeaveDraw and firstWeaveDraw.sy, 1,
+  "blue dither never receives fractional vertical scaling")
+eq(#trueColorMarks, 0,
+  "three-colour backpack stays inside the Game Boy palette pass")
 check(contains(assetRequests,
   "vendor/modern_bag_ui/assets/scotts_pocket_bag_sheet.png"),
   "Pocket skin requests packaged six-state backpack sheet")
 check(contains(assetRequests,
   "vendor/modern_bag_ui/assets/pocket_blue_weave.png"),
-  "Pocket skin requests packaged blue weave texture")
+  "Pocket skin requests packaged blue dither tile")
 eq(bagSheetImage.minFilter, "nearest", "backpack sheet keeps hard pixels")
-eq(blueWeaveImage.minFilter, "nearest", "blue weave keeps hard pixels")
+eq(blueWeaveImage.minFilter, "nearest", "blue dither keeps hard pixels")
+eq(blueWeaveImage.wrapHorizontal, "repeat",
+  "blue dither repeats horizontally")
+eq(blueWeaveImage.wrapVertical, "repeat",
+  "blue dither repeats vertically")
+eq(fontRequests[1] and fontRequests[1].size, 15,
+  "Pocket plaque uses PlainPixel's native crisp size")
+eq(fontRequests[1] and fontRequests[1].dpiScale, 1,
+  "Pocket plaque avoids Android DPI resampling")
 eq(bag.modernBagClassicPocketArt, "items", "draw reports active backpack state")
 eq(bag.modernBagClassicPocketRegion, "items",
   "draw reports the highlighted procedural compartment")
@@ -643,8 +685,16 @@ local landscapeText = {}
 for index = beforeLandscapeText + 1, #drawCalls.text do
   landscapeText[#landscapeText + 1] = drawCalls.text[index]
 end
-check(contains(landscapeText, "10/20"),
-  "Items view reports its shared native Gen1 ITEM-pocket capacity")
+eq(bag.modernBagClassicHeader, "ITEMS",
+  "Items header remains exact and unabridged")
+eq(bag.modernBagClassicHeaderArrows, true,
+  "Pocket header keeps the reference's paired change arrows")
+eq(bag.modernBagClassicPocketLabel, "Items",
+  "Items plaque matches the supplied title-case reference")
+eq(bag.modernBagClassicCapacity, "10/20",
+  "Items view retains its truthful native capacity diagnostically")
+check(not contains(landscapeText, "10/20"),
+  "capacity no longer crowds the Pocket title strip")
 
 bag.modernBagPocket = 1
 bag:modernBagRefresh()
@@ -654,7 +704,8 @@ local allText = {}
 for index = beforeAllText + 1, #drawCalls.text do
   allText[#allText + 1] = drawCalls.text[index]
 end
-check(contains(allText, "11"), "All view reports the total occupied stacks")
+eq(bag.modernBagClassicCapacity, "11",
+  "All view retains the total occupied-stack count")
 check(not contains(allText, "11/20"),
   "All view never compares mixed native pockets to the ITEM-only capacity")
 
@@ -666,7 +717,7 @@ local ballsText = {}
 for index = beforeBallsText + 1, #drawCalls.text do
   ballsText[#ballsText + 1] = drawCalls.text[index]
 end
-check(contains(ballsText, "10/20"),
+eq(bag.modernBagClassicCapacity, "10/20",
   "Gen1 Balls view derives the real shared ITEM-pocket capacity")
 check(not contains(ballsText, "0/12"),
   "Gen1 Balls view never assumes Gen2 BALL metadata")
@@ -679,8 +730,8 @@ local keyText = {}
 for index = beforeKeyText + 1, #drawCalls.text do
   keyText[#keyText + 1] = drawCalls.text[index]
 end
-check(contains(keyText, "3"),
-  "mixed native pockets report the visual category's occupied stacks")
+eq(bag.modernBagClassicCapacity, "3",
+  "mixed native pockets retain the visual category's occupied stacks")
 check(not contains(keyText, "1/25"),
   "mixed native pockets never claim one misleading capacity")
 
@@ -694,8 +745,8 @@ local legacyBallsText = {}
 for index = beforeLegacyBallsText + 1, #drawCalls.text do
   legacyBallsText[#legacyBallsText + 1] = drawCalls.text[index]
 end
-check(contains(legacyBallsText, "1"),
-  "older single-bag engines receive a count-only Balls header")
+eq(bag.modernBagClassicCapacity, "1",
+  "older single-bag engines retain a count-only Balls diagnostic")
 check(not contains(legacyBallsText, "0/12"),
   "older single-bag engines never receive an invented pocket capacity")
 Bag.pocketOf = savedPocketOf
@@ -723,15 +774,19 @@ eq(drawCalls.raster, beforeModernRaster,
 optionValues["modern_bag_ui:skin"] = nil
 displayWidth, displayHeight = 1280, 720
 
--- Every public pocket must select its exact 512x512 frame in the 3x2 sheet.
+-- Every public pocket must select its exact native 34x21 frame in the 3x2 sheet.
 -- This catches a visually plausible but semantically shuffled sprite sheet.
 local expectedFrames = {
-  { key = "all", x = 0, y = 0 },
-  { key = "items", x = 512, y = 0 },
-  { key = "medicine", x = 1024, y = 0 },
-  { key = "balls", x = 0, y = 512 },
-  { key = "machines", x = 512, y = 512 },
-  { key = "key", x = 1024, y = 512 },
+  { key = "all", x = 0, y = 0, header = "ALL ITEMS", plaque = "All" },
+  { key = "items", x = 34, y = 0, header = "ITEMS", plaque = "Items" },
+  { key = "medicine", x = 68, y = 0,
+    header = "MEDICINE", plaque = "Meds" },
+  { key = "balls", x = 0, y = 21,
+    header = "POKé BALLS", plaque = "Balls" },
+  { key = "machines", x = 34, y = 21,
+    header = "TMs/HMs", plaque = "TMs" },
+  { key = "key", x = 68, y = 21,
+    header = "KEY ITEMS", plaque = "Key" },
 }
 for index, expected in ipairs(expectedFrames) do
   bag.modernBagPocket = index
@@ -740,8 +795,18 @@ for index, expected in ipairs(expectedFrames) do
   local bagDraw = drawCalls.draws[#drawCalls.draws]
   local quad = bagDraw and bagDraw.image == "bag-sheet" and bagDraw.quad
   check(quad and quad.x == expected.x and quad.y == expected.y
-      and quad.width == 512 and quad.height == 512,
+      and quad.width == 34 and quad.height == 21,
     expected.key .. " selects its exact generated backpack frame")
+  eq(bagDraw and bagDraw.sx, 1,
+    expected.key .. " backpack frame draws at an integer 1x")
+  eq(bagDraw and bagDraw.sy, 1,
+    expected.key .. " backpack frame has no vertical squeeze")
+  eq(bag.modernBagClassicHeader, expected.header,
+    expected.key .. " header is exact and unabridged")
+  eq(bag.modernBagClassicPocketLabel, expected.plaque,
+    expected.key .. " plaque text matches the reference")
+  check(not tostring(bag.modernBagClassicPocketLabel):find("%.$"),
+    expected.key .. " plaque never falls back to an ellipsis")
 end
 
 -- Every native PC operation must keep its callback and receive the same six
@@ -774,10 +839,11 @@ for actionIndex, actionName in ipairs({ "withdraw", "deposit", "toss" }) do
   stack:pop()
 end
 
--- The physical Thor lower display is a fixed 400x360 logical surface. A
--- canonical 160x144 menu scales there at a crisp integer 2x; the ordinary
--- responsive 256px landscape surface must return as soon as either half of
--- the physical-display contract is false.
+-- The physical Thor lower display is a fixed 400x360 logical surface. The
+-- Pocket-specific 200x144 menu uses an exact 2x horizontal scale and keeps
+-- the original five-row height while leaving full item/category names room.
+-- The ordinary responsive 256px landscape surface must return as soon as
+-- either half of the physical-display contract is false.
 displayWidth, displayHeight = 1280, 720
 local ordinaryPCW, ordinaryPCH = decoratedPCList:uiSize()
 eq(ordinaryPCW, 256, "ordinary landscape PC list keeps responsive width")
@@ -785,11 +851,36 @@ eq(ordinaryPCH, 144, "ordinary landscape PC list keeps native height")
 
 thorEnabled, thorAttached = true, true
 local thorBagW, thorBagH = bag:uiSize()
-eq(thorBagW, 160, "enabled attached Thor fixes Bag width")
+eq(thorBagW, 200, "enabled attached Thor gives Bag readable 2x width")
 eq(thorBagH, 144, "enabled attached Thor fixes Bag height")
 local thorPCW, thorPCH = decoratedPCList:uiSize()
-eq(thorPCW, 160, "enabled attached Thor fixes PC list width")
+eq(thorPCW, 200, "enabled attached Thor gives PC list readable 2x width")
 eq(thorPCH, 144, "enabled attached Thor fixes PC list height")
+check(bag:modernBagLayoutInfo().wide == true,
+  "Thor Pocket uses the non-cramped wide layout")
+bag.modernBagPocket = 2
+bag:modernBagRefresh()
+local beforeThorText = #drawCalls.text
+bag:draw()
+local thorText = {}
+for index = beforeThorText + 1, #drawCalls.text do
+  thorText[#thorText + 1] = drawCalls.text[index]
+end
+check(contains(thorText, "THUNDER STONE"),
+  "Thor Pocket keeps a 13-character item name intact beside x999")
+eq(bag.modernBagClassicHeader, "ITEMS",
+  "Thor Pocket keeps the full active header")
+eq(bag.modernBagClassicPocketLabel, "Items",
+  "Thor Pocket plaque remains exact title-case text")
+for index, expected in ipairs(expectedFrames) do
+  bag.modernBagPocket = index
+  bag:modernBagRefresh()
+  bag:draw()
+  eq(bag.modernBagClassicHeader, expected.header,
+    expected.key .. " Thor header remains unabridged")
+  eq(bag.modernBagClassicPocketLabel, expected.plaque,
+    expected.key .. " Thor plaque remains clean and centered")
+end
 
 thorEnabled, thorAttached = false, true
 local disabledBagW, disabledBagH = bag:uiSize()

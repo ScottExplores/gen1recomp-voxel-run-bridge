@@ -19,11 +19,13 @@ Scott's Tweaks adaptations:
 - compose previously registered BagMenu and PlayerPC factories;
 - retain native inventory, PC, and quantity limits;
 - load Scott's original generated six-state five-compartment backpack and
-  woven-blue rail texture, with the prior LOVE primitives retained only as a
-  decode/missing-asset fallback; neither image uses upstream raster artwork;
+  two-colour blue dither tile at native logical-pixel resolution, with the
+  prior LOVE primitives retained only as a decode/missing-asset fallback;
+  neither image uses upstream raster artwork;
 - preserve Scott-compatible item-category fallbacks and lower-controller
   return values;
-- use a 160x144 UI surface on an attached physical AYN Thor lower display;
+- use a Bag-only 200x144 UI surface on an attached physical AYN Thor lower
+  display so full pocket headers and item names remain readable at exact 2x;
 - make screen registration and decoration safe to repeat.
 
 The upstream PNG, manifest, tests, documentation, and automation are not part

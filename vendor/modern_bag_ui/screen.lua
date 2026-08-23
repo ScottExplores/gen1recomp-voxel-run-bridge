@@ -202,8 +202,11 @@ return function(mod, priorBagMenu)
       if not love.graphics.newFont then
         classicLabelFont = false
       else
+        -- PlainPixel is authored at 15px. Android/LÖVE downsamples the old
+        -- 10px request unevenly, which is why Items/Balls looked squeezed on
+        -- the Thor even though the words technically fit the plaque.
         local ok, face = pcall(love.graphics.newFont,
-          Font.PLAINPIXEL, 10, "mono")
+          Font.PLAINPIXEL, Font.PLAINPIXEL_SIZE or 15, "mono", 1)
         if ok and face then
           if face.setFilter then
             pcall(face.setFilter, face, "nearest", "nearest")
@@ -301,10 +304,9 @@ return function(mod, priorBagMenu)
     return tonumber(width) or 160, tonumber(height) or SCREEN_H
   end
 
-  -- The image generator intentionally supplied a faint colored presentation
-  -- glow around the hard-edged backpack pixels. At Bag-menu scale that halo
-  -- muddies the white display card, so the runtime keeps only confidently
-  -- opaque pixels without changing the generated artwork on disk.
+  -- The production sheet already has hard binary alpha. Keep the conservative
+  -- cutout shader for older cached/partially upgraded assets so a stale soft
+  -- presentation edge cannot muddy the white display card.
   local function shaderForClassicSprite()
     if classicSpriteShader == nil then
       if not love.graphics.newShader then
@@ -365,6 +367,7 @@ return function(mod, priorBagMenu)
     end)
     if okWeave and weave then
       if weave.setFilter then pcall(weave.setFilter, weave, "nearest", "nearest") end
+      if weave.setWrap then pcall(weave.setWrap, weave, "repeat", "repeat") end
       local okSize, width, height = pcall(weave.getDimensions, weave)
       if okSize and width and height and width > 0 and height > 0 then
         classicBlueWeave = weave
@@ -385,31 +388,20 @@ return function(mod, priorBagMenu)
       return classicBlueWeaveQuads[key] or nil
     end
 
-    -- Center-crop the square source to the rail's aspect ratio, then apply one
-    -- uniform scale. Stretching the full square into the narrow rail turns its
-    -- woven diamonds into tall lozenges on the Thor.
-    local targetAspect = width / height
-    local sourceAspect = classicBlueWeaveW / classicBlueWeaveH
-    local cropW, cropH = classicBlueWeaveW, classicBlueWeaveH
-    if targetAspect < sourceAspect then
-      cropW = cropH * targetAspect
-    elseif targetAspect > sourceAspect then
-      cropH = cropW / targetAspect
-    end
-    local cropX = (classicBlueWeaveW - cropW) / 2
-    local cropY = (classicBlueWeaveH - cropH) / 2
-    local ok, quad = pcall(love.graphics.newQuad, cropX, cropY,
-      cropW, cropH, classicBlueWeaveW, classicBlueWeaveH)
+    -- The final asset is a real 4x4 two-colour tile. Repeat it one-to-one so
+    -- the rail has the reference's dense handheld dither instead of a large
+    -- scaled weave or generated diamond motif.
+    local ok, quad = pcall(love.graphics.newQuad, 0, 0,
+      width, height, classicBlueWeaveW, classicBlueWeaveH)
     classicBlueWeaveQuads[key] = ok and quad or false
     return ok and quad or nil
   end
 
-  -- VENDORED CHANGE (Scott's Tweaks): a 256px responsive Bag only fits the
-  -- Thor's 400x360 logical lower surface at 1x. Ask Scott's physical-display
-  -- presenter at draw time (it is installed after bundled mods load) and use
-  -- the canonical 160x144 surface there, which the presenter can scale at a
-  -- crisp integer 2x. Standalone installs and failed lookups keep the normal
-  -- responsive path.
+  -- VENDORED CHANGE (Scott's Tweaks): the Thor's 400x360 lower surface can
+  -- present a Bag-only 200x144 canvas at an exact 2x horizontally. The extra
+  -- 40 logical pixels keep long item names and full pocket headers readable;
+  -- the 144px height and five-row reference composition remain unchanged.
+  -- Standalone installs and failed lookups keep the normal responsive path.
   local function physicalThorLowerActive()
     local candidates = { mod }
     if type(mod.find) == "function" then
@@ -440,7 +432,7 @@ return function(mod, priorBagMenu)
   end
 
   local function responsiveSize()
-    if physicalThorLowerActive() then return SCREEN_W, SCREEN_H end
+    if physicalThorLowerActive() then return 200, SCREEN_H end
     local width, height = displayPixels()
 
     -- A wide window keeps the original 144px-tall responsive surface. A
@@ -478,7 +470,10 @@ return function(mod, priorBagMenu)
       local headerH = stacked and 18 or 14
       local detailH = stacked and 84 or 40
       local detailY = height - detailH
-      local railW = wide and math.max(56, math.floor(width * 0.25)) or 48
+      -- Keep the wide rail at one quarter of the canvas. The old 56px floor
+      -- needlessly stole six pixels from the Thor's item column and still
+      -- left plenty of empty space around the native 34px backpack.
+      local railW = wide and math.max(50, math.floor(width * 0.25)) or 48
       local listH = detailY - headerH
       local rows = math.max(4, math.min(stacked and 10 or 6,
         math.floor((listH - 5) / ROW_H)))
@@ -1214,7 +1209,7 @@ return function(mod, priorBagMenu)
   end
 
   -- A second skin inspired by the late-era Pocket Bag: a black title strip,
-  -- woven blue pocket rail, red active-pocket frame, clean white item sheet
+  -- blue pixel-dither pocket rail, red active-pocket frame, clean white item sheet
   -- and a full-width description card. It keeps the same controller and
   -- responsive layout contract as the modern skin.
   local function drawClassicBackdrop(layout)
@@ -1227,12 +1222,10 @@ return function(mod, priorBagMenu)
     if classicBlueWeave and love.graphics.draw then
       local quad = classicWeaveQuad(layout.railW, layout.railH)
       if quad then
-        local _, _, cropW, cropH = quad:getViewport()
-        local scale = layout.railW / cropW
         love.graphics.push("all")
         gray(WHITE)
         love.graphics.draw(classicBlueWeave, quad,
-          layout.railX, layout.railY, 0, scale, scale)
+          layout.railX, layout.railY, 0, 1, 1)
         love.graphics.pop()
         return
       end
@@ -1265,15 +1258,29 @@ return function(mod, priorBagMenu)
 
     local title = Strings(config and (config.label or config.short)
       or pocket.label)
-    local capacity = capacityText(menu)
-    local capacityW = math.min(48, Font.width(capacity) + 4)
-    local titleW = math.max(24, layout.listW - capacityW - 8)
+    -- Match the reference's paired pocket-change marks between POCKET and the
+    -- active category. They stay decorative; Left/Right remains the input.
+    local arrowX = layout.listX + 3
+    local arrowY = math.max(2, math.floor((layout.headerH - 5) / 2))
+    gray(LIGHT)
+    love.graphics.polygon("fill",
+      arrowX, arrowY, arrowX + 6, arrowY, arrowX + 3, arrowY + 4)
+    love.graphics.polygon("fill",
+      arrowX + 9, arrowY + 4, arrowX + 12, arrowY,
+      arrowX + 15, arrowY + 4)
+    -- The supplied screen gives the active category the whole right-hand
+    -- header. Capacity beside it left only 60px at 160-wide and forced
+    -- MEDICINE, POKé BALLS and KEY ITEMS through fitText(). Keep the real
+    -- capacity available diagnostically while preserving the exact title.
+    local titleW = math.max(24, layout.listW - 24)
     title = fitText(title, titleW)
     drawText(title,
-      layout.listX + math.max(3, math.floor((titleW - Font.width(title)) / 2)),
+      layout.listX + 21 + math.max(0,
+        math.floor((titleW - Font.width(title)) / 2)),
       math.max(2, math.floor((layout.headerH - 8) / 2)), titleW, LIGHT)
-    drawTextRight(capacity, layout.width - 3,
-      math.max(2, math.floor((layout.headerH - 8) / 2)), capacityW, WHITE)
+    menu.modernBagClassicCapacity = capacityText(menu)
+    menu.modernBagClassicHeader = title
+    menu.modernBagClassicHeaderArrows = true
   end
 
   local function classicRailBoxes(layout)
@@ -1296,8 +1303,10 @@ return function(mod, priorBagMenu)
     if classicBagSheet and quad and love.graphics.draw then
       local cellW = classicBagCellW
       local cellH = classicBagCellH
-      local scale = math.min(math.max(1, width - 2) / cellW,
-        math.max(1, height - 2) / cellH)
+      -- Native logical-pixel frames must never be fractionally resampled.
+      local scale = math.max(1, math.floor(math.min(
+        math.max(1, width - 2) / cellW,
+        math.max(1, height - 2) / cellH)))
       local drawW, drawH = cellW * scale, cellH * scale
       local dx = math.floor(x + (width - drawW) / 2)
       local dy = math.floor(y + (height - drawH) / 2)
@@ -1307,14 +1316,9 @@ return function(mod, priorBagMenu)
       if shader and love.graphics.setShader then love.graphics.setShader(shader) end
       love.graphics.draw(classicBagSheet, quad, dx, dy, 0, scale, scale)
       love.graphics.pop()
-      -- The surrounding Pocket rail intentionally uses Game Boy palette zones,
-      -- but the generated frame's red/green/orange/violet/cyan highlights are
-      -- literal authored colors. Re-blit this small square through the engine's
-      -- standard true-color seam so the enclosing GREENMON zone cannot collapse
-      -- all six states back into one green luminance ramp.
-      if type(PaletteFX.markTrueColor) == "function" then
-        pcall(PaletteFX.markTrueColor, dx, dy, drawW, drawH)
-      end
+      -- Keep the generated white/two-green art inside the normal GREENMON
+      -- palette zone. That final palette pass is what makes it read like the
+      -- original handheld sprite instead of a modern full-colour illustration.
       return true
     end
 
@@ -1381,7 +1385,7 @@ return function(mod, priorBagMenu)
       boxW - 4, pocketH - 4)
     local label = CLASSIC_POCKET_LABELS[pocket.key] or pocket.short
     menu.modernBagClassicPocketLabel = classicRailLabel(Strings(label),
-      margin + 4, pocketY + 2, boxW - 8, pocketH - 4)
+      margin + 2, pocketY + 2, boxW - 4, pocketH - 4)
   end
 
   local function drawClassicList(menu, layout)
@@ -1412,13 +1416,16 @@ return function(mod, priorBagMenu)
       local quantity = item.right or ""
       local qWidth = Font.width(quantity)
       if selected then
-        drawCode(Theme.cursor, layout.listX + 8, y, DARK)
+        drawCode(Theme.cursor, layout.listX + 2, y, DARK)
       elseif item.value == menu.modernBagSwapId then
-        drawCode(Theme.cursorHollow, layout.listX + 8, y, BLACK)
+        drawCode(Theme.cursorHollow, layout.listX + 2, y, BLACK)
       end
-      drawText(item.label, layout.listX + 20, y,
-        layout.listW - qWidth - 28, BLACK)
-      drawTextRight(quantity, layout.width - 4, y, qWidth + 4, BLACK)
+      -- Match the compact original list gutters: one glyph for the cursor,
+      -- then the complete name and a right-aligned quantity. On the 200px
+      -- Thor surface this preserves even THUNDER STONE beside x999.
+      drawText(item.label, layout.listX + 12, y,
+        layout.listW - qWidth - 14, BLACK)
+      drawTextRight(quantity, layout.width - 1, y, qWidth, BLACK)
     end
 
     if menu.scroll + layout.rows < #menu.items then
@@ -1521,7 +1528,7 @@ return function(mod, priorBagMenu)
       if #menu.items > 0 then
         zones[#zones + 1] = {
           colors = red,
-          x = layout.listX + 6,
+          x = layout.listX,
           y = layout.listY + 4
             + (menu.index - menu.scroll - 1) * ROW_H,
           w = 12, h = 11,

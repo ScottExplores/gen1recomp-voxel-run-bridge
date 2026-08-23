@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.12.5 - 2026-08-22
+
+- **Remade the Pocket art in the supplied handheld style.** The prior detailed
+  generated illustration is replaced by a true 102×42 sprite sheet containing
+  six native 34×21 white/two-green backpack frames. Every selected pocket uses
+  a flat dark-green compartment, hard alpha, nearest filtering, integer draw
+  scale, and the normal Game Boy palette pass—no glow, gradients, fabric
+  shading, or full-colour highlights. All six frames share one exact silhouette
+  and outline, so changing pockets highlights only the intended left, upper,
+  middle, lower, or right compartment without sprite flicker.
+- **Replaced the oversized blue weave.** The Pocket rail now repeats one opaque
+  two-colour 4×4 checker/dither tile at one logical pixel per UI pixel, closely
+  matching the dense blue pattern in the reference without cropping,
+  fractional scaling, diamonds, or generated texture distortion. Both blues
+  map to visible SGB palette shades instead of collapsing the dark pixels to
+  black.
+- **Fixed cramped Pocket text on the Thor.** The selected plaque uses
+  PlainPixel at its authored 15px/DPI-1 size, with `Items`, `Balls`, and the
+  other compact labels centered in the single black/red reference card. Full
+  `ALL ITEMS`, `ITEMS`, `MEDICINE`, `POKé BALLS`, `TMs/HMs`, and `KEY ITEMS`
+  titles now own the whole top-right header instead of competing with a
+  capacity counter. Compact list gutters also preserve names as long as
+  `THUNDER STONE` beside an `x999` quantity.
+- **Gave the Thor Bag a readable exact-scale surface.** Bag and PC pocket lists
+  request 200×144 only while the physical 400×360 lower display is attached.
+  That fills its width at exact 2×, preserves the reference's 144px/five-row
+  height, and leaves long item names intact; battle and dialogue surfaces keep
+  their existing resolution and placement.
+
 ## 0.12.4 - 2026-08-22
 
 - **Fixed saved-ON Thor startup.** The physical lower-display presenter now

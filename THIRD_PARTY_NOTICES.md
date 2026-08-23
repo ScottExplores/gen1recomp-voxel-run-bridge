@@ -107,8 +107,9 @@ Scott's Tweaks adapts the responsive Bag and PC presentation code from
 [Modern Bag UI](https://github.com/piftee/gen1recomp-modern-bag-ui), release
 0.4.1, commit `2b6082a62fda29a161458a541562dc816b155c57`. The upstream raster
 backpack is deliberately not included. Scott's Tweaks instead packages its
-own generated six-state five-compartment backpack and woven-blue texture;
-their prompts and provenance are recorded beside the assets. The complete
+own generated six-state native-pixel backpack and two-colour 4×4 blue dither
+tile; their prompts and production-cleanup provenance are recorded beside the
+assets. The complete
 upstream license also ships beside the adapted source at
 `vendor/modern_bag_ui/LICENSE`:
 

@@ -1,64 +1,81 @@
 # Scott's Pocket Bag asset provenance
 
-The two PNGs in `assets/` are original project assets generated for Scott's
-Tweaks on 2026-08-22 with OpenAI's built-in image-generation tool. The prior
-Modern Bag UI screenshot was supplied only as a broad style/composition
-reference. No upstream raster, ROM image, logo, text, or exact artwork was
-copied into these files.
+The two PNGs in `assets/` are original project assets made for Scott's Tweaks
+on 2026-08-22 with OpenAI's built-in image-generation tool. The supplied Bag
+screenshot was used only as a visual reference for low-resolution geometry,
+palette, and layout. No upstream raster, ROM image, text, logo, or exact
+artwork is copied into these files.
+
+The first generated draft was too detailed. The shipping assets were therefore
+regenerated to match the much simpler early-handheld appearance and then
+mechanically reduced to their actual logical-pixel sizes. The mechanical pass
+only removed generator presentation pixels, quantized the requested palette,
+and packed/repeated the generated art; it did not introduce replacement art.
 
 ## `scotts_pocket_bag_sheet.png`
 
-Generation prompt:
+Final contributing generation prompt:
 
-> Use case: stylized-concept. Asset type: production game UI sprite sheet for
-> a retro monster-catching RPG Bag menu. Input image is a style/composition
-> reference only; do not copy its UI, text, logos, or exact artwork. Create one
-> original pixel-art sprite sheet showing the same generic five-compartment
-> travel backpack in six consistent states: neutral/all, main items selected,
-> medicine selected, capture balls selected, machines selected, and key items
-> selected. Use a compact front-facing green canvas backpack with dark green
-> side pockets, top flap, straps, and five clearly distinguishable
-> compartments. Every frame must use exactly the same backpack silhouette,
-> scale, position, and pixel grid; only the selected compartment changes
-> highlight. Authentic crisp 8-bit/16-bit handheld pixel art, hard pixel edges,
-> limited four-shade green base palette plus one restrained highlight color per
-> selected state. Exact 3 columns by 2 rows with six equal square cells,
-> centered sprites, transparent padding, and no drawn dividers. Reading order:
-> neutral/all; items with warm red main-body highlight; medicine with emerald
-> upper-pocket highlight; capture balls with red-orange left-side highlight;
-> machines with violet right-side highlight; key items with cyan lower-front
-> highlight. Genuine transparency; no text, letters, numbers, UI frame,
-> checkerboard, outside shadow, trademarks, ball symbols, creatures, or
-> watermark.
+> Use case: stylized-concept. Asset type: replacement production sprite sheet
+> for a retro handheld RPG Pocket menu. Image 1 is the user's original visual
+> reference; Image 2 is the current overly detailed 3x2 backpack sheet to
+> replace. Redraw the six backpack frames so they look much closer to the very
+> simple green backpack in Image 1. Preserve only Image 2's exact 3-column by
+> 2-row sheet organization and six selection states; remove its modern detail,
+> lighting, glow, and texture. Show one small front-facing five-compartment
+> backpack in six identical poses: neutral/all, main items selected, medicine
+> selected, capture balls selected, machines selected, and key items selected.
+> Use authentic early Game Boy Color UI art on an approximately 28x24 logical-
+> pixel grid, enlarged with nearest-neighbor square pixels. Use transparent,
+> near-black/dark green, medium green, and pale mint/white. Selected states
+> change only one compartment. Use a strong one-logical-pixel outline, blocky
+> stair-step corners, exact equal cells, fixed scale/position, generous
+> padding, hard alpha, flat fills, and no antialiasing, gradients, glow,
+> shadows, texture, text, symbols, frame, checkerboard, or watermark.
 
-Transparency cleanup prompt used on that generated sheet:
+Palette/state cleanup prompt:
 
-> Remove only the pale gray-and-white checkerboard background and replace it
-> with genuine transparent alpha. Preserve all six backpack sprites exactly:
-> their pixel geometry, positions, colors, scale, 3-column-by-2-row layout,
-> highlight states, and hard pixel edges. Do not redraw, restyle, recolor,
-> resize, move, crop, smooth, add outlines, add shadows, or add text. Keep the
-> full canvas and equal cell layout unchanged. No background pixels,
-> checkerboard, halo, or watermark.
+> Change only the generated sheet's color treatment and background. Preserve
+> the 3x2 layout, six equal cells, backpack geometry, coarse grid, positions,
+> scale, and five selectable compartment locations. Remove every outside
+> checkerboard pixel. Remove gradients, glow, blur, highlights, and bright
+> accent colors. Use only opaque white, medium leaf green, and near-black dark
+> green; selected frames fill only the selected compartment with flat dark
+> green. Use hard binary alpha, flat fills, and no antialiasing, soft edges,
+> semitransparent pixels, shading, shadow, texture, text, or watermark.
 
-The renderer applies a hard alpha threshold when shaders are available to
-remove the generator's remaining low-opacity presentation glow while leaving
-the source PNG unchanged. A shaderless renderer still draws the PNG with its
-authored alpha; image-decode or Quad failure uses the former primitive
-backpack as a compatibility fallback.
+Production cleanup reduced the generated work to real logical pixels,
+flood-filled only the connected outside background to alpha, and quantized the
+remaining pixels to white plus two greens. One generated pose became the
+canonical 34x21 silhouette. Its alpha mask, outline, straps, and base fills are
+copied byte-for-byte to all six frames; the five selected states then replace
+only white pixels inside five nonoverlapping compartment interiors with flat
+dark green. This prevents pose flicker and makes Items (left), Medicine
+(upper), Balls (middle), TMs/HMs (lower), and Key Items (right) visibly
+distinct. The six frames are packed into one 102x42 RGBA sheet. The renderer
+draws them at integer scale and lets the normal `GREENMON` palette zone supply
+the final cartridge-era color.
 
 ## `pocket_blue_weave.png`
 
-Generation prompt:
+Final contributing generation prompt:
 
-> Use case: stylized-concept. Asset type: seamless game UI background texture
-> for a retro handheld Bag menu. The input image is a style and palette
-> reference only; use its blue woven/stippled sidebar feeling, not any exact
-> UI, text, logo, or artwork. Create one original seamless square pixel-art
-> textile texture in rich medium cobalt blue with darker navy and lighter-blue
-> interwoven pixels. Use authentic crisp 8-bit/16-bit handheld pixel art, hard
-> square pixels, a tiny repeating woven/check pattern, and a restrained
-> three-to-four-color palette. Edge-to-edge tileable square texture with
-> uniform density and no focal point. No text, letters, numbers, icons,
-> backpack, border, vignette, gradients, logos, trademarked imagery, or
-> watermark; readable when reduced to a 16x16 or 32x32 tile.
+> Use case: stylized-concept. Asset type: replacement seamless Pocket-menu
+> background texture. Image 1 is the user's original visual reference; Image 2
+> is the current overly detailed diamond weave to replace. Replace Image 2 with
+> the much simpler blue pixel dither behind the backpack in Image 1. Use an
+> authentic early Game Boy Color UI background with exactly two flat blue
+> colors arranged as one tiny repeating checker/dither tile. Use crisp square
+> pixels enlarged with nearest-neighbor scaling. The pattern must read as a
+> simple blue speckle/checker, not woven fabric. Make it seamless, uniform, and
+> edge-to-edge, with no gradients, lighting, shadows, diamonds, plus signs,
+> circles, fabric detail, irregularity, antialiasing, blur, text, icons, border,
+> or watermark.
+
+Production cleanup sampled the generated cobalt and pale-blue pair and stored
+one exact 4x4 opaque RGB checker tile. The final colors are `#9DB6EA` and
+`#3B6BCB`: their red channels deliberately map to shade 1 and shade 2 in the
+engine's four-shade SGB palette classifier, so neither blue becomes black on
+the real render pass. The renderer repeats that tile one-to-one instead of
+shrinking or cropping a large texture, matching the supplied reference's dense
+pixel dither without distortion.
