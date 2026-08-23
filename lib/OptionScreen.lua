@@ -40,6 +40,7 @@ function OptionScreen:update(_)
   local input = self.game.input
   local cancel = #self.rows + 1
   local changed = false
+  local selfPersisted = false
 
   if input:wasPressed("up") then
     self.index = self.index > 1 and self.index - 1 or cancel
@@ -49,11 +50,15 @@ function OptionScreen:update(_)
       or input:wasPressed("a") then
     local row = self.rows[self.index]
     local pressedA = input:wasPressed("a")
-    if row and row.activate then
-      if pressedA then row.activate(self.game) end
+    -- ART PACK supports both: A opens its details while Left/Right selects a
+    -- bundled collection. Dispatch by the pressed button so an `activate`
+    -- callback cannot swallow arrow input.
+    if row and pressedA and row.activate then
+      row.activate(self.game)
     elseif row and row.step then
       local direction = input:wasPressed("left") and -1 or 1
       changed = row.step(self.game, direction) and true or false
+      selfPersisted = changed and row.persists == true
     elseif pressedA then
       close(self)
     end
@@ -61,9 +66,10 @@ function OptionScreen:update(_)
     close(self)
   end
 
-  -- Pipeline rows persist in the stock OptionsMenu at this layer. Other
-  -- rows already write immediately; a second unchanged write is harmless.
-  if changed and self.game.writeOptions then
+  -- Pipeline rows persist in the stock OptionsMenu at this layer. Coupled
+  -- transactions such as ACTIVE PACK declare that they already committed,
+  -- avoiding a redundant Android option-file write.
+  if changed and not selfPersisted and self.game.writeOptions then
     pcall(self.game.writeOptions, self.game)
   end
   self.scroll = OptionRows.clampScroll(

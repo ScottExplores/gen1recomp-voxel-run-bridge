@@ -144,6 +144,10 @@ for _, id in ipairs({
   T.check(loadedSet[id], "bundled mod loaded: " .. id
     .. (vend and vend.failed and vend.failed[id] and (" -- " .. tostring(vend.failed[id])) or ""))
 end
+if type(require("src.core.GameVersion").generation) ~= "function" then
+  T.check(loadedSet.unique_menu_icons,
+    "v0.1.75 loads bundled menu icons without the later generation API")
+end
 T.eq(exports.freeFlyCockpitControl
     and exports.freeFlyCockpitControl.active, true,
   "bundled Free Fly 1.8.0 receives the cockpit presentation control")
@@ -421,6 +425,11 @@ T.eq(findLabel(wildBasic.rows, "HIDDEN MONS"), nil,
   "advanced hidden encounters stay out of BASIC")
 
 local spritesBasic = buildScreen(unified.screenIds.sprites)
+local artPack = findLabel(spritesBasic.rows, "ART PACK")
+T.check(artPack ~= nil and type(artPack.step) == "function",
+  "Pokemon BASIC exposes ART PACK as a Left/Right selector")
+T.eq(artPack and artPack.value(), "CRYSTAL 2.0",
+  "ART PACK starts on the bundled Crystal provider")
 T.check(findLabel(spritesBasic.rows, "PLAYER VIEW") ~= nil,
   "Pokemon BASIC keeps the everyday player orientation control")
 T.check(findLabel(spritesBasic.rows, "TRAINER SOURCE") ~= nil,
@@ -429,6 +438,84 @@ T.eq(findLabel(spritesBasic.rows, "MY POKEMON FLIP"), nil,
   "Pokemon BASIC stays concise by hiding the advanced front flip")
 T.eq(findLabel(spritesBasic.rows, "CRYSTAL OPTIONS"), nil,
   "Pokemon BASIC keeps provider-specific tuning out of the short list")
+
+-- Exercise arrows through the real unified OptionScreen: Crystal and the
+-- bundled Battle Art collections are sources, while Gen 2 is a distinct
+-- Battle Art preset rather than an ambiguous second "Crystal" label.
+spritesBasic.index = findIndex(spritesBasic.rows, "ART PACK")
+local beforeArtPackWrites = writes
+press(spritesBasic, "right")
+T.eq(artPack.value(), "BATTLE ART G1",
+  "Right changes ART PACK from Crystal to Battle Art Gen 1")
+T.eq(writes, beforeArtPackWrites + 1,
+  "ART PACK persists its coupled source profile once")
+T.eq(game.save.options.modOptions.voxel_run_bridge.duplicateFix, "battle_art",
+  "Battle Art preset owns Pokemon pictures")
+T.eq(game.save.options.modOptions.voxel_run_bridge.frontAnimatedSet, "gen1",
+  "Battle Art preset changes the front generation")
+T.eq(game.save.options.modOptions.voxel_run_bridge.backAnimatedSet, "gen1",
+  "Battle Art preset changes the matching back generation")
+press(spritesBasic, "right")
+T.eq(artPack.value(), "BATTLE ART G2",
+  "Right reaches the bundled Gen 2 Battle Art sprites")
+T.eq(game.save.options.modOptions.voxel_run_bridge.frontAnimatedSet, "gen2",
+  "Gen 2 ART PACK selects Gen 2 fronts")
+T.eq(game.save.options.modOptions.voxel_run_bridge.backAnimatedSet, "gen2",
+  "Gen 2 ART PACK selects Gen 2 backs")
+press(spritesBasic, "left")
+press(spritesBasic, "left")
+T.eq(artPack.value(), "CRYSTAL 2.0",
+  "Left returns through Battle Art Gen 1 to Crystal")
+
+local artStackBefore = #stack.values
+press(spritesBasic, "a")
+local artDetails = stack:top()
+T.eq(#stack.values, artStackBefore + 1,
+  "A still opens ART PACK details while arrows change its value")
+T.eq(artDetails and artDetails.title, "SPRITE PACK",
+  "ART PACK details retain their registered screen")
+local activePackDetail = artDetails and findLabel(artDetails.rows, "ACTIVE PACK")
+T.eq(activePackDetail and activePackDetail.value(), "CRYSTAL 2.0",
+  "ART PACK detail screen reports the same active provider")
+T.eq(activePackDetail and activePackDetail.persists, true,
+  "ART PACK details identify their transaction as self-persisting")
+T.eq(artDetails and findLabel(artDetails.rows, "ART FILES").value(), "BUILT IN",
+  "ART PACK details truthfully report that art ships inside Scott's Tweaks")
+artDetails.index = findIndex(artDetails.rows, "ACTIVE PACK")
+local beforeDetailPackWrites = writes
+press(artDetails, "right")
+T.eq(activePackDetail.value(), "BATTLE ART G1",
+  "ART PACK detail arrows select the same bundled presets")
+T.eq(writes, beforeDetailPackWrites + 1,
+  "ART PACK detail arrow performs one Android option-file write")
+press(artDetails, "left")
+T.eq(activePackDetail.value(), "CRYSTAL 2.0",
+  "ART PACK detail arrows return to Crystal without leaving the screen")
+stack:pop()
+
+-- The renderer's historical QUICK screen is still registered for old saves
+-- and standalone callers. Its shortcut uses the same coupled ART PACK
+-- transaction, so OptionScreen must not append a second storage write there.
+do
+  local fallbackQuick = buildScreen(sm.screenIds.quick)
+  local fallbackPack = findLabel(fallbackQuick.rows, "SPRITE PACK")
+  T.check(fallbackPack ~= nil and type(fallbackPack.step) == "function",
+    "fallback QUICK screen retains its sprite-pack shortcut")
+  T.eq(fallbackPack and fallbackPack.persists, true,
+    "fallback ART PACK shortcut identifies its self-persisting transaction")
+  fallbackQuick.index = findIndex(fallbackQuick.rows, "SPRITE PACK")
+  local beforeFallbackPackWrites = writes
+  press(fallbackQuick, "right")
+  T.eq(fallbackPack and fallbackPack.value(), "BATTLE ART G1",
+    "fallback ART PACK shortcut changes the bundled provider")
+  T.eq(writes, beforeFallbackPackWrites + 1,
+    "fallback ART PACK shortcut performs one Android option-file write")
+  press(fallbackQuick, "left")
+  T.eq(fallbackPack and fallbackPack.value(), "CRYSTAL 2.0",
+    "fallback ART PACK shortcut returns to Crystal")
+  T.eq(writes, beforeFallbackPackWrites + 2,
+    "fallback ART PACK return also performs one Android option-file write")
+end
 
 -- Exercise the real OptionScreen input path. The root visibility row has both
 -- an A action and a left/right step; a generic activate-first dispatch used to

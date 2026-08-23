@@ -275,6 +275,18 @@ local function openRow(label, value, screenId, enabled)
   }
 end
 
+local function packRow(label, screenId)
+  local row = openRow(label, function() return state.sprite:packLabel() end,
+    screenId)
+  -- cyclePack commits the coupled sprite-source settings as one transaction.
+  -- Tell OptionScreen not to issue a second Android option-file write.
+  row.persists = true
+  row.step = function(game, direction)
+    return state.sprite:cyclePack(game, direction)
+  end
+  return row
+end
+
 local function refreshUnderlyingOptions(game)
   local top = game and game.stack and game.stack:top()
   if not top then return end
@@ -328,8 +340,7 @@ local function quickRows()
   local out = { pipelineRow("voxel", "VIEW") }
   appendKeyRows(out, QUICK_KEYS)
   if state.sprite:integrated() then
-    out[#out + 1] = openRow("SPRITE PACK",
-      function() return state.sprite:packLabel() end, SCREEN.sprites)
+    out[#out + 1] = packRow("SPRITE PACK", SCREEN.sprites)
     out[#out + 1] = {
       label = "PLAYER POKEMON",
       value = function() return state.sprite:playerViewLabel() end,
@@ -363,8 +374,7 @@ local function spriteRows()
   local skip = nil
   if state.sprite:integrated() then
     skip = { playerView = true, frontFlip = true }
-    out[#out + 1] = openRow("PACK",
-      function() return state.sprite:packLabel() end, SCREEN.pack)
+    out[#out + 1] = packRow("PACK", SCREEN.pack)
   else
     out[#out + 1] = openRow("SPRITE MENU", "EXTERNAL",
       "ScottsSpriteOptions")
@@ -604,6 +614,7 @@ function SettingsMenu.export()
     coverage = SettingsMenu.coverage,
     integratedSpriteMenu = function() return state.sprite:integrated() end,
     activePack = function() return state.sprite:activePack() end,
+    activePackPreset = function() return state.sprite:activePackPreset() end,
     ownership = function() return state.sprite:ownership() end,
     open = SettingsMenu.open,
     schema = function() return state.schema end,

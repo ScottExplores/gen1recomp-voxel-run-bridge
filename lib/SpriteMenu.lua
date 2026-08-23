@@ -68,31 +68,163 @@ function SpriteMenu:crystalReady()
          and type(exports.listPlayerSprites) == "function"
 end
 
-function SpriteMenu:activePack()
+-- The bundled Battle Art library carries one coherent Pokemon collection for
+-- each generation.  A preset deliberately changes front and back together;
+-- ALL mode still exposes the independent expert rows for mixed-generation
+-- combinations.
+function SpriteMenu:battleArtGenerations()
+  local out = {}
+  for _, generation in ipairs(BattleArt.frontAnimationSetting.values or {}) do
+    if findIndex(BattleArt.backAnimationSetting.values, generation) then
+      out[#out + 1] = generation
+    end
+  end
+  return out
+end
+
+function SpriteMenu:packChoices()
+  local out = {}
   local crystal, fireRed = self:crystalHandle(), self:fireRedHandle()
+  -- Two simultaneously-running replacement providers cannot be selected
+  -- independently: both still receive the engine hook.  Do not advertise a
+  -- misleading MODDED preset in that conflict; Battle Art can safely render
+  -- over either one and remains available below.
+  if not (crystal and fireRed) then
+    if self:crystalReady() then
+      out[#out + 1] = { id = "crystal", label = "CRYSTAL 2.0" }
+    elseif fireRed then
+      out[#out + 1] = { id = "firered", label = "FIRE RED" }
+    end
+  end
+  for _, generation in ipairs(self:battleArtGenerations()) do
+    out[#out + 1] = {
+      id = "battle_art_" .. generation,
+      generation = generation,
+      label = "BATTLE ART G" .. generation:match("%d+$"),
+    }
+  end
+  -- ORIGINAL ROM is selectable only when no replacement provider is running.
+  -- Crystal patches the engine's underlying Pokemon definitions at load time,
+  -- so advertising ROM while Crystal is present would still show Crystal art.
+  if not crystal and not fireRed then
+    out[#out + 1] = { id = "rom", label = "ORIGINAL ROM" }
+  end
+  return out
+end
+
+function SpriteMenu:activePackPreset()
+  local crystal, fireRed = self:crystalHandle(), self:fireRedHandle()
+  local mode = BattleArt.setting:get()
+  if mode == "rom" then
+    if crystal and fireRed then return "conflict" end
+    if crystal then
+      return self:crystalReady() and "crystal" or "crystal_update"
+    end
+    if fireRed then return "firered" end
+    return "rom"
+  end
+
+  if BattleArt.duplicateSetting:get() == "battle_art" then
+    local front = BattleArt.frontAnimationSetting:get()
+    local back = BattleArt.backAnimationSetting:get()
+    if mode == "animated" and front == back
+        and findIndex(self:battleArtGenerations(), front) then
+      return "battle_art_" .. front
+    end
+    return "battle_art_custom"
+  end
+
   if crystal and fireRed then return "conflict" end
   if crystal then
     return self:crystalReady() and "crystal" or "crystal_update"
   end
   if fireRed then return "firered" end
-  return "battle_art"
+  -- MODDED with no active replacement provider is the engine's own art.
+  return "rom"
+end
+
+-- Preserve the public provider-family answer used by the older Sprite Menu
+-- API. The selectable preset adds generation detail without changing what
+-- existing companion code sees as the active provider.
+function SpriteMenu:activePack()
+  local preset = self:activePackPreset()
+  if preset == "battle_art_custom"
+      or (type(preset) == "string"
+          and preset:find("battle_art_gen", 1, true) == 1) then
+    return "battle_art"
+  end
+  return preset
 end
 
 function SpriteMenu:packLabel()
-  local pack = self:activePack()
-  if pack == "crystal" then return "CRYSTAL 2.0"
-  elseif pack == "crystal_update" then return "UPDATE CRYSTAL"
+  local pack = self:activePackPreset()
+  for _, choice in ipairs(self:packChoices()) do
+    if choice.id == pack then return choice.label end
+  end
+  if pack == "crystal_update" then return "UPDATE CRYSTAL"
   elseif pack == "firered" then return "FIRE RED"
   elseif pack == "conflict" then return "PACK CONFLICT"
+  elseif pack == "battle_art_custom" then return "BATTLE ART CUSTOM"
+  elseif pack == "rom" then return "ORIGINAL ROM"
   end
-  return "BATTLE ART"
+  return "UNAVAILABLE"
 end
 
 function SpriteMenu:packVersion()
-  local pack = self:activePack()
+  local pack = self:activePackPreset()
   local found = (pack == "crystal" or pack == "crystal_update")
     and self:crystalHandle() or (pack == "firered" and self:fireRedHandle())
   return found and tostring(found.version or "UNKNOWN") or "BUILT IN"
+end
+
+function SpriteMenu:setPack(game, wanted)
+  local choice
+  for _, candidate in ipairs(self:packChoices()) do
+    if candidate.id == wanted then choice = candidate break end
+  end
+  if not choice then return false, "PACK UNAVAILABLE" end
+
+  local changes = {}
+  local function change(setting, value)
+    changes[#changes + 1] = { setting = setting, value = value }
+  end
+  if wanted == "crystal" or wanted == "firered" then
+    -- ANIMATED keeps the staged renderer active while MODDED yields Pokemon
+    -- picture ownership to the selected provider.  Remember the Battle Art
+    -- generation rows so returning to that provider can resume them.
+    change(BattleArt.setting, "animated")
+    change(BattleArt.duplicateSetting, "modded")
+  elseif wanted == "rom" then
+    change(BattleArt.setting, "rom")
+    change(BattleArt.duplicateSetting, "battle_art")
+  else
+    local generation = choice.generation
+    if not generation then return false, "PACK UNAVAILABLE" end
+    change(BattleArt.setting, "animated")
+    change(BattleArt.duplicateSetting, "battle_art")
+    change(BattleArt.frontAnimationSetting, generation)
+    change(BattleArt.backAnimationSetting, generation)
+  end
+
+  local ok, err = self:applyTransaction(game, changes)
+  if not ok then return false, err end
+  return true, self:activePackPreset()
+end
+
+function SpriteMenu:cyclePack(game, direction)
+  local choices = self:packChoices()
+  if #choices == 0 then return false, "PACK UNAVAILABLE" end
+  local current = self:activePackPreset()
+  local index
+  for i, choice in ipairs(choices) do
+    if choice.id == current then index = i break end
+  end
+  -- A custom/mismatched expert profile advances to the first complete preset;
+  -- Left begins at the other end so both directions remain intuitive.
+  if not index then index = direction and direction < 0 and 1 or 0 end
+  local step = direction and direction < 0 and -1 or 1
+  index = ((index - 1 + step) % #choices) + 1
+  return self:setPack(game, choices[index].id)
 end
 
 function SpriteMenu:hasTrainerControl()
@@ -216,13 +348,51 @@ function SpriteMenu:migrateLegacyFlip(game)
   return ok and true or false
 end
 
+local function currentGame(game)
+  if game ~= nil then return game end
+  local ok, found = pcall(require, "src.core.Game")
+  return ok and found or nil
+end
+
+function SpriteMenu:savedPokemonOwner(game)
+  game = currentGame(game)
+  local options = game and game.save and game.save.options
+  local buckets = options and options.modOptions
+  local bucket = type(buckets) == "table"
+    and buckets[(mod and mod.id) or BATTLE_ART]
+  local value = type(bucket) == "table" and rawget(bucket, "duplicateFix")
+  if value == "battle_art" or value == "modded" then return value end
+  return nil
+end
+
 function SpriteMenu:enforceSpecies(game)
   if not self:integrated() then return true, "EXTERNAL HUB" end
-  local pack = self:activePack()
-  if pack == "conflict" then return false, "PACK CONFLICT" end
-  local pokemon = (pack == "crystal" or pack == "crystal_update"
-                   or pack == "firered") and "modded" or "battle_art"
-  return self:applyOwnership({ pokemon = pokemon }, game)
+  local activeGame = currentGame(game)
+  local crystal, fireRed = self:crystalHandle(), self:fireRedHandle()
+  if crystal and fireRed then return false, "PACK CONFLICT" end
+
+  -- Before the ART PACK row was selectable, the integrated coordinator chose
+  -- Crystal for an untouched install.  Keep that default, but do not clobber
+  -- an explicit BATTLE ART / ORIGINAL choice on game.ready, save.loaded, or
+  -- hot reload.  The existing duplicateFix key is the durable source of truth,
+  -- so no parallel setting or save migration is needed.
+  local saved = self:savedPokemonOwner(activeGame)
+  if saved then
+    BattleArt.duplicateSetting:sync(saved)
+    local loader = activeGame and activeGame.mods
+    local buckets = loader and loader.modOptions
+    local bucket = type(buckets) == "table"
+      and buckets[(mod and mod.id) or BATTLE_ART]
+    local live = type(bucket) == "table" and rawget(bucket, "duplicateFix")
+    if live ~= saved then
+      local index = findIndex(BattleArt.duplicateSetting.values, saved)
+      local value, err = BattleArt.duplicateSetting:setIndex(index, activeGame)
+      if value == nil then return false, err end
+    end
+    return true, saved
+  end
+  local pokemon = (self:crystalReady() or fireRed) and "modded" or "battle_art"
+  return self:applyOwnership({ pokemon = pokemon }, activeGame)
 end
 
 local function crystalTrainerParts(mode)
@@ -628,10 +798,17 @@ end
 
 function SpriteMenu:packRows()
   return {
-    { label = "ACTIVE PACK", value = function() return self:packLabel() end },
+    {
+      label = "ACTIVE PACK",
+      value = function() return self:packLabel() end,
+      step = function(game, direction) return self:cyclePack(game, direction) end,
+      -- cyclePack commits its coupled ownership/generation transaction itself;
+      -- the generic details screen must not write the same option file again.
+      persists = true,
+    },
     { label = "VERSION", value = function() return self:packVersion() end },
-    { label = "CHANGE PACK", value = function() return "MODS + RESTART" end },
-    { label = "ART FILES", value = function() return "SEPARATE MOD" end },
+    { label = "BATTLE ART", value = function() return "GEN 1 - GEN 5" end },
+    { label = "ART FILES", value = function() return "BUILT IN" end },
   }
 end
 

@@ -26,10 +26,24 @@ function FreeMove.tick(state)
   state.player.px = (state.player.px or 0) + 2
   return "base", nil, "tail"
 end
-local FirstPerson = {}
+local VoxelState = { level = 6, FP_LEVEL = 6, TP_LEVEL = 7 }
+function VoxelState.isFirstPerson(level)
+  return (level or VoxelState.level) == VoxelState.FP_LEVEL
+end
+-- Load the shipped camera module so the trainer-focus assertions exercise its
+-- real attitude helper. Its renderer-only dependencies remain cold here, and
+-- frame() is replaced with the tiny numeric fixture the bob dispatcher needs.
+local firstPersonDeps = {
+  Mat4 = {}, VoxelState = VoxelState,
+  Voxel3D = { available = function() return true end },
+  Jump = {}, WorldCurve = {}, ThirdPerson = {},
+}
+local FirstPerson = assert(loadfile(sourceRoot .. "/lib/FirstPerson.lua"))({
+  require = function(name) return firstPersonDeps[name] end,
+})
 function FirstPerson.frame(me) return me.lift or 0 end
 local sharedVoxel = {
-  FreeMove = FreeMove, FirstPerson = FirstPerson,
+  FreeMove = FreeMove, FirstPerson = FirstPerson, VoxelState = VoxelState,
 }
 package.preload["tests.scotts_tweaks_shared_voxel"] = function()
   return sharedVoxel
@@ -106,6 +120,96 @@ local frameWrapper = frameRecord and frameRecord.wrapper
 local firstOptionCallback = tickRecord and tickRecord.state.option
 local speedRecord = rawget(FreeMove, "_scottsTweaksVoxelRunBridge")
 local speedWrapper = speedRecord and speedRecord.wrapper
+
+-- The saved raw value is deliberately retained for compatibility, but the
+-- player-facing scale makes that historical 0.25 effect the 1X reference and
+-- offers several genuinely gentler steps below it.
+local runningSchema = run1.loader.optionSchemas.voxel_run_bridge
+local bobSchema
+for _, row in ipairs(runningSchema or {}) do
+  if row.key == "running_bob_intensity" then bobSchema = row break end
+end
+T.check(type(bobSchema) == "table", "head-bob intensity stays in the schema")
+T.eq(bobSchema and bobSchema.default, 0.125,
+  "new installs default to a gentle 0.5X head bob")
+T.eq(bobSchema and bobSchema.choices[1][1], "0.25X",
+  "head bob offers a quarter-strength setting")
+T.eq(bobSchema and bobSchema.choices[1][2], 0.0625,
+  "quarter strength is meaningfully below the historical raw 0.25")
+T.eq(bobSchema and bobSchema.choices[6][1], "1X",
+  "the historical strength has the simple 1X label")
+T.eq(bobSchema and bobSchema.choices[6][2], 0.25,
+  "1X preserves existing saves at raw 0.25")
+
+-- A sight trainer owns the approach, but not the player's first-person head.
+-- The event fires before dialogue is pushed, so the camera and the staged-
+-- battle seed must both turn now without changing either actor's facing.
+local RuntimeFocus = require("src.mods.Runtime")
+local GameFocus = require("src.core.Game")
+local focusPlayer = {
+  px = 16, py = 32, cellX = 1, cellY = 2, facing = "up",
+}
+local focusNpc = {
+  id = "TRAINER_FOCUS", px = 48, py = 32, cellX = 3, cellY = 2,
+  facing = "left",
+}
+GameFocus.overworld = { engaging = true, player = focusPlayer }
+FirstPerson.yaw, FirstPerson.pitch = -0.75, 0.6
+FirstPerson.lastYaw, FirstPerson.lastPitch = nil, nil
+RuntimeFocus.emit("world.trainer_engaged", { npc = focusNpc })
+local focusStatus = run1.loader.exports.voxel_run_bridge.running.trainerFocus
+T.eq(focusStatus and focusStatus.active, true,
+  "trainer camera focus installs beside the first-person renderer")
+T.eq(focusStatus and focusStatus.reason, "first_person_sight_focus",
+  "trainer focus reports its narrow sight-path ownership")
+T.check(math.abs(FirstPerson.yaw - math.pi / 2) < 0.00001,
+  "first-person sight rotates east toward the approaching trainer")
+T.eq(FirstPerson.pitch, FirstPerson.PITCH_DEFAULT,
+  "trainer focus restores a readable neutral pitch")
+T.eq(FirstPerson.lastYaw, FirstPerson.yaw,
+  "trainer focus seeds the staged battle with the corrected yaw")
+T.eq(FirstPerson.lastPitch, FirstPerson.pitch,
+  "trainer focus seeds the staged battle with the corrected pitch")
+T.eq(focusPlayer.facing, "up",
+  "trainer focus does not turn the player body or script state")
+T.eq(focusNpc.facing, "left",
+  "trainer focus does not disturb the trainer approach facing")
+T.eq(focusStatus and focusStatus.focusCount, 1,
+  "one trainer engagement focuses exactly once in one live generation")
+
+VoxelState.level = VoxelState.TP_LEVEL
+FirstPerson.yaw = -0.4
+RuntimeFocus.emit("world.trainer_engaged", { npc = focusNpc })
+T.eq(FirstPerson.yaw, -0.4,
+  "third-person view preserves its player-controlled camera")
+T.eq(focusStatus and focusStatus.focusCount, 1,
+  "third-person engagements do not count as first-person focus")
+
+VoxelState.level = VoxelState.FP_LEVEL
+GameFocus.overworld.engaging = false
+FirstPerson.yaw = 0.35
+RuntimeFocus.emit("world.trainer_engaged", { npc = focusNpc })
+T.eq(FirstPerson.yaw, 0.35,
+  "A-button and scripted trainer dialogue preserve their camera choreography")
+T.eq(focusStatus and focusStatus.focusCount, 1,
+  "non-sight trainer paths do not trigger the focus adapter")
+
+-- Gen 2 sends the sight direction before the walk-up rather than exposing
+-- Gen 1's OverworldState.engaging flag. It supplies NPC px/py/cell fields but
+-- no world/player reference, so the exact trainer->player direction is the
+-- authoritative bearing (reversed here to player->trainer).
+GameFocus.overworld = nil
+FirstPerson.yaw = 0.2
+RuntimeFocus.emit("world.trainer_engaged", {
+  npc = focusNpc, sight = { distance = 3, dir = "down" },
+})
+T.check(math.abs(math.abs(FirstPerson.yaw) - math.pi) < 0.00001,
+  "Gen 2 sight payload turns the first-person camera back toward its trainer")
+T.eq(focusStatus and focusStatus.focusCount, 2,
+  "Gen 2's explicit sight path triggers one camera focus")
+T.eq(focusPlayer.facing, "up",
+  "Gen 2 sight direction never mutates a player facing")
+GameFocus.overworld = nil
 
 local run2 = loadEntry()
 local tickRecord2 = rawget(FreeMove, "_scottsTweaksRunningBobTick")

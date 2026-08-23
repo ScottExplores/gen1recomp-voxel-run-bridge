@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.12.6 - 2026-08-22
+
+- **Made ART PACK selectable in place.** Left/Right now cycles the built-in
+  Crystal 2.0 provider and Battle Art Gen 1 through Gen 5; A still opens the
+  detail screen. Every Battle Art preset selects matching front/back
+  generations together, persists its complete ownership profile atomically,
+  and survives save load or F5 without being reset to Crystal. The independent
+  expert rows remain available in ALL mode for custom combinations.
+- **Moved ordinary Thor dialogue to the hinge.** NPC, trainer, sign, and other
+  overworld TextBox surfaces now use the same top-docked lower-screen position
+  as battle wording. Current TextBoxes use the public identity marker, while a
+  narrow typewriter-state check retains compatibility with Gen1Recomp 0.1.75
+  without mistaking menus for dialogue.
+- **Finished the joined battle panels.** Fight/move and Mimic selection now
+  paint their previously transparent upper-right remainder white, eliminating
+  the black notch while preserving the original borders, TYPE/PP box, text,
+  and nearest-pixel scaling.
+- **Enlarged the original Start menu on the physical Thor.** Its existing art,
+  border, cursor, and double-spaced rows are cropped and fitted at a crisp 4×
+  scale, normally 352×320, with four scrollable rows. Closing it, switching
+  Thor mode off, unplugging, a render fault, and F5 all restore the exact normal
+  single-screen geometry. Safari's additional steps/balls box keeps the full
+  original surface instead of being cropped away.
+- **Focused first-person trainer challenges.** When a sight trainer initiates
+  an encounter, the live camera turns toward that trainer before dialogue and
+  seeds the staged battle with the same view. Normal A-button conversations,
+  scripted battles, the actors' own facings, and every non-first-person camera
+  remain unchanged; both Gen 1 and the newer Gen 2 sight payload are handled.
+- **Animated earned EXP.** The staged blue EXP line now grows smoothly toward
+  the live value. A level-up visibly completes the old bar and then fills the
+  new level from zero instead of blinking directly to the final width.
+- **Kept Gen1Recomp 0.1.75 fully supported.** The fused Battle Art loader now
+  compiles its child modules with the Lua 5.1 path available on that release,
+  and the bundled menu-icon provider no longer assumes the later
+  `GameVersion.generation()` helper exists. Newer engines retain their existing
+  Lua and Gen 2 behavior.
+
 ## 0.12.5 - 2026-08-22
 
 - **Remade the Pocket art in the supplied handheld style.** The prior detailed

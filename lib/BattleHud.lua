@@ -293,6 +293,21 @@ end
 -- level state is touched.
 BattleHud.EXP_RECT = { 80, 91, 64, 2 }
 BattleHud.CAUGHT_POS = { 80, 8 }
+-- Match the later games' visible gauge movement instead of replacing the
+-- entire blue row on the first frame after EXP changes. At 96 logical pixels
+-- per second, an empty 64px bar takes about two thirds of a second to fill.
+BattleHud.EXP_PIXELS_PER_SECOND = 96
+
+local expAnimations = setmetatable({}, { __mode = "k" })
+
+local function expClock()
+  local timer = love and love.timer
+  if timer and type(timer.getTime) == "function" then
+    local ok, value = pcall(timer.getTime)
+    if ok and tonumber(value) then return tonumber(value) end
+  end
+  return os.clock()
+end
 
 local growthModule = nil
 
@@ -328,6 +343,86 @@ function BattleHud.playerExpFraction(battle)
      or nextLevel <= base then return nil end
   local earned = tonumber(mon.exp or mon.experience) or base
   return math.max(0, math.min(1, (earned - base) / (nextLevel - base)))
+end
+
+-- Presentation-only EXP tween. The live Pokemon value remains authoritative;
+-- this table merely remembers what the bar drew on the previous frame. A
+-- level-up finishes the old bar, holds the full row for one draw, then starts
+-- the new level at zero and grows toward its real fraction.
+function BattleHud.playerExpDisplayFraction(battle, target)
+  target = tonumber(target)
+  if target == nil then target = BattleHud.playerExpFraction(battle) end
+  if target == nil then return nil end
+  target = math.max(0, math.min(1, target))
+
+  local battler = battle and battle.player
+  local mon = battler and battler.mon
+  local level = mon and tonumber(mon.level)
+  if not (battle and mon and level) then return target end
+
+  local now = expClock()
+  local state = expAnimations[battle]
+  if not state or state.mon ~= mon then
+    state = {
+      mon = mon, level = level, display = target, target = target,
+      at = now, pendingLevel = nil, pendingTarget = nil, fullShown = false,
+    }
+    expAnimations[battle] = state
+    return target
+  end
+
+  local dt = math.max(0, math.min(0.10, now - (state.at or now)))
+  state.at = now
+
+  -- The preceding draw exposed the completed old-level bar. Begin the new
+  -- level now, then spend this frame's delta growing from its empty channel.
+  if state.fullShown and state.pendingLevel then
+    state.level = state.pendingLevel
+    state.display = 0
+    state.target = state.pendingTarget or target
+    state.pendingLevel, state.pendingTarget = nil, nil
+    state.fullShown = false
+  end
+
+  if state.pendingLevel then
+    -- Multiple level gains before presentation catches up still produce one
+    -- clean completion, followed by the latest truthful level fraction.
+    if level >= state.pendingLevel then
+      state.pendingLevel, state.pendingTarget = level, target
+    elseif level < state.level then
+      state.level, state.display, state.target = level, target, target
+      state.pendingLevel, state.pendingTarget, state.fullShown = nil, nil, false
+    end
+    if state.pendingLevel then state.target = 1 end
+  elseif level > state.level then
+    state.pendingLevel, state.pendingTarget = level, target
+    state.target = 1
+  elseif level < state.level then
+    state.level, state.display, state.target = level, target, target
+    state.fullShown = false
+  elseif target + 0.000001 < state.display then
+    -- A same-level decrease means a switch/load correction, not earned EXP.
+    state.display, state.target = target, target
+  else
+    state.target = target
+  end
+
+  local speed = BattleHud.EXP_PIXELS_PER_SECOND / BattleHud.EXP_RECT[3]
+  if state.display < state.target then
+    state.display = math.min(state.target, state.display + speed * dt)
+  elseif state.display > state.target then
+    state.display = state.target
+  end
+  if state.pendingLevel and state.display >= 1 then state.fullShown = true end
+  return state.display
+end
+
+function BattleHud.resetExpAnimation(battle)
+  if battle then
+    expAnimations[battle] = nil
+  else
+    expAnimations = setmetatable({}, { __mode = "k" })
+  end
 end
 
 local function statusHudVisible(battle)
@@ -416,8 +511,10 @@ function BattleHud.drawStatusExtras(battle, slide)
   local g = love and love.graphics
   if not g then return { exp = nil, caught = false } end
   local oldColor = g.getColor and { g.getColor() } or { 1, 1, 1, 1 }
-  local fraction = playerHudLive(battle, slide)
-                   and BattleHud.playerExpFraction(battle) or nil
+  local target = playerHudLive(battle, slide)
+                 and BattleHud.playerExpFraction(battle) or nil
+  local fraction = target ~= nil
+                   and BattleHud.playerExpDisplayFraction(battle, target) or nil
   local caught = enemyHudLive(battle, slide)
                  and BattleHud.ownedOpponent(battle) or false
   local caughtFallback = caught and not BattleHud.nativeCaughtMarker(battle)
@@ -427,6 +524,9 @@ function BattleHud.drawStatusExtras(battle, slide)
              oldColor[3] or 1, oldColor[4] or 1)
   return {
     exp = fraction,
+    expTarget = target,
+    expAnimating = fraction ~= nil and target ~= nil
+      and math.abs(fraction - target) > 0.000001,
     caught = caught,
     caughtFallback = caughtFallback,
     caughtNative = caught and not caughtFallback,
@@ -779,6 +879,7 @@ function BattleHud.invalidate()
   luma = {}
   wasDark = false
   layer, hudLayer = nil, nil
+  BattleHud.resetExpAnimation()
 end
 
 return BattleHud

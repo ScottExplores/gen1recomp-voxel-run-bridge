@@ -1,25 +1,24 @@
 # Scott's Tweaks
 
-**0.12.5 brings the Pocket Bag much closer to the supplied handheld
-reference.** It replaces the detailed generated art with a native-pixel
-white/two-green backpack, repeats a tiny two-colour blue dither, restores the
-plaque font's crisp authored size, and gives the Thor enough Bag-only width for
-full category and item names. It also includes 0.12.4's automatic saved-ON
-lower-screen startup, hinge-aligned battle controls, clean moving Pokemon
-cards, clearer status panels, EXP/caught indicators, and simpler Buddy/All
-EXP.SHARE. The 3D voxel Kanto renderer, visible wild Pokemon, followers,
-animated battle sprites, menu
-icons, Free Fly integration, and Scott's gameplay tweaks are bundled so one
-launcher update carries the full set. Separately installed copies are no
-longer required; when one is present, the standalone copy remains the owner
-and the matching bundled copy stands down.
+**0.12.6 makes the Thor interface and bundled Pokémon art much easier to use.**
+ART PACK now cycles through Crystal 2.0 and matching Battle Art Gen 1-5 front
+and back sprites. On the physical lower screen, ordinary dialogue moves to the
+hinge, Fight/Mimic panels have a continuous white surface, and the original
+Start menu grows to a crisp four-row 4× presentation. Sight trainers turn the
+first-person camera toward themselves, while gained EXP visibly fills the blue
+bar instead of blinking to its new width. The native-pixel Pocket Bag, 3D
+voxel Kanto renderer, visible wild Pokémon, followers, Free Fly integration,
+and Scott's gameplay tweaks remain bundled so one launcher update carries the
+full set. Separately installed copies are no longer required; when one is
+present, the standalone copy remains the owner and the matching bundled copy
+stands down.
 
 Scott's Tweaks is the next version of **Voxel Run Bridge**. The display name
 is broader, but its internal mod ID remains `voxel_run_bridge`. Existing
 installations therefore update in place, keep their settings, and do not
 become a duplicate mod.
 
-Version 0.12.5 keeps the existing updater identity and provides one categorized
+Version 0.12.6 keeps the existing updater identity and provides one categorized
 **START > MOD MENUS > MOD SETTINGS** home for all of its settings. Its
 features are:
 
@@ -30,13 +29,17 @@ features are:
   silhouette and changes only its selected compartment. The selected Pocket
   plaque stays large and title-case while the full category name owns the top
   header. PC withdraw, deposit, and toss lists use the same organization.
+- **Selectable Pokémon art:** press Left/Right on ART PACK for Crystal 2.0 or
+  Battle Art Gen 1-5. Each Battle Art preset keeps its front and back
+  generation together and saves immediately.
 - **Cleaner staged Pokémon:** moving battle cards no longer receive their own
   unstable mobile shadow sample, removing the camera-motion bands while their
   normal arena shadows and lighting remain.
 - **Clearer battle status:** staged HP/level cards gain a subtle translucent
-  backing and the player's EXP progress below HP. Current engines use their
-  native Poké Ball glyph to mark caught wild species in both flat and staged
-  battles; the staged renderer supplies a compatibility glyph on older builds.
+  backing and the player's EXP progress below HP now animates as it grows.
+  Current engines use their native Poké Ball glyph to mark caught wild species
+  in both flat and staged battles; the staged renderer supplies a compatibility
+  glyph on older builds.
 - **Built-in Pack and Pokegear:** Red's ITEM row appears as PACK, followed by
   CLOCK, MAP, PHONE, and RADIO Pokégear cards adapted to Red. It is entirely
   built in and never asks for a Gold ROM.
@@ -56,7 +59,8 @@ features are:
   room.
 - **Built-in B running:** hold B while walking for an always-available 1.5X
   run by default. First-person voxel running receives a new, very light
-  distance-based camera bob at 0.5X intensity by default.
+  distance-based camera bob at 0.5X intensity by default. A sight trainer turns
+  the first-person camera toward the trainer before the challenge dialogue.
 
 - **Gapped Land:** compatible Pokemon Final, Dramatic Shape, and Battle Art
   renderers can cover the empty visual space beneath the horizon in outdoor
@@ -92,6 +96,13 @@ BASIC keeps the everyday choices compact. ALL restores the complete camera,
 renderer, Battle Art source, Crystal provider, and Pokemon orientation controls.
 The player-front, player-back, and opponent battle cards have independent flip
 choices; changing one never mirrors a trainer portrait or another card.
+
+Under **POKEMON ART**, press Left or Right on **ART PACK** to compare the
+built-in **CRYSTAL 2.0** and **BATTLE ART G1** through **BATTLE ART G5**
+pictures. Each Battle Art preset selects matching front and back generations
+together; Gen 2 is the bundled Crystal-era Battle Art set, not another name for
+the Crystal 2.0 provider. Press A for pack details. ALL mode retains the
+separate expert source and generation rows for custom mixes.
 
 Under **MENUS & DEVICE**, **BAG LOOK** switches between **POCKET** and
 **MODERN** without changing inventory data. **PACK + POKéGEAR** independently
@@ -243,7 +254,7 @@ special canopy scenery so it does not flatten places that are supposed to be
 enclosed or water-covered.
 
 The renderer is selected by its stable mod ID and then checked for the required
-capabilities rather than trusted by display name alone. Version 0.12.5 targets
+capabilities rather than trusted by display name alone. Version 0.12.6 targets
 Pokemon Final, the verified Dramatic Shape 1.8.0-1.8.2 renderer contract, and
 Battle Art Voxel Fork's published renderer modules.
 If an active voxel provider does not expose the required renderer modules,
@@ -401,7 +412,13 @@ Pokemon cards, trainer cards, and move-effect sprites stay in the upper arena
 instead of being duplicated below. Dialogue and command bands start near the
 hinge at the top of the lower display; TYPE/PP and the move list stay joined
 directly below that band, bringing the active choices toward the middle of the
-device. Full-screen Bag, Party, and settings surfaces remain centered.
+device. Ordinary NPC/trainer dialogue uses that same hinge-side position.
+Fight and Mimic selection panels fill their unused upper-right area with white
+so the joined boxes remain flush. The original Start menu keeps its borders and
+double-spaced rows but shows four scrollable rows at crisp 4×, typically
+352×320 on the 400×360 lower surface. The Safari Zone keeps its complete
+two-box steps/balls layout at the normal full-surface scale. Full-screen Bag,
+Party, and settings surfaces remain centered.
 Disabling the option or unplugging the second display immediately restores the
 ordinary single-screen composition.
 
@@ -414,14 +431,14 @@ Scott's Tweaks choice was already saved.
 ## Install or update
 
 If Voxel Run Bridge or any earlier Scott's Tweaks release is installed, open
-Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.12.5
+Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.12.6
 update. It will appear as **Scott's Tweaks** afterward without creating a
 second entry.
 
 For a first installation:
 
 1. Open **MODS -> Import mod .zip** and choose
-   `voxel_run_bridge-0.12.5.zip`.
+   `voxel_run_bridge-0.12.6.zip`.
 2. Enable **Scott's Tweaks**, then restart the game if the manager asks.
 3. Open **START > MOD MENUS > MOD SETTINGS**. The Pocket Bag, trainer
    features, Oak's starter, B running, light run bob, gapped land, badge-free
@@ -489,22 +506,27 @@ normal grid behavior is outside this adapter's scope.
 ## Develop and verify
 
 Use the `dev` branch of
-[Gen1Recomp](https://github.com/bryanthaboi/gen1recomp) as the SDK:
+[Gen1Recomp](https://github.com/bryanthaboi/gen1recomp) as the SDK. Run the
+focused Loader and compatibility suites in `tests/` under both Lua 5.1 and
+LuaJIT. The fused content bundle intentionally contains full encounter and art
+registries that the modkit's synthetic `fixture` base cannot resolve, so its
+strict validator/packer is not the release gate for this repository.
+
+After tests pass, build the updater ZIP from the committed tree. The repository
+attributes supply the exact release exclusions:
 
 ```powershell
-python tools/modkit.py validate C:\path\to\voxel_run_bridge --strict --base fixture
-python tools/modkit.py lint C:\path\to\voxel_run_bridge
-python tools/modkit.py pack C:\path\to\voxel_run_bridge -o C:\path\to\dist\voxel_run_bridge-0.12.5.zip --base fixture
+git archive --format=zip --output=dist/voxel_run_bridge-0.12.6.zip v0.12.6
 ```
 
 The archive keeps `manifest.json`, `main.lua`, `LICENSE`, notices, and the
 `modules/` directory at its root. Gen1Recomp's importer mounts those paths
 unchanged; development tests and unrelated workspace files are excluded.
 
-Version 0.12.5 is configured for Gen1Recomp's built-in GitHub update checks via
+Version 0.12.6 is configured for Gen1Recomp's built-in GitHub update checks via
 `ScottExplores/gen1recomp-voxel-run-bridge`.
 
-The download is deliberately named `voxel_run_bridge-0.12.5.zip` so the
+The download is deliberately named `voxel_run_bridge-0.12.6.zip` so the
 launcher selects it first from the matching GitHub release. Its internal ID
 remains `voxel_run_bridge`, so existing installs and saved settings update in
 place rather than appearing as a second mod.

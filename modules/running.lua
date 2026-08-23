@@ -54,6 +54,34 @@ local function findVoxel(context)
   end
 end
 
+local function entityPoint(entity)
+  if type(entity) ~= "table" then return nil end
+  local x = finite(entity.px, nil)
+  local z = finite(entity.py, nil)
+  if x == nil then
+    local cell = finite(entity.cellX, nil)
+    if cell ~= nil then x = cell * 16 end
+  end
+  if z == nil then
+    local cell = finite(entity.cellY, nil)
+    if cell ~= nil then z = cell * 16 end
+  end
+  if x == nil or z == nil then return nil end
+  -- Player and NPC coordinates both describe the sprite's upper-left corner.
+  -- The shared centre offset cancels in the bearing, but keeping explicit
+  -- world centres also makes mixed pixel/cell fixtures unambiguous.
+  return x + 8, z + 8
+end
+
+-- Gen 2 emits the sight direction in the trainer->player direction before
+-- its walk-up starts.  Reverse it to get the camera's player->trainer look
+-- vector. Gen 1 has no `sight` payload and uses the live actor coordinates
+-- after its approach instead.
+local SIGHT_LOOK = {
+  down = { 0, -1 }, up = { 0, 1 },
+  right = { -1, 0 }, left = { 1, 0 },
+}
+
 local function suspendOwnedBob(mod, context)
   local _, lib = findVoxel(context)
   if not lib then return false end
@@ -208,11 +236,90 @@ return function(mod, context)
     owner = mod.id, exports = mod.exports,
   }
   local bobStatus = { active = false, reason = "no_supported_voxel_mod" }
+  local trainerFocusStatus = {
+    active = false, reason = "no_supported_voxel_mod", focusCount = 0,
+  }
 
   local voxelId, lib = findVoxel(context)
   if voxelId then
     local okMove, FreeMove = pcall(lib.require, "FreeMove")
     local okView, FirstPerson = pcall(lib.require, "FirstPerson")
+    local okVoxel, Voxel = pcall(lib.require, "VoxelState")
+    if okView and okVoxel and type(FirstPerson) == "table"
+        and type(Voxel) == "table"
+        and type(Voxel.isFirstPerson) == "function"
+        and mod.events and type(mod.events.on) == "function" then
+      -- The engine emits this seam before trainer dialogue: Gen 1 at the end
+      -- of the sight walk-up, Gen 2 immediately before that walk begins.
+      -- `overworld.engaging` / payload.sight distinguish those trainer-
+      -- initiated paths from A-button talks and scripted battles; those
+      -- already own their facings/camera choreography and stay intact.
+      mod.events:on("world.trainer_engaged", function(event)
+        event = type(event) == "table" and event or nil
+        local ow = Game and Game.overworld
+        local sight = event and type(event.sight) == "table"
+          and event.sight or nil
+        local sightLook = sight and SIGHT_LOOK[sight.dir] or nil
+        -- Gen 2 names the trainer-initiated path directly in the payload.
+        -- Gen 1 exposes the same fact as OverworldState.engaging. An A-button
+        -- talk has neither, so it never inherits this automatic camera move.
+        if not sightLook
+            and (type(ow) ~= "table" or ow.engaging ~= true) then return end
+        local okFirst, selected = pcall(Voxel.isFirstPerson, Voxel.level)
+        if not okFirst or selected ~= true then return end
+        local npc = event and event.npc or nil
+        local px, pz, tx, tz
+        if sightLook then
+          -- No game/world reference is present in Gen 2's payload. The sight
+          -- direction is already exact and avoids reaching for Gen 1's global
+          -- Game singleton while a Gen 2 instance is active.
+          px, pz, tx, tz = 0, 0, sightLook[1], sightLook[2]
+        else
+          px, pz = entityPoint(ow.player)
+          tx, tz = entityPoint(npc)
+        end
+        if not px or not tx then return end
+
+        local focused = false
+        if type(FirstPerson.focusWorldPoint) == "function" then
+          local okFocus, result = pcall(FirstPerson.focusWorldPoint,
+            tx, tz, px, pz)
+          focused = okFocus and result == true
+        else
+          -- Compatible older/private voxel providers predate the public
+          -- helper but expose the same camera attitude table.  Keep their
+          -- narrow adapter useful without touching body facing or movement.
+          local dx, dz = tx - px, tz - pz
+          if dx * dx + dz * dz >= 1e-9 then
+            local yaw = math.atan2(dx, dz)
+            FirstPerson.yaw = yaw
+            FirstPerson.pitch = finite(FirstPerson.PITCH_DEFAULT, 0)
+            FirstPerson.lastYaw = yaw
+            FirstPerson.lastPitch = FirstPerson.pitch
+            focused = true
+          end
+        end
+        if focused then
+          trainerFocusStatus.focusCount = trainerFocusStatus.focusCount + 1
+          trainerFocusStatus.lastNpcId = npc.id
+          trainerFocusStatus.lastYaw = FirstPerson.yaw
+        end
+      end)
+      trainerFocusStatus.active = true
+      trainerFocusStatus.reason = "first_person_sight_focus"
+      trainerFocusStatus.voxel = voxelId
+    elseif not okVoxel or type(Voxel) ~= "table"
+        or type(Voxel.isFirstPerson) ~= "function" then
+      trainerFocusStatus = {
+        active = false, voxel = voxelId,
+        reason = "view_mode_api_unavailable", focusCount = 0,
+      }
+    else
+      trainerFocusStatus = {
+        active = false, voxel = voxelId,
+        reason = "camera_focus_api_unavailable", focusCount = 0,
+      }
+    end
     if okMove and okView and type(FreeMove) == "table"
         and type(FreeMove.tick) == "function"
         and type(FirstPerson) == "table"
@@ -324,11 +431,12 @@ return function(mod, context)
 
   local feature = {
     installed = true,
-    version = context and context.releaseVersion or "0.12.5",
+    version = context and context.releaseVersion or "0.12.6",
     alwaysAvailable = true,
     speedDelegated = speedDelegated,
     speedProvider = speedDelegated and "running_shoes" or mod.id,
     bob = bobStatus,
+    trainerFocus = trainerFocusStatus,
     isRunning = function(ctx) return wantsRun(ctx) end,
     bobOffset = function() return bobState.offset end,
   }

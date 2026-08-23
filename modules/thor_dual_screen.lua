@@ -29,6 +29,7 @@ local BRIDGE_RECORD_KEY = "_scottsTweaksThorPresentation"
 local HOOK_RECORD_KEY = "_scottsTweaksThorHookDispatch"
 local EVENT_RECORD_KEY = "_scottsTweaksThorEventDispatch"
 local WORLD_OVERLAY_ROUTE_KEY = "_scottsTweaksThorRouteWorldOverlay"
+local START_MENU_LAYOUT_KEY = "_scottsTweaksThorStartLayout"
 local PRIMARY_WORLD_OVERLAY_OPTIONS = {
   target = "primary",
   presentation = "ayn_thor",
@@ -42,9 +43,22 @@ local PRIMARY_WORLD_OVERLAY_OPTIONS = {
 local BATTLE_PANEL_REGIONS = {
   messages = { y = 96, height = 48 },
   menu = { y = 96, height = 48 },
-  moveSelect = { y = 64, height = 80 },
-  mimicSelect = { y = 56, height = 88 },
+  -- Battle Art intentionally leaves the picture area transparent in split
+  -- presentation.  These two menus use joined boxes that do not cover their
+  -- complete source band, however, so the transparent upper-right remainder
+  -- showed the Thor lower canvas' black clear.  Paper fills only that known
+  -- remainder; every authored border/text pixel is still drawn from uiCanvas.
+  moveSelect = {
+    y = 64, height = 80,
+    paper = { x = 88, y = 64, width = 72, height = 32 },
+  },
+  mimicSelect = {
+    y = 56, height = 88,
+    paper = { x = 128, y = 56, width = 32, height = 40 },
+  },
 }
+
+local THOR_START_VISIBLE_ROWS = 4
 
 local unpackValues = table.unpack or unpack
 
@@ -170,6 +184,9 @@ local function battlePanelRegion(phase, uiWidth, uiHeight)
     width = 160,
     height = region.height,
     phase = phase,
+    kind = "battle_" .. tostring(phase),
+    placement = "top",
+    paper = region.paper,
   }
 end
 
@@ -245,6 +262,63 @@ end
 local function setPrivateRecord(host, key, value)
   if type(host) ~= "table" then return false end
   return pcall(rawset, host, key, value)
+end
+
+-- mod.game is the Loader's sanctioned live-game facade.  Resolve it lazily so
+-- a headless load (before game.ready) and Gold's per-instance facade both stay
+-- valid, then use only the public stack:top shape and state identity fields.
+local function liveGame(mod)
+  if type(mod) ~= "table" then return nil end
+  local ok, game = pcall(function() return mod.game end)
+  if ok and type(game) == "table" then return game end
+  -- Gen1Recomp 0.1.75 predates the sanctioned mod.game facade. Scott's
+  -- Tweaks already declares engine_internals for its older-engine adapters,
+  -- so fall back to that release's live singleton only when the property is
+  -- genuinely absent. A present-but-invalid newer facade remains a hard
+  -- failure instead of being silently masked.
+  if not ok or game ~= nil then return nil end
+  local okLegacy, legacy = pcall(require, "src.core.Game")
+  return okLegacy and type(legacy) == "table" and legacy or nil
+end
+
+local function topState(mod)
+  local game = liveGame(mod)
+  local stack = game and game.stack
+  if type(stack) ~= "table" or type(stack.top) ~= "function" then return nil end
+  local ok, state = pcall(stack.top, stack)
+  return ok and type(state) == "table" and state or nil
+end
+
+local function startMenuHasSideArt(state)
+  local game = type(state) == "table" and state.game or nil
+  local save, overworld = game and game.save, game and game.overworld
+  if not (save and save.safari and overworld and overworld.map
+      and type(overworld.inSafariStepZone) == "function") then
+    return false
+  end
+  local ok, active = pcall(overworld.inSafariStepZone, overworld)
+  return ok and active == true
+end
+
+local function isDialogueState(state)
+  if type(state) ~= "table" then return false end
+  -- 0.1.83+ publishes the explicit marker. A false marker is authoritative.
+  if state.isTextBox ~= nil then return state.isTextBox == true end
+  -- Gen1Recomp 0.1.75 predates that marker. Its TextBox is still uniquely
+  -- identifiable without class access: paginated typewriter state, the live
+  -- two-line glyph window, counters and the three authored text origins. Menus
+  -- can share boxTx/boxTy geometry, but do not carry this combined state shape.
+  return type(state.pages) == "table"
+    and type(state.shown) == "table"
+    and finite(tonumber(state.pageIndex))
+    and finite(tonumber(state.lineIndex))
+    and finite(tonumber(state.charIndex))
+    and type(state.waiting) == "boolean"
+    and type(state.done) == "boolean"
+    and positive(state.maxCols) ~= nil
+    and finite(tonumber(state.textX))
+    and finite(tonumber(state.line1Y))
+    and finite(tonumber(state.line2Y))
 end
 
 local function makeCanvas(graphics, width, height)
@@ -351,6 +425,49 @@ local function activeBattlePanel(mod, uiWidth, uiHeight)
   return battlePanelRegion(battle.phase, uiWidth, uiHeight)
 end
 
+local function ordinaryDialoguePanel(mod, uiWidth, uiHeight)
+  if tonumber(uiWidth) ~= 160 or tonumber(uiHeight) ~= 144
+      or stageState(mod) ~= nil then
+    return nil
+  end
+  local state = topState(mod)
+  if not isDialogueState(state) then return nil end
+  local tx, ty = tonumber(state.boxTx), tonumber(state.boxTy)
+  local tw, th = positive(state.boxTw), positive(state.boxTh)
+  if not (finite(tx) and finite(ty) and tw and th) then return nil end
+  local x, y, width, height = tx * 8, ty * 8, tw * 8, th * 8
+  if x < 0 or y < 0 or x + width > uiWidth or y + height > uiHeight then
+    return nil
+  end
+  return {
+    x = x, y = y, width = width, height = height,
+    kind = "overworld_dialogue", placement = "top",
+  }
+end
+
+local function startMenuPanel(mod, uiWidth, uiHeight)
+  if tonumber(uiWidth) ~= 160 or tonumber(uiHeight) ~= 144 then return nil end
+  local state = topState(mod)
+  if not state or state.screenId ~= "StartMenu"
+      or startMenuHasSideArt(state) then return nil end
+  local record = privateRecord(state, START_MENU_LAYOUT_KEY)
+  if type(record) ~= "table" or record.owner ~= mod.id
+      or record.ready ~= true then
+    return nil
+  end
+  local tx, ty = tonumber(state.tx), tonumber(state.ty)
+  local tw, th = positive(state.tw), positive(state.th)
+  if not (finite(tx) and finite(ty) and tw and th) then return nil end
+  local x, y, width, height = tx * 8, ty * 8, tw * 8, th * 8
+  if x < 0 or y < 0 or x + width > uiWidth or y + height > uiHeight then
+    return nil
+  end
+  return {
+    x = x, y = y, width = width, height = height,
+    kind = "start_menu", placement = "fit",
+  }
+end
+
 local function setSplitPresentation(mod, active)
   local stage = stageApi(mod)
   if not stage or (tonumber(stage.apiVersion) or 0) < 3
@@ -432,6 +549,10 @@ function ThorDualScreen.install(mod, opts)
     worldOverlayRouteBridge = nil,
     worldOverlayProvider = nil,
     worldOverlayOwner = nil,
+    -- Weak keys ensure an abandoned menu can never be kept alive by the
+    -- presenter.  Live entries are restored on detach/OFF/F5 before control
+    -- returns to the ordinary single-screen renderer.
+    startMenus = setmetatable({}, { __mode = "k" }),
   }
 
   local function requestBattleSplit(on)
@@ -454,8 +575,73 @@ function ThorDualScreen.install(mod, opts)
     callLogger(mod, "warn", "Thor display: " .. tostring(message))
   end
 
+  local function restoreStartMenu(state)
+    if type(state) ~= "table" then return false end
+    local record = privateRecord(state, START_MENU_LAYOUT_KEY)
+    if type(record) ~= "table" or record.owner ~= mod.id then return false end
+    state.maxVisible = record.maxVisible
+    state.th = record.th
+    state.scroll = record.scroll
+    setPrivateRecord(state, START_MENU_LAYOUT_KEY, nil)
+    runtime.startMenus[state] = nil
+    if type(state.clampScroll) == "function" then
+      pcall(state.clampScroll, state)
+    end
+    return true
+  end
+
+  local function restoreStartMenus()
+    for state in pairs(runtime.startMenus) do restoreStartMenu(state) end
+  end
+
+  local function configureStartMenu(state, ready)
+    if type(state) ~= "table" or state.screenId ~= "StartMenu"
+        or startMenuHasSideArt(state)
+        or type(state.items) ~= "table" or #state.items == 0
+        or not finite(tonumber(state.tx)) or not finite(tonumber(state.ty))
+        or not positive(state.tw) or not positive(state.th) then
+      return false
+    end
+    local record = privateRecord(state, START_MENU_LAYOUT_KEY)
+    if type(record) == "table" and record.owner == mod.id then
+      if ready == true then record.ready = true end
+      runtime.startMenus[state] = true
+      return true
+    end
+    -- Refuse to trample another presenter's state decoration.  It is safer to
+    -- retain the ordinary centered menu than to guess how to restore it.
+    if record ~= nil then return false end
+    record = {
+      owner = mod.id,
+      generation = runtime.generation,
+      maxVisible = state.maxVisible,
+      th = state.th,
+      scroll = state.scroll,
+      ready = ready == true,
+    }
+    if not setPrivateRecord(state, START_MENU_LAYOUT_KEY, record) then
+      return false
+    end
+    runtime.startMenus[state] = true
+    local rowStep = positive(state.rowStep, 2)
+    state.maxVisible = math.min(THOR_START_VISIBLE_ROWS, #state.items)
+    state.th = state.maxVisible * rowStep + 2
+    if type(state.clampScroll) == "function" then
+      pcall(state.clampScroll, state)
+    end
+    return true
+  end
+
+  local function markStartMenuReady(state)
+    local record = privateRecord(state, START_MENU_LAYOUT_KEY)
+    if type(record) == "table" and record.owner == mod.id then
+      record.ready = true
+    end
+  end
+
   local function releaseCanvases()
     requestBattleSplit(false)
+    restoreStartMenus()
     runtime.pending = nil
     runtime.active = false
     release(runtime.topCanvas)
@@ -489,6 +675,11 @@ function ThorDualScreen.install(mod, opts)
   local function retireForHandoff(adoptTop)
     if runtime.retired then return nil end
     requestBattleSplit(false)
+    -- A Start menu may be open during F5.  Return its live Menu instance to
+    -- the engine-authored geometry before handing presentation to the fresh
+    -- runtime; that runtime can then opt it back into the enlarged Thor layout
+    -- under its own restoration record.
+    restoreStartMenus()
     runtime.retired = true
     runtime.pending = nil
     runtime.active = false
@@ -515,6 +706,7 @@ function ThorDualScreen.install(mod, opts)
 
   local function setFault(message)
     requestBattleSplit(false)
+    restoreStartMenus()
     runtime.faulted = true
     runtime.lastError = tostring(message)
     runtime.pending = nil
@@ -750,15 +942,39 @@ function ThorDualScreen.install(mod, opts)
     local transform = integerContain(uiWidth, uiHeight,
       ThorDualScreen.OUTPUT_WIDTH, ThorDualScreen.OUTPUT_HEIGHT)
     local panel = activeBattlePanel(mod, uiWidth, uiHeight)
+      or ordinaryDialoguePanel(mod, uiWidth, uiHeight)
+      or startMenuPanel(mod, uiWidth, uiHeight)
     local drawX, drawY = transform.x, transform.y
     local boxX, boxY = 0, 0
     local boxWidth, boxHeight = ThorDualScreen.OUTPUT_WIDTH,
       ThorDualScreen.OUTPUT_HEIGHT
-    if panel then
+    if panel and panel.placement == "fit" then
+      -- The classic Start menu is a narrow right-side box.  On the 400x360
+      -- Thor transport, fitting that authored box itself (instead of its
+      -- otherwise-empty 160x144 canvas) gives it a crisp 4x presentation in
+      -- the common layout. Four visible rows keep the original double-spaced
+      -- artwork and scrolling while using most of the physical lower panel.
+      local fitted = integerContain(panel.width, panel.height,
+        ThorDualScreen.OUTPUT_WIDTH, ThorDualScreen.OUTPUT_HEIGHT)
+      if fitted then
+        transform = {
+          x = fitted.x - panel.x * fitted.scaleX,
+          y = fitted.y - panel.y * fitted.scaleY,
+          width = uiWidth * fitted.scaleX,
+          height = uiHeight * fitted.scaleY,
+          scaleX = fitted.scaleX,
+          scaleY = fitted.scaleY,
+        }
+        drawX, drawY = transform.x, transform.y
+        boxX, boxY = fitted.x, fitted.y
+        boxWidth, boxHeight = fitted.width, fitted.height
+      end
+    elseif panel then
       -- Treat the selected source band as one joined control cluster.  The
       -- source canvas origin moves upward while a tight scissor omits the
       -- now-empty battle-picture area; TYPE/PP and moves therefore stay joined
-      -- and ordinary dialogue begins at a small hinge-side margin.
+      -- and both battle and ordinary overworld dialogue begin at a small
+      -- hinge-side margin.
       drawX = transform.x - panel.x * transform.scaleX
       drawY = ThorDualScreen.BATTLE_PANEL_TOP
         - panel.y * transform.scaleY
@@ -771,6 +987,16 @@ function ThorDualScreen.install(mod, opts)
       graphics.setCanvas(canvas)
       neutralGraphics(graphics)
       graphics.clear(0, 0, 0, 1)
+      if panel and panel.paper and type(graphics.rectangle) == "function" then
+        local paper = panel.paper
+        graphics.setColor(1, 1, 1, 1)
+        graphics.rectangle("fill",
+          drawX + paper.x * transform.scaleX,
+          drawY + paper.y * transform.scaleY,
+          paper.width * transform.scaleX,
+          paper.height * transform.scaleY)
+        graphics.setColor(1, 1, 1, 1)
+      end
       if ctx.uiCanvas and ctx.renderer
           and type(ctx.renderer.blitCanvas) == "function" then
         local drew, drawError = pcall(ctx.renderer.blitCanvas, ctx.renderer,
@@ -821,11 +1047,20 @@ function ThorDualScreen.install(mod, opts)
         width = transform.width, height = transform.height,
       },
       _scottsTweaksThorLower = true,
-      _scottsTweaksThorBattlePanel = panel and {
+      _scottsTweaksThorPanel = panel and {
+        phase = panel.phase,
+        kind = panel.kind,
+        sourceX = panel.x,
+        sourceY = panel.y,
+        sourceWidth = panel.width,
+        sourceHeight = panel.height,
+        top = boxY,
+      } or nil,
+      _scottsTweaksThorBattlePanel = panel and panel.phase and {
         phase = panel.phase,
         sourceY = panel.y,
         sourceHeight = panel.height,
-        top = ThorDualScreen.BATTLE_PANEL_TOP,
+        top = boxY,
       } or nil,
     }
   end
@@ -954,6 +1189,19 @@ function ThorDualScreen.install(mod, opts)
     else
       bound, bindError = bindBridge(ctx.secondScreen)
     end
+    local physicalReady = bound and optionEnabled(mod, optionKey)
+      and not runtime.faulted and not runtime.delegated
+      and not externalPresenterActive(mod)
+      and bridgeAvailable(runtime.bridge)
+    if physicalReady then
+      -- screen.pushed normally configured this before its first draw.  This
+      -- lazy path covers a Start menu that was already open while Android's
+      -- asynchronous Presentation attach completed; it becomes ready after
+      -- the current (still ordinary-geometry) frame is safely staged.
+      configureStartMenu(topState(mod), false)
+    else
+      restoreStartMenus()
+    end
     local downstream = nextFn(renderer, ctx)
     if downstream == true then
       requestBattleSplit(false)
@@ -1020,6 +1268,7 @@ function ThorDualScreen.install(mod, opts)
       setFault("lower surface failed: " .. tostring(lowerViewportOrError))
       return downstream
     end
+    markStartMenuReady(topState(mod))
     local topDrawn, topDrawError = drawTop(ctx)
     if not topDrawn then
       requestBattleSplit(false)
@@ -1168,8 +1417,23 @@ function ThorDualScreen.install(mod, opts)
     end
   end
 
+  local function screenPushed(payload)
+    if runtime.retired or type(payload) ~= "table" then return end
+    if desired() and bridgeAvailable(runtime.bridge) then
+      -- This event runs after construction but before the state's first draw,
+      -- so the smaller visible window and its scroll calculation are already
+      -- authoritative when the Start menu reaches uiCanvas.
+      configureStartMenu(payload.state, true)
+    end
+  end
+
+  local function screenPopped(payload)
+    if type(payload) == "table" then restoreStartMenu(payload.state) end
+  end
+
   if mod.events and type(mod.events.on) == "function" then
     eventRecord = privateRecord(mod.events, EVENT_RECORD_KEY)
+    local inheritedEventRecord = eventRecord ~= nil
     if eventRecord ~= nil and (type(eventRecord) ~= "table"
         or eventRecord.owner ~= mod.id or eventRecord.dispatcher ~= true) then
       error("Thor Dual Screen event dispatcher is owned by another feature", 0)
@@ -1182,14 +1446,39 @@ function ThorDualScreen.install(mod, opts)
       }
       assert(setPrivateRecord(mod.events, EVENT_RECORD_KEY, eventRecord),
         "Thor Dual Screen cannot publish its event dispatcher")
+    end
+    -- A 0.12.5 -> current F5 can encounter the prior one-event dispatcher.
+    -- Add each missing public-event listener exactly once on that same bus.
+    if inheritedEventRecord and eventRecord.optionsListener == nil then
+      -- Every prior Scott presenter record installed this one listener.
+      eventRecord.optionsListener = true
+    end
+    if not eventRecord.optionsListener then
       mod.events:on("mod.options_changed", function(payload)
         local callback = eventRecord.callback
         if callback then return callback(payload) end
       end)
+      eventRecord.optionsListener = true
+    end
+    if not eventRecord.screenPushedListener then
+      mod.events:on("screen.pushed", function(payload)
+        local callback = eventRecord.screenPushed
+        if callback then return callback(payload) end
+      end)
+      eventRecord.screenPushedListener = true
+    end
+    if not eventRecord.screenPoppedListener then
+      mod.events:on("screen.popped", function(payload)
+        local callback = eventRecord.screenPopped
+        if callback then return callback(payload) end
+      end)
+      eventRecord.screenPoppedListener = true
     end
     eventRecord.generation = (tonumber(eventRecord.generation) or 0) + 1
     eventRecord.runtime = runtime
     eventRecord.callback = optionChanged
+    eventRecord.screenPushed = screenPushed
+    eventRecord.screenPopped = screenPopped
   end
 
   local public = {
@@ -1220,6 +1509,8 @@ function ThorDualScreen.install(mod, opts)
       end
       if eventRecord and eventRecord.runtime == runtime then
         eventRecord.callback = nil
+        eventRecord.screenPushed = nil
+        eventRecord.screenPopped = nil
       end
     end,
   }

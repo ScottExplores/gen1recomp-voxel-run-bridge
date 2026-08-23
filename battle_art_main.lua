@@ -53,10 +53,16 @@ local function chunkFor(rel)
   if not source then
     error(("BATTLE_ART_VOXEL_FORK: %s is missing -- reinstall the mod"):format(rel), 0)
   end
-  local chunk, err = load(source, "@" .. mod.path .. "/" .. rel)
+  -- Plain Lua 5.1 (used by the supported 0.1.75 engine) accepts source text
+  -- through loadstring, while LuaJIT and later Lua versions also accept it
+  -- through load. Keep the child chunk in this entry's environment on 5.1;
+  -- later runtimes retain load's existing environment behavior unchanged.
+  local compile = loadstring or load
+  local chunk, err = compile(source, "@" .. mod.path .. "/" .. rel)
   if not chunk then
     error(("BATTLE_ART_VOXEL_FORK: %s did not compile: %s"):format(rel, tostring(err)), 0)
   end
+  if setfenv and getfenv then setfenv(chunk, getfenv(1)) end
   return chunk
 end
 

@@ -170,7 +170,7 @@ local function fakeGraphics()
     local out = {
       kind = external and "external" or "canvas",
       name = name, width = width, height = height, options = opts,
-      draws = {}, blits = {}, clears = 0, released = 0,
+      draws = {}, blits = {}, rectangles = {}, clears = 0, released = 0,
     }
     function out:getDimensions() return self.width, self.height end
     function out:getWidth() return self.width end
@@ -231,7 +231,7 @@ local function fakeGraphics()
     local target = graphics.state.canvas
     if target then
       target.clears = target.clears + 1
-      target.draws, target.blits = {}, {}
+      target.draws, target.blits, target.rectangles = {}, {}, {}
     else
       graphics.screenClears = graphics.screenClears + 1
       graphics.screenDraws = {}
@@ -241,6 +241,14 @@ local function fakeGraphics()
   function graphics.setShader(shader) graphics.state.shader = shader end
   function graphics.setScissor(...)
     graphics.state.scissor = select("#", ...) == 0 and nil or { ... }
+  end
+  function graphics.rectangle(mode, x, y, width, height)
+    local target = graphics.state.canvas
+    if not target then return end
+    target.rectangles[#target.rectangles + 1] = {
+      mode = mode, x = x, y = y, width = width, height = height,
+      color = copyArray(graphics.state.color),
+    }
   end
   function graphics.draw(source, ...)
     if graphics.failDrawSource == source then error("injected draw failure", 0) end
@@ -590,6 +598,10 @@ eq(fixture.hooks:count("core.quit_to_launcher", fixture.mod.id), 1,
   "one quit wrapper is installed")
 eq(fixture.events:count("mod.options_changed"), 1,
   "one option dispatcher is installed")
+eq(fixture.events:count("screen.pushed"), 1,
+  "one Start-layout push dispatcher is installed")
+eq(fixture.events:count("screen.popped"), 1,
+  "one Start-layout restoration dispatcher is installed")
 
 local liveCtx = fixture.context("live")
 local live = fixture.frame(liveCtx)
@@ -692,6 +704,34 @@ eq(panelBlit.args[11], 160,
   "move scissor keeps the joined 80px control cluster at crisp 2x")
 eq(panelBlit.args[7] + 96 * panelBlit.args[2], 76,
   "move-list panel follows immediately below TYPE/PP at authored spacing")
+local movePaper = assert(panelLower.rectangles[1],
+  "move-selection upper-right paper fill missing")
+eq(movePaper.mode, "fill", "move-selection gap uses an opaque fill")
+eq(movePaper.x, 216,
+  "move-selection paper begins immediately right of TYPE/PP")
+eq(movePaper.y, Thor.BATTLE_PANEL_TOP,
+  "move-selection paper shares the TYPE/PP top edge")
+eq(movePaper.width, 144,
+  "move-selection paper reaches the joined panel's right edge")
+eq(movePaper.height, 64,
+  "move-selection paper ends where the move-list box begins")
+eq(movePaper.color[1], 1,
+  "move-selection transparent gap is filled with white paper")
+
+panelBattle.phase = "mimicSelect"
+panelFixture.clock.value = 1.5
+eq(panelFixture.frame(panelCtx).handled, true,
+  "Mimic selection keeps physical composition")
+local mimicPaper = assert(panelLower.rectangles[1],
+  "Mimic-selection upper-right paper fill missing")
+eq(mimicPaper.x, 296,
+  "Mimic paper starts immediately right of its authored box")
+eq(mimicPaper.y, Thor.BATTLE_PANEL_TOP,
+  "Mimic paper shares the popup's top edge")
+eq(mimicPaper.width, 64,
+  "Mimic paper reaches the joined panel's right edge")
+eq(mimicPaper.height, 80,
+  "Mimic paper meets the full-width wording box below")
 
 panelBattle.waitingUI = true
 panelFixture.clock.value = 2
@@ -715,6 +755,158 @@ eq(panelBlit.args[7], 36,
   "live stack identity prevents cropping settings and other overlays")
 eq(panelBlit.args[11], Thor.OUTPUT_HEIGHT,
   "stack overlay keeps the complete lower-screen UI surface")
+
+-- Ordinary overworld TextBox states use the same hinge-side placement as
+-- battle wording, even with CENTERED UI selected in the engine. The crop is
+-- performed only in the private lower canvas; the upper world stays intact.
+local dialogueFixture = makeFixture()
+local dialogueState = {
+  isTextBox = true,
+  boxTx = 0, boxTy = 12, boxTw = 20, boxTh = 6,
+}
+dialogueFixture.mod.game = {
+  stack = { top = function() return dialogueState end },
+}
+installFixture(dialogueFixture, loadThor())
+local dialogueCtx = dialogueFixture.context("live")
+eq(dialogueFixture.frame(dialogueCtx).handled, true,
+  "ordinary overworld dialogue keeps the Thor split active")
+local dialogueLower = dialogueFixture.bridge.pushes[1].source
+local dialogueBlit = assert(dialogueLower.blits[1],
+  "ordinary dialogue lower blit missing")
+eq(dialogueBlit.args[1], 2,
+  "ordinary dialogue retains crisp 2x Game Boy pixels")
+eq(dialogueBlit.args[7], -180,
+  "ordinary dialogue source y=96 moves to the hinge margin")
+eq(dialogueBlit.args[9], Thor.BATTLE_PANEL_TOP,
+  "ordinary dialogue begins at the top of the lower display")
+eq(dialogueBlit.args[11], 96,
+  "ordinary dialogue keeps the complete six-tile box")
+local dialogueUpper = dialogueFixture.graphics.screenDraws[1]
+  and dialogueFixture.graphics.screenDraws[1].source
+check(dialogueUpper
+    and findDraw(dialogueUpper.draws, dialogueCtx.worldOverride) ~= nil,
+  "ordinary dialogue relocation leaves the primary world unchanged")
+
+dialogueState = {
+  -- 0.1.75 TextBox shape: no isTextBox marker yet.
+  boxTx = 0, boxTy = 12, boxTw = 20, boxTh = 6,
+  maxCols = 18, textX = 8, line1Y = 112, line2Y = 128,
+  pages = { { "HELLO" } }, shown = {},
+  pageIndex = 1, lineIndex = 1, charIndex = 0,
+  waiting = false, done = false,
+}
+dialogueFixture.clock.value = 1
+eq(dialogueFixture.frame(dialogueCtx).handled, true,
+  "0.1.75-shaped dialogue keeps the Thor split active")
+dialogueBlit = assert(dialogueLower.blits[1],
+  "0.1.75-shaped dialogue lower blit missing")
+eq(dialogueBlit.args[7], -180,
+  "0.1.75 dialogue uses the same top-docked source origin")
+eq(dialogueBlit.args[11], 96,
+  "0.1.75 dialogue retains its complete six-tile frame")
+
+dialogueState = {
+  -- A menu-like state can expose box geometry, but has no typewriter model.
+  boxTx = 0, boxTy = 12, boxTw = 20, boxTh = 6,
+  items = { {} }, index = 1,
+}
+dialogueFixture.clock.value = 2
+eq(dialogueFixture.frame(dialogueCtx).handled, true,
+  "menu-like geometry still keeps physical presentation")
+dialogueBlit = assert(dialogueLower.blits[1],
+  "menu-like full-surface blit missing")
+eq(dialogueBlit.args[7], 36,
+  "box geometry alone cannot trigger the old TextBox fallback")
+eq(dialogueBlit.args[11], Thor.OUTPUT_HEIGHT,
+  "a non-dialogue state keeps the complete lower surface")
+
+-- The physical Start menu keeps the original bordered Menu renderer and
+-- double-spaced rows, but four visible rows let the authored source box fit at
+-- a much larger whole-number scale. screen.pushed applies geometry before the
+-- first draw; screen.popped restores the exact single-screen values.
+local startFixture = makeFixture()
+local activeStartState
+startFixture.mod.game = {
+  stack = { top = function() return activeStartState end },
+}
+local startController = installFixture(startFixture, loadThor())
+eq(startFixture.frame(startFixture.context("live")).handled, true,
+  "a live frame binds the attached Thor before Start opens")
+local startState = {
+  screenId = "StartMenu",
+  items = { {}, {}, {}, {}, {}, {}, {}, {} },
+  index = 1, scroll = 0,
+  tx = 9, ty = 0, tw = 11, th = 18,
+  rowStep = 2, maxVisible = 8,
+}
+function startState:clampScroll()
+  if self.index - self.scroll > self.maxVisible then
+    self.scroll = self.index - self.maxVisible
+  elseif self.index - self.scroll < 1 then
+    self.scroll = self.index - 1
+  end
+end
+activeStartState = startState
+startFixture.events:emit("screen.pushed", { state = startState })
+eq(startState.maxVisible, 4,
+  "physical Start menu shows four large original rows at once")
+eq(startState.th, 10,
+  "physical Start menu keeps double spacing in a ten-tile frame")
+startFixture.clock.value = 1
+eq(startFixture.frame(startFixture.context("live")).handled, true,
+  "enlarged Start menu keeps the Thor split active")
+local startLower = startFixture.bridge.pushes[#startFixture.bridge.pushes].source
+local startBlit = assert(startLower.blits[1], "enlarged Start-menu blit missing")
+eq(startBlit.args[1], 4,
+  "Start menu artwork and text use a crisp 4x scale")
+eq(startBlit.args[6], -264,
+  "Start menu source origin crops the empty left side")
+eq(startBlit.args[7], 20,
+  "Start menu is vertically centered in the lower display")
+eq(startBlit.args[8], 24,
+  "Start menu visible box is horizontally centered")
+eq(startBlit.args[9], 20,
+  "Start menu visible box uses the full-height composition margin")
+eq(startBlit.args[10], 352,
+  "Start menu fills nearly the complete Thor lower width")
+eq(startBlit.args[11], 320,
+  "Start menu fills nearly the complete Thor lower height")
+startFixture.events:emit("screen.popped", { state = startState })
+eq(startState.maxVisible, 8,
+  "closing physical Start restores the original visible-row count")
+eq(startState.th, 18,
+  "closing physical Start restores the original frame height")
+
+-- A developer F5 can happen while Start is still open. The retiring runtime
+-- must first remove its live geometry decoration; if the replacement cannot
+-- attach (simulated here by unplugging the panel), ordinary single-screen
+-- dimensions must be left behind rather than a stale four-row menu.
+startFixture.events:emit("screen.pushed", { state = startState })
+eq(startState.maxVisible, 4,
+  "open Start menu is enlarged again before the F5 handoff")
+local refreshedStartController = installFixture(startFixture, loadThor())
+startFixture.bridge.availableFlag = false
+startFixture.clock.value = 2
+startFixture.frame(startFixture.context("live"))
+eq(startState.maxVisible, 8,
+  "F5 retirement restores Start rows when the new presenter is detached")
+eq(startState.th, 18,
+  "F5 retirement restores the original Start frame height")
+startController.release()
+refreshedStartController.release()
+
+local detachedStart = {
+  screenId = "StartMenu", items = { {}, {}, {}, {}, {}, {}, {}, {} },
+  tx = 9, ty = 0, tw = 11, th = 18, rowStep = 2, maxVisible = 8,
+  clampScroll = function() end,
+}
+startFixture.bridge.availableFlag = false
+startFixture.events:emit("screen.pushed", { state = detachedStart })
+eq(detachedStart.maxVisible, 8,
+  "a detached lower display never changes Start-menu geometry")
+eq(detachedStart.th, 18,
+  "a detached lower display preserves the original Start artwork frame")
 
 -- Battle Stage v3 is armed before Thor publishes a physical frame. The first
 -- compose arrived after the engine already rendered uiCanvas, so it falls
@@ -1146,26 +1338,36 @@ local function realLoaderRegression(engineRoot)
   local T = require("tests.modkit")
   local fixtures = require("tests.modkit.fixtures")
   local moduleSource = assert(read(modulePath), "Thor module source missing")
+  local loaderSource = assert(read(engineRoot .. "/src/mods/Loader.lua"),
+    "live Loader source missing")
+  local expectsGameFacade = loaderSource:find(
+    'if key == "game" then', 1, true) ~= nil
   local prefix = "mods/voxel_run_bridge/"
   local files = {
     [prefix .. "manifest.json"] = [[{
       "id":"voxel_run_bridge","name":"Scott's Tweaks Thor Loader Test",
-      "version":"0.12.5","api":2,"entry":"main.lua",
+      "version":"0.12.6","api":2,"entry":"main.lua",
       "profile":"content","priority":200,"dependencies":[],
       "optional_dependencies":[],"conflicts":[],"games":["gen1"],
-      "permissions":[]
+      "permissions":["engine_internals"]
     }]],
     [prefix .. "main.lua"] = [[return function(mod)
       mod.options:define({
         { key = "dual_screen", type = "toggle", default = true },
       })
       local battle = {}
+      local battleActive = true
       local effect = love.graphics.newCanvas(160, 144, { dpiscale = 1 })
       local splitCalls = {}
       mod.exports.testBattleSplitCalls = splitCalls
+      mod.exports.testHasGameFacade = type(mod.game) == "table"
+      mod.exports.testSetBattleActive = function(active)
+        battleActive = active == true
+      end
       mod.exports.battleStage = {
         apiVersion = 3,
         state = function()
+          if not battleActive then return nil end
           return { battle = battle, staged = true, ready = true }
         end,
         animationSurface = function(expected)
@@ -1179,7 +1381,9 @@ local function realLoaderRegression(engineRoot)
         end,
       }
       local source = assert(mod:read("modules/thor_dual_screen.lua"))
-      local chunk = assert(load(source, "@voxel_run_bridge/thor_dual_screen.lua"))
+      local compile = loadstring or load
+      local chunk = assert(compile(source,
+        "@voxel_run_bridge/thor_dual_screen.lua"))
       local Thor = chunk()
       Thor.install(mod, { optionKey = "dual_screen" })
     end]],
@@ -1235,6 +1439,8 @@ local function realLoaderRegression(engineRoot)
 
   local run1 = loadEntry()
   local run1Exports = run1.loader.exports.voxel_run_bridge
+  eq(run1Exports.testHasGameFacade, expectsGameFacade,
+    "real Loader exposes exactly its release's mod.game facade")
   eq(draw(run1.loader, ctx("live")), false,
     "real Loader own export warms the pre-split battle frame")
   eq(run1Exports.testBattleSplitCalls[1], true,
@@ -1268,6 +1474,80 @@ local function realLoaderRegression(engineRoot)
   eq(run2.loader.exports.voxel_run_bridge.thorDualScreen
       .getStatus().generation, 2,
     "real Loader export reports second presenter generation")
+
+  -- Exercise state lookup through the actual Loader facade. In 0.1.75 this
+  -- facade intentionally has no mod.game property, so these checks can pass
+  -- only through ThorDualScreen's narrow src.core.Game compatibility fallback;
+  -- newer fixtures exercise the sanctioned property with the same behavior.
+  local EngineGame = require("src.core.Game")
+  local originalStack = EngineGame.stack
+  local activeState
+  EngineGame.stack = {
+    top = function() return activeState end,
+  }
+  run2Exports.testSetBattleActive(false)
+
+  activeState = {
+    -- The unmarked 0.1.75 TextBox typewriter shape.
+    boxTx = 0, boxTy = 12, boxTw = 20, boxTh = 6,
+    maxCols = 18, textX = 8, line1Y = 112, line2Y = 128,
+    pages = { { "LEGACY" } }, shown = {},
+    pageIndex = 1, lineIndex = 1, charIndex = 0,
+    waiting = false, done = false,
+  }
+  loaderClock.value = 2
+  eq(draw(run2.loader, ctx("menu")), true,
+    "real Loader top-docks legacy unmarked dialogue")
+  local dialogueLower = loaderBridge.pushes[#loaderBridge.pushes].source
+  local dialogueBlit = assert(dialogueLower.blits[1],
+    "real Loader legacy dialogue lower blit missing")
+  eq(dialogueBlit.args[7], -180,
+    "real Loader legacy dialogue source reaches the hinge")
+  eq(dialogueBlit.args[11], 96,
+    "real Loader legacy dialogue keeps its complete six-tile frame")
+
+  local startState = {
+    screenId = "StartMenu",
+    items = { {}, {}, {}, {}, {}, {}, {}, {} },
+    index = 1, scroll = 0,
+    tx = 9, ty = 0, tw = 11, th = 18,
+    rowStep = 2, maxVisible = 8,
+  }
+  function startState:clampScroll()
+    if self.index - self.scroll > self.maxVisible then
+      self.scroll = self.index - self.maxVisible
+    elseif self.index - self.scroll < 1 then
+      self.scroll = self.index - 1
+    end
+  end
+  activeState = startState
+  run2.loader.events:emit("screen.pushed", { state = startState })
+  eq(startState.maxVisible, 4,
+    "real Loader enlarges Start through its public push event")
+  eq(startState.th, 10,
+    "real Loader applies the four-row Start frame before draw")
+  loaderClock.value = 3
+  eq(draw(run2.loader, ctx("menu")), true,
+    "real Loader detects the live Start state")
+  local startLower = loaderBridge.pushes[#loaderBridge.pushes].source
+  local startBlit = assert(startLower.blits[1],
+    "real Loader enlarged Start lower blit missing")
+  eq(startBlit.args[1], 4,
+    "real Loader Start artwork uses crisp 4x scaling")
+  eq(startBlit.args[6], -264,
+    "real Loader Start crop removes the empty left canvas")
+  eq(startBlit.args[10], 352,
+    "real Loader Start crop fills the Thor width")
+  eq(startBlit.args[11], 320,
+    "real Loader Start crop preserves the four-row frame")
+  run2.loader.events:emit("screen.popped", { state = startState })
+  eq(startState.maxVisible, 8,
+    "real Loader Start pop restores the engine row count")
+  eq(startState.th, 18,
+    "real Loader Start pop restores the engine frame height")
+  EngineGame.stack = originalStack
+  run2Exports.testSetBattleActive(true)
+
   for _, name in ipairs({
     "render.compose", "render.hud", "core.quit_to_launcher",
   }) do
@@ -1330,7 +1610,7 @@ local function realFusedFreeFlyRegression(engineRoot)
   local files = {
     [prefix .. "manifest.json"] = [[{
       "id":"voxel_run_bridge","name":"Scott's Tweaks Fused Flight Test",
-      "version":"0.12.5","api":2,"entry":"main.lua",
+      "version":"0.12.6","api":2,"entry":"main.lua",
       "profile":"content","priority":200,"dependencies":[],
       "optional_dependencies":[],"conflicts":[],"games":["gen1"],
       "permissions":["engine_internals"]

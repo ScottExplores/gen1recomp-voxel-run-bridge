@@ -260,6 +260,28 @@ function FirstPerson.lookBy(dyaw, dpitch)
                                 FirstPerson.pitch + dpitch))
 end
 
+-- Turn the live free-roam camera toward one world-space point.  Trainer
+-- sight uses this immediately before its dialogue is pushed: the player has
+-- not moved, and neither the player's four-way facing nor the trainer's
+-- scripted approach belongs to the camera, so only the view attitude is
+-- changed here.  Capture the same attitude into the staged-battle seed at
+-- once; a dialogue can take the overworld off the top of the stack before
+-- update() gets another free-roam frame in which to do that bookkeeping.
+function FirstPerson.focusWorldPoint(targetX, targetZ, originX, originZ)
+  targetX, targetZ = tonumber(targetX), tonumber(targetZ)
+  originX, originZ = tonumber(originX), tonumber(originZ)
+  if not targetX or not targetZ or not originX or not originZ then
+    return false
+  end
+  local dx, dz = targetX - originX, targetZ - originZ
+  if dx * dx + dz * dz < 1e-9 then return false end
+  FirstPerson.yaw = wrapPi(math.atan2(dx, dz))
+  FirstPerson.pitch = FirstPerson.PITCH_DEFAULT
+  FirstPerson.lastYaw = FirstPerson.yaw
+  FirstPerson.lastPitch = FirstPerson.pitch
+  return true
+end
+
 -- A bearing as one of the grid's four directions -- the 45-degree
 -- quantisation every facing in this file is made with, in one place so the
 -- compass, the body and the card frames can never disagree about where a

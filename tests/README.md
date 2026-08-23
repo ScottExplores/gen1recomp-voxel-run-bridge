@@ -9,15 +9,19 @@ sprite-card canvas paths use 1:1 DPI with nearest filtering for Android/AYN:
 luajit tests\art_rendering.lua <mod-root>
 ```
 
-The suite currently contains 275 checks and also installs the real staged-battle
+The suite currently contains 332 checks and also installs the real staged-battle
 wrappers: split mode must omit lower-screen Pokemon, trainer, and move OAM
 while preserving the upper animation surface and lower text/HUD. It verifies
-that translucent status backing and the right-anchored EXP bar are staged-only,
+that translucent status backing and the smoothly animated, right-anchored EXP
+bar are staged-only,
 while the engine-owned caught marker works without a duplicate staged glyph,
 and that Pokemon cards decline the moving self-shadow sample without losing
 their arena casts. Its setting
 checks also prove one- and two-key sprite ownership edits roll back save, live,
-and cached values after a failed device write. The combined Crystal/Battle Art
+and cached values after a failed device write. ART PACK covers Crystal 2.0 and
+Battle Art Gen 1-5 (including matching Gen 2 fronts and backs); its coupled
+presets persist once, survive lifecycle reconciliation, and roll back
+atomically after a failed write. The combined Crystal/Battle Art
 trainer, player-view, and Crystal-mode shortcuts likewise persist once and
 leave both providers untouched when that write fails. A stable 120-frame HUD
 draw also allocates only the two warm-up quads, with resize and invalidation
@@ -198,14 +202,22 @@ luajit tests\running_hot_reload.lua <mod-root> <engine-root>
 `thor_dual_screen.lua` is the focused clean-presenter suite. It checks the
 public render/display seams in both 0.1.88 and 0.1.96, stock single-screen
 fallthrough, physical lower-display routing, frozen upper/live lower menu
-composition, scaling, fault recovery, legacy `gen1recomp_ds` delegation,
-same-facade identity, and two real API-2 Loader entries. Select each fixture
-as the live Loader once; every invocation contains 294 checks and runs under
-both LuaJIT and Lua 5.1:
+composition, top-docked overworld dialogue, white joined battle popups, the
+large original-art Start-menu crop and its detach restoration, scaling, fault
+recovery, legacy `gen1recomp_ds` delegation, same-facade identity, and two real
+API-2 Loader entries. Its real-Loader matrix also proves that 0.1.75's missing
+`mod.game` facade uses only the narrow `src.core.Game` compatibility fallback,
+while 0.1.83+ uses the public facade for dialogue and Start-menu state. Select
+each fixture as the live Loader once; every invocation contains 350 checks and
+runs under both LuaJIT and Lua 5.1:
 
 ```powershell
+luajit tests\thor_dual_screen.lua <mod-root> <engine-.88> <engine-.96> <engine-.75>
+luajit tests\thor_dual_screen.lua <mod-root> <engine-.88> <engine-.96> <engine-.83>
 luajit tests\thor_dual_screen.lua <mod-root> <engine-.88> <engine-.96> <engine-.88>
 luajit tests\thor_dual_screen.lua <mod-root> <engine-.88> <engine-.96> <engine-.96>
+lua tests\thor_dual_screen.lua <mod-root> <engine-.88> <engine-.96> <engine-.75>
+lua tests\thor_dual_screen.lua <mod-root> <engine-.88> <engine-.96> <engine-.83>
 lua tests\thor_dual_screen.lua <mod-root> <engine-.88> <engine-.96> <engine-.88>
 lua tests\thor_dual_screen.lua <mod-root> <engine-.88> <engine-.96> <engine-.96>
 ```

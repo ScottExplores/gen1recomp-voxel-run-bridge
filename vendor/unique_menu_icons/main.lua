@@ -304,7 +304,11 @@ end
 
 return function(mod)
   local GameVersion = require("src.core.GameVersion")
-  local isGen2 = GameVersion.generation() == 2
+  -- Gen1Recomp 0.1.75 predates the shared generation() query and can only
+  -- launch Gen 1 games. Feature-detect that API so the bundled provider keeps
+  -- loading there while 0.1.83+ retains its exact Gold/Gen 2 behavior.
+  local isGen2 = type(GameVersion.generation) == "function"
+    and GameVersion.generation() == 2 or false
 
   -- Engine gaps affecting mod-options persistence on a Gold boot -- our
   -- ICON COLOR MODE choice was silently not saving, traced to these three

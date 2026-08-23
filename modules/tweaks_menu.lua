@@ -504,6 +504,9 @@ return function(mod, context)
       add(rows, {
         label = "ART PACK", simple = true,
         value = function() return sprite:packLabel() end,
+        step = function(game, direction)
+          return sprite:cyclePack(game, direction)
+        end,
         activate = function(game)
           local id = baScreenId("pack")
           if id then pcall(push, game, id) end

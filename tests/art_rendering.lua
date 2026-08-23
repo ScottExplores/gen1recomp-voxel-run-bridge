@@ -252,12 +252,16 @@ local TxSpriteMenu = assert(loadfile(root .. "/lib/SpriteMenu.lua"))({
   end,
 })
 local txSaved = {
-  battleArt = "animated", opponentTrainerSource = "modded",
-  playerTrainerSource = "modded", playerView = "back",
+  battleArt = "animated", duplicateFix = "modded",
+  frontAnimatedSet = "gen5", backAnimatedSet = "gen5",
+  opponentTrainerSource = "modded", playerTrainerSource = "modded",
+  playerView = "back",
 }
 local txLive = {
-  battleArt = "animated", opponentTrainerSource = "modded",
-  playerTrainerSource = "modded", playerView = "back",
+  battleArt = "animated", duplicateFix = "modded",
+  frontAnimatedSet = "gen5", backAnimatedSet = "gen5",
+  opponentTrainerSource = "modded", playerTrainerSource = "modded",
+  playerView = "back",
 }
 local txWrites = 0
 txGame = {
@@ -272,10 +276,51 @@ txGame = {
   end,
 }
 TxBattleArt.setting:sync("animated")
+TxBattleArt.duplicateSetting:sync("modded")
+TxBattleArt.frontAnimationSetting:sync("gen5")
+TxBattleArt.backAnimationSetting:sync("gen5")
 TxBattleArt.opponentTrainerSourceSetting:sync("modded")
 TxBattleArt.playerTrainerSourceSetting:sync("modded")
 TxBattleArt.viewSetting:sync("back")
 local txMenu = TxSpriteMenu.new()
+
+-- ART PACK is a real source selector, not merely an installed-mod status row.
+-- It exposes the bundled Crystal provider, all five complete Battle Art
+-- generations (including Crystal-era Gen 2). A preset changes the coupled
+-- Battle Art keys in one transaction.
+local expectedPacks = {
+  "crystal", "battle_art_gen1", "battle_art_gen2", "battle_art_gen3",
+  "battle_art_gen4", "battle_art_gen5",
+}
+local packChoices = txMenu:packChoices()
+eq(#packChoices, #expectedPacks,
+  "art-pack selector lists every bundled Pokemon-art generation")
+for i, id in ipairs(expectedPacks) do
+  eq(packChoices[i] and packChoices[i].id, id,
+    "art-pack choice order is stable: " .. id)
+end
+eq(txMenu:activePack(), "crystal",
+  "modded Pokemon ownership truthfully identifies bundled Crystal")
+eq(txMenu:packLabel(), "CRYSTAL 2.0",
+  "the active Crystal provider keeps its familiar versioned label")
+
+local packFailureWrites = txWrites
+local packOk, packError = txMenu:cyclePack(txGame, 1)
+eq(packOk, false, "failed art-pack preset reports its durable write failure")
+check(tostring(packError):find("second-stage failure", 1, true) ~= nil,
+  "failed art-pack preset returns the persistence detail")
+eq(txWrites, packFailureWrites + 1,
+  "failed four-key art-pack preset attempts one durable write")
+eq(txSaved.duplicateFix, "modded",
+  "failed art-pack preset restores saved Pokemon ownership")
+eq(txSaved.frontAnimatedSet, "gen5",
+  "failed art-pack preset restores the saved front generation")
+eq(txSaved.backAnimatedSet, "gen5",
+  "failed art-pack preset restores the saved back generation")
+eq(TxBattleArt.duplicateSetting:get(), "modded",
+  "failed art-pack preset restores cached Pokemon ownership")
+eq(txMenu:packLabel(), "CRYSTAL 2.0",
+  "failed art-pack preset leaves the displayed source coherent")
 
 -- In the fused build these imported Battle Art rows live under the real root
 -- Loader id, not the historical renderer id. An explicit modern flip must win
@@ -308,12 +353,14 @@ eq(rootEventEnforces, 2,
   "fused and historical Battle Art events both reconcile sprite ownership")
 txMenu.enforce = originalEnforce
 
+local beforeTrainerFailure = txWrites
 local trainerOk, trainerError = txMenu:setTrainerSource(txGame, "battle_art")
 eq(trainerOk, false,
   "combined trainer-source shortcut reports its failed durable write")
 check(tostring(trainerError):find("second-stage failure", 1, true) ~= nil,
   "combined trainer-source shortcut returns the persistence detail")
-eq(txWrites, 1, "combined trainer-source shortcut attempts one write")
+eq(txWrites, beforeTrainerFailure + 1,
+  "combined trainer-source shortcut attempts one write")
 eq(txGame.save.options.crystalTrainers, "both",
   "failed trainer shortcut restores Crystal's saved mode")
 eq(txSaved.opponentTrainerSource, "modded",
@@ -341,6 +388,70 @@ eq(txSaved.playerTrainerSource, "battle_art",
   "successful trainer shortcut stores player ownership")
 eq(#crystalRuntimeCalls, 1,
   "successful trainer shortcut refreshes Crystal only after persistence")
+
+local beforePackSuccess = txWrites
+eq(txMenu:cyclePack(txGame, 1), true,
+  "Right changes Crystal to the first bundled Battle Art generation")
+eq(txWrites, beforePackSuccess + 1,
+  "successful art-pack preset persists its complete profile once")
+eq(txMenu:packLabel(), "BATTLE ART G1",
+  "the first Battle Art preset has a truthful compact label")
+eq(txSaved.battleArt, "animated",
+  "Battle Art preset keeps the staged animated renderer active")
+eq(txSaved.duplicateFix, "battle_art",
+  "Battle Art preset takes Pokemon-picture ownership")
+eq(txSaved.frontAnimatedSet, "gen1",
+  "Battle Art preset selects its matching front generation")
+eq(txSaved.backAnimatedSet, "gen1",
+  "Battle Art preset selects its matching back generation")
+
+eq(txMenu:setPack(txGame, "battle_art_gen2"), true,
+  "Gen 2 Battle Art can be selected directly")
+eq(txMenu:packLabel(), "BATTLE ART G2",
+  "Gen 2 Battle Art is distinguished from Crystal 2.0")
+eq(txMenu:activePack(), "battle_art",
+  "legacy activePack API keeps the Battle Art provider-family answer")
+eq(txMenu:activePackPreset(), "battle_art_gen2",
+  "new preset API exposes the selected Battle Art generation")
+eq(txSaved.frontAnimatedSet, "gen2",
+  "Gen 2 preset stores Crystal-era Battle Art fronts")
+eq(txSaved.backAnimatedSet, "gen2",
+  "Gen 2 preset stores matching Battle Art backs")
+local beforePackEnforce = txWrites
+eq(txMenu:enforceSpecies(txGame), true,
+  "lifecycle enforcement accepts an explicit Battle Art choice")
+eq(txWrites, beforePackEnforce,
+  "lifecycle enforcement does not rewrite an explicit art-pack choice")
+eq(txMenu:packLabel(), "BATTLE ART G2",
+  "an explicit Gen 2 choice survives lifecycle reconciliation")
+
+-- A hot reload can attach the durable save before the replacement Loader has
+-- mirrored it. Reconcile that one stale ownership key without reverting the
+-- player's explicit Battle Art preset to Crystal.
+txLive.duplicateFix = "modded"
+local beforeHotReloadPack = txWrites
+eq(txMenu:enforceSpecies(txGame), true,
+  "art-pack lifecycle repairs a stale hot-reload ownership mirror")
+eq(txWrites, beforeHotReloadPack + 1,
+  "hot-reload ownership repair persists one coherent mirror")
+eq(txLive.duplicateFix, "battle_art",
+  "hot-reload ownership repair follows the durable Battle Art choice")
+eq(txMenu:packLabel(), "BATTLE ART G2",
+  "hot-reload repair retains the selected Gen 2 art label")
+
+for generation = 3, 5 do
+  local id = "battle_art_gen" .. generation
+  eq(txMenu:setPack(txGame, id), true,
+    "Battle Art Gen " .. generation .. " preset is selectable")
+  eq(txMenu:packLabel(), "BATTLE ART G" .. generation,
+    "Battle Art Gen " .. generation .. " preset reports its real source")
+end
+eq(txMenu:cyclePack(txGame, 1), true,
+  "Right wraps from Battle Art Gen 5 back to Crystal")
+eq(txSaved.duplicateFix, "modded",
+  "Crystal preset returns Pokemon ownership to the bundled provider")
+eq(txMenu:packLabel(), "CRYSTAL 2.0",
+  "wrapped art-pack cycle returns to bundled Crystal")
 
 txGame.writeOptions = function()
   txWrites = txWrites + 1
@@ -733,6 +844,7 @@ _G.love = previousLove
 -- Exercise their real module with no ROM or engine state and prove the flat
 -- renderer gate above remains the only route into them.
 local hudRectangles, hudColor = {}, { 1, 1, 1, 1 }
+local hudTime = 10
 local hudGraphics = {}
 function hudGraphics.setColor(r, g, b, a)
   if type(r) == "table" then
@@ -750,7 +862,10 @@ function hudGraphics.rectangle(mode, x, y, w, h)
     color = { hudColor[1], hudColor[2], hudColor[3], hudColor[4] },
   }
 end
-_G.love = { graphics = hudGraphics }
+_G.love = {
+  graphics = hudGraphics,
+  timer = { getTime = function() return hudTime end },
+}
 
 local growthName = "src.pokemon.Growth"
 local oldGrowthLoaded, oldGrowthPreload = package.loaded[growthName],
@@ -804,6 +919,47 @@ end
 check(foundProgress,
   "half-full EXP progress fills 32 pixels inward from the right edge")
 check(foundBall, "caught marker keeps its crisp seven-pixel silhouette")
+
+-- A live EXP increase must visibly grow instead of blinking to the final
+-- width. The deterministic clock locks both the rate and right anchoring.
+hudRectangles = {}
+hudMon.exp = 1080
+hudTime = hudTime + 0.10
+extras = RealBattleHud.drawStatusExtras(hudBattle, 0)
+check(math.abs(extras.exp - 0.65) < 0.000001,
+  "EXP presentation advances smoothly toward the new live fraction")
+eq(extras.expTarget, 0.8, "EXP animation retains the truthful live target")
+eq(extras.expAnimating, true, "EXP status reports an in-flight fill")
+local animatedProgress = hudRectangles[3]
+eq(animatedProgress and animatedProgress.w, 41,
+  "animated EXP fill grows by the expected logical pixels")
+eq(animatedProgress and animatedProgress.x, 103,
+  "animated EXP fill remains anchored to the right")
+
+hudRectangles = {}
+hudTime = hudTime + 0.10
+extras = RealBattleHud.drawStatusExtras(hudBattle, 0)
+check(math.abs(extras.exp - 0.8) < 0.000001,
+  "EXP presentation reaches the live target without overshoot")
+eq(extras.expAnimating, false, "settled EXP status stops animating")
+
+-- Level-up wrap fills the old channel once, then grows the new level from
+-- empty instead of replacing one unrelated width with another.
+hudMon.level, hudMon.exp = 11, 1150
+hudTime = hudTime + 0.10
+extras = RealBattleHud.drawStatusExtras(hudBattle, 0)
+check(math.abs(extras.exp - 0.95) < 0.000001,
+  "level-up first completes the previous EXP channel")
+hudTime = hudTime + 0.10
+extras = RealBattleHud.drawStatusExtras(hudBattle, 0)
+eq(extras.exp, 1, "level-up exposes one completed-bar draw")
+hudTime = hudTime + 0.10
+extras = RealBattleHud.drawStatusExtras(hudBattle, 0)
+check(math.abs(extras.exp - 0.15) < 0.000001,
+  "new-level EXP grows again from the empty channel")
+eq(extras.expTarget, 0.5, "new-level animation follows its real fraction")
+RealBattleHud.resetExpAnimation(hudBattle)
+hudMon.level, hudMon.exp = 10, 1050
 
 -- 0.1.83+ draws its own correctly positioned caught ball when Scott's hook
 -- enables it. The staged extras must recognize that capability and avoid a
