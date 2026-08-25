@@ -567,6 +567,7 @@ local function poseSlot(i)
   local p = poseBuf[i]
   if not p then p = {}; poseBuf[i] = p end
   p.isPlayer = nil
+  p.hideInFirstPerson = nil
   return p
 end
 
@@ -592,6 +593,13 @@ local function posesOf(state, spriteColors)
       p.facing, p.phase, p.flip = facing, phase, flip
       p.gh = groundAt(state.map, e.cellX, e.cellY)
       p.lift, p.colors = e.py - vy, colors
+      -- Free Fly's mount replaces the player's own card and carries a
+      -- separate rider attachment above it. The attachment is useful from
+      -- every external camera, but from inside the player's head it causes
+      -- the same lens-filling artifact as the ordinary player card. Carry
+      -- the entity's explicit presentation hint into this frame's pose; the
+      -- first-person gate below remains the only place that acts on it.
+      if e.hideInFirstPerson == true then p.hideInFirstPerson = true end
       if e == state.player then
         me = p
         -- marked so the camera draw can leave the card out in first
@@ -674,7 +682,7 @@ local function drawCast(state, posed, atlasFor)
   -- by this same function -- agrees with the frame to the pixel.
   local hideMe = FirstPerson.hidePlayer()
   for _, p in ipairs(posed) do
-    if not (p.isPlayer and hideMe)
+    if not FirstPerson.poseHidden(p, hideMe)
        and RenderDistance.point(p.px + 8, p.py + 8, state.player) then
       drawEntity(p.sprite, p.px, p.py, viewFacing(p), p.phase, p.flip, p.gh,
                  p.colors, p.lift)

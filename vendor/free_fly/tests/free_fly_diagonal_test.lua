@@ -69,6 +69,14 @@ T.check(#out >= 1 and out[1].label == "FREEFLY", "flight entry served")
 out[1].onSelect(flyMon, Game)
 T.eq(api.isFlying(), true, "airborne")
 for _ = 1, 30 do OC.__freeFlyTick(ow, 1 / 60) end
+local flightRider
+for _, entity in ipairs(ow.entities) do
+  if entity ~= p and entity.player == p then flightRider = entity break end
+end
+T.check(type(flightRider) == "table",
+  "airborne voxel flight installs its separate seated rider")
+T.eq(flightRider and flightRider.hideInFirstPerson, true,
+  "seated rider opts out only when the camera is inside the player head")
 
 -- swap in a DIRECTIONAL mount
 Player.__freeFlyMount = { def = { directions = 8 },

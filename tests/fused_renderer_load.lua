@@ -125,12 +125,22 @@ for _, k in ipairs({ "playerView", "frontFlip", "backPlacement" }) do
   T.check(playerKeys[k], "front/back player control lives on the player screen: " .. k)
 end
 
--- Day/night: the dial is unchanged, only the rate, so 1 HOUR is three times
--- the 20 MIN period rather than a second set of timings.
+-- Day/night: the dial is unchanged, only the rate. Stored mode tokens remain
+-- compatible while the two game clocks are now distinct from REAL CLOCK.
 local DayNight = exports.lib.require("DayNight")
 T.eq(DayNight.PERIOD and DayNight.PERIOD.hour, 3600, "1 HOUR is a real hour")
 T.eq(DayNight.PERIOD and DayNight.PERIOD.cycle, 1200, "20 MIN period unchanged")
 T.eq(DayNight.CYCLE, 1200, "dial width unchanged")
+T.eq(DayNight.setting and DayNight.setting.values[1], "sync",
+  "real-clock mode retains its saved sync token")
+T.eq(DayNight.setting and DayNight.setting.values[7], "hour",
+  "one-hour game mode retains its saved hour token")
+T.eq(DayNight.setting and DayNight.setting.labels[1], "REAL CLOCK",
+  "real wall-clock mode is labeled explicitly")
+T.eq(DayNight.setting and DayNight.setting.labels[6], "GAME 20 MIN",
+  "short game cycle is labeled explicitly")
+T.eq(DayNight.setting and DayNight.setting.labels[7], "GAME 1 HOUR",
+  "one-hour game cycle is labeled explicitly")
 
 local vend = exports.vendored
 T.check(type(vend) == "table", "vendor host reported status")
@@ -325,6 +335,21 @@ T.eq(schemaByKey[wildPrefix .. "random_encounters"]
 T.eq(schemaByKey[wildPrefix .. "enable_hidden"]
     and schemaByKey[wildPrefix .. "enable_hidden"].default, false,
   "sprite-less hidden encounters default off on new installs")
+do
+  local prefix = "Dynamic_Scaling:"
+  T.eq(schemaByKey[prefix .. "difficulty"], nil,
+    "legacy single difficulty row is absent from the fused schema")
+  for _, key in ipairs({
+    "trainer_difficulty", "boss_difficulty", "wild_difficulty",
+  }) do
+    local row = schemaByKey[prefix .. key]
+    T.eq(schemaCount[prefix .. key], 1,
+      "split difficulty appears once: " .. key)
+    T.eq(row and row.default, "off", key .. " defaults OFF")
+    T.eq(#(row and row.choices or {}), 4,
+      key .. " retains OFF/NORMAL/MEDIUM/HARD")
+  end
+end
 
 -- Exercise the real registered screens. This proves the root, category
 -- placement, footers, and Mod Manager route rather than just their exports.
@@ -390,7 +415,23 @@ end
 -- A real Game installs the merged pipeline registry before opening options.
 -- Do the same here so VIEW is exercised as a live selector rather than the
 -- intentionally defensive UNAVAILABLE fallback used before Game startup.
-require("src.render.Pipelines").install(game.data)
+do
+  local installedPipelines = require("src.render.Pipelines")
+  installedPipelines.install(game.data)
+
+  -- FULL is Scott's default 3D/Thor preset, so accelerated game time must stay
+  -- selectable there instead of being silently snapped back to REAL CLOCK.
+  local priorDayLevel = installedPipelines.level("voxel")
+  installedPipelines.setLevel("voxel", 1)
+  DayNight.setting:sync("sync")
+  run.loader.events:emit("mod.options_changed", {
+    mod = "voxel_run_bridge", key = "daytime", value = "hour",
+  })
+  T.eq(DayNight.setting:get(), "hour",
+    "FULL keeps GAME 1 HOUR as a live player choice")
+  DayNight.setting:sync("sync")
+  installedPipelines.setLevel("voxel", priorDayLevel)
+end
 
 local unified = exports.tweaksMenu
 T.check(type(unified) == "table" and unified.unified == true,
@@ -592,6 +633,79 @@ T.check(world["voxel_run_bridge:gapped_land"] ~= nil,
   "Gapped Land lives in World & Weather")
 T.check(system["voxel_run_bridge:dual_screen"] ~= nil,
   "Thor second-screen control lives in Menus & Device")
+do
+  local prefix = "Dynamic_Scaling:"
+  local battles = mapIds(categoryScreens.battles.rows)
+  local wilds = mapIds(categoryScreens.wilds.rows)
+  local trainerDifficulty = battles[prefix .. "trainer_difficulty"]
+  local bossDifficulty = battles[prefix .. "boss_difficulty"]
+  local wildDifficulty = wilds[prefix .. "wild_difficulty"]
+  T.eq(trainerDifficulty and trainerDifficulty.label, "TRAINERS",
+    "ordinary trainer difficulty lives in Battles")
+  T.eq(bossDifficulty and bossDifficulty.label, "BOSSES",
+    "Gym/Elite/Champion difficulty lives in Battles")
+  T.eq(wildDifficulty and wildDifficulty.label, "WILD POKEMON",
+    "wild difficulty lives in Wild & Followers")
+  T.eq(battles[prefix .. "wild_difficulty"], nil,
+    "wild difficulty is not duplicated in Battles")
+  T.eq(wilds[prefix .. "trainer_difficulty"], nil,
+    "trainer difficulty is not duplicated in Wild & Followers")
+  T.eq(trainerDifficulty and trainerDifficulty.value(), "OFF",
+    "trainer difficulty starts OFF")
+  T.eq(bossDifficulty and bossDifficulty.value(), "OFF",
+    "boss difficulty starts OFF")
+  T.eq(wildDifficulty and wildDifficulty.value(), "OFF",
+    "wild difficulty starts OFF")
+
+  local runtime = host.loaded.Dynamic_Scaling
+  local api = runtime and runtime.exports
+    and runtime.exports.dynamicScaling
+  T.check(type(api) == "table",
+    "bundled Dynamic Scaling publishes its split runtime")
+  local beforeWrites = writes
+  T.eq(trainerDifficulty and trainerDifficulty.step(game, 1), true,
+    "trainer difficulty can change independently")
+  T.eq(trainerDifficulty and trainerDifficulty.value(), "NORMAL +2",
+    "trainer row reports its independent tier")
+  T.eq(bossDifficulty and bossDifficulty.value(), "OFF",
+    "trainer change leaves bosses untouched")
+  T.eq(wildDifficulty and wildDifficulty.value(), "OFF",
+    "trainer change leaves wild Pokemon untouched")
+  T.eq(api and api.config.trainerDifficulty, "normal",
+    "trainer change reaches the live scaler")
+  T.eq(api and api.config.bossDifficulty, "off",
+    "live boss scaler remains OFF")
+  T.eq(writes, beforeWrites + 1,
+    "one split difficulty edit performs one durable write")
+  T.eq(trainerDifficulty and trainerDifficulty.step(game, -1), true,
+    "trainer difficulty can return to OFF")
+
+  -- Model an upgraded fused save that contains only the old single key. The
+  -- runtime seeds all three new keys atomically and leaves the compatibility
+  -- value for an older release.
+  local legacyWrites = 0
+  local legacyGame = {
+    save = { options = { modOptions = { voxel_run_bridge = {
+      [prefix .. "difficulty"] = "hard",
+    } } } },
+    mods = { modOptions = { voxel_run_bridge = {
+      [prefix .. "difficulty"] = "hard",
+    } } },
+    writeOptions = function() legacyWrites = legacyWrites + 1; return true end,
+  }
+  api.refreshOptions(legacyGame, true)
+  T.eq(legacyWrites, 1, "legacy split is persisted once")
+  local legacyBucket = legacyGame.save.options.modOptions.voxel_run_bridge
+  for _, key in ipairs({
+    "trainer_difficulty", "boss_difficulty", "wild_difficulty",
+  }) do
+    T.eq(legacyBucket[prefix .. key], "hard",
+      "legacy HARD seeds " .. key)
+  end
+  T.eq(legacyBucket[prefix .. "difficulty"], "hard",
+    "legacy split retains downgrade compatibility")
+  api.refreshOptions(game, false)
+end
 ;(function()
 local bagLook = system["modern_bag_ui:skin"]
 local packMenus = system["voxel_run_bridge:gen2_menus"]

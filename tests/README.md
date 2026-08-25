@@ -9,7 +9,7 @@ sprite-card canvas paths use 1:1 DPI with nearest filtering for Android/AYN:
 luajit tests\art_rendering.lua <mod-root>
 ```
 
-The suite currently contains 332 checks and also installs the real staged-battle
+The suite currently contains 359 checks and also installs the real staged-battle
 wrappers: split mode must omit lower-screen Pokemon, trainer, and move OAM
 while preserving the upper animation surface and lower text/HUD. It verifies
 that translucent status backing and the smoothly animated, right-anchored EXP
@@ -26,6 +26,17 @@ trainer, player-view, and Crystal-mode shortcuts likewise persist once and
 leave both providers untouched when that write fails. A stable 120-frame HUD
 draw also allocates only the two warm-up quads, with resize and invalidation
 rebuilding exactly the stale entries.
+
+`battle_entry_wipe.lua` is the 269-check ROM-free contract for the three-band
+wild/trainer Poké Ball shutters. It covers completed black holds, authored
+pixel colors, renderer return/state preservation, finished-window output,
+F5 refresh while another renderer provider remains outside the dispatcher,
+and failure-safe cleanup:
+
+```powershell
+lua tests\battle_entry_wipe.lua <mod-root>
+luajit tests\battle_entry_wipe.lua <mod-root>
+```
 
 `crystal_party_art.lua` drives the real fused Loader and Crystal provider with
 normal and shiny Gen 1 frames. It proves party/Summary lookup reaches the
@@ -149,6 +160,21 @@ EXP.ALL/story state, all four Trade Stone evolutions, invalid and battle use,
 standard ITEM evolution, and the namespaced v0.1.75 effect bridge with bag
 pockets both on and off.
 
+`dynamic_scaling_daynight.lua` is the 60-check ROM-free contract for the
+independent TRAINERS/BOSSES/WILD POKEMON tiers, one-write legacy migration,
+Gym/Elite/Champion classification, level/stat semantics, constructor hot
+reload, cached battle fields, and the saved GAME 1 HOUR clock. The 17-check
+`dynamic_scaling_engine_compat.lua` repeats the battle assertions through the
+real BattleState/Pokemon/Stats modules; run it with every 0.1.75-0.1.96 engine
+fixture under both runtimes:
+
+```powershell
+lua tests\dynamic_scaling_daynight.lua
+luajit tests\dynamic_scaling_daynight.lua
+lua tests\dynamic_scaling_engine_compat.lua <engine-root>
+luajit tests\dynamic_scaling_engine_compat.lua <engine-root>
+```
+
 `gapped_land.lua` is the focused, ROM-free 61-check suite for that visual
 layer. Run it from the repository root with either supported Lua runtime:
 
@@ -203,12 +229,13 @@ luajit tests\running_hot_reload.lua <mod-root> <engine-root>
 public render/display seams in both 0.1.88 and 0.1.96, stock single-screen
 fallthrough, physical lower-display routing, frozen upper/live lower menu
 composition, top-docked overworld dialogue, white joined battle popups, the
-large original-art Start-menu crop and its detach restoration, scaling, fault
+normal-scale eight-row Start-menu crop and its detach restoration, top-stacked
+TextBox/battle questions with a narrow-answer paper band, scaling, fault
 recovery, legacy `gen1recomp_ds` delegation, same-facade identity, and two real
 API-2 Loader entries. Its real-Loader matrix also proves that 0.1.75's missing
 `mod.game` facade uses only the narrow `src.core.Game` compatibility fallback,
 while 0.1.83+ uses the public facade for dialogue and Start-menu state. Select
-each fixture as the live Loader once; every invocation contains 350 checks and
+each fixture as the live Loader once; every invocation contains 388 checks and
 runs under both LuaJIT and Lua 5.1:
 
 ```powershell

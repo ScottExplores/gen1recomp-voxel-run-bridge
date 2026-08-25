@@ -111,6 +111,7 @@ local BattleArt = V.require("BattleArt")
 local SpriteControl = V.require("SpriteControl")
 local SettingsMenu = V.require("SettingsMenu")
 local UiBackplates = V.require("UiBackplates")
+local BattleEntryWipe = V.require("BattleEntryWipe")
 local BattleExit = V.require("BattleExit")
 local DayNight = V.require("DayNight")
 local DayTint = V.require("DayTint")
@@ -456,11 +457,9 @@ applyFull = function(level)
   -- bars. Correct WORLD to WHITE while preserving BLACK, which is already an
   -- opaque field and needs no world-behind-battle path.
   ensureBattleBgCompatible(opts)
-  -- and the sky on the clock on the wall: FULL pins DAYTIME to SYNC. Unlike
-  -- the rest of the preset this one IS held, not just set -- the row is off
-  -- the menu while FULL owns it (the rows hook below), so a value changed
-  -- under it could never be seen or changed back.
-  DayNight.forceSync(Game)
+  -- DAYTIME remains a player choice even under FULL. The preset owns the
+  -- diorama's initial camera/water/blur configuration, but REAL CLOCK versus
+  -- an accelerated GAME day is gameplay pacing and must remain selectable.
   if Game.writeOptions then pcall(Game.writeOptions, Game) end
 end
 
@@ -623,10 +622,10 @@ local SETTINGS = {
     .. "world and ANIMATED/ROM fallbacks on the UI.",
     when = function() return stagedBattles() end, full = true },
   { DayNight.setting,
-    "What time it is outdoors: pin the sky to DAY, NIGHT, DUSK or DAWN, "
-    .. "let it run at 20 MIN or 1 HOUR a full day -- with the shadows, the "
-    .. "sky and the light following -- or SYNC it to the clock on the wall, "
-    .. "so Kanto's evening falls when yours does." },
+    "What time it is outdoors: REAL CLOCK follows the clock on the wall; "
+    .. "GAME 20 MIN and GAME 1 HOUR run a complete accelerated day with the "
+    .. "sky, shadows and light following. DAY, NIGHT, DUSK and DAWN pin one "
+    .. "part of the cycle." },
   -- ------- 1.66 UI backplates (see lib/UiBackplates.lua) -------
   { UiBackplates.spriteLight,
     "SHADED lets the mons receive the world's day tint and cast shadows; "
@@ -634,10 +633,10 @@ local SETTINGS = {
     .. "arena fill needs, and what the OG battle's sprites look like.",
     when = function() return stagedBattles() end, full = true },
   { UiBackplates.hudColor,
-    "COLOR keeps the engine's black names, levels and HP text plus its "
-    .. "green/yellow/red HP bars, with a bright one-pixel shadow for the "
-    .. "world behind them. INVERTED uses white HUD ink with a dark shadow. "
-    .. "ARENA FILL: WHITE always uses COLOR so the HUD remains visible.",
+    "WHITE uses white Pokemon names, levels and HP text with a dark pixel "
+    .. "shadow; BLACK uses black text with a bright pixel shadow. HP bars "
+    .. "keep their green/yellow/red colors. ARENA FILL: WHITE always uses "
+    .. "black text so the HUD remains visible.",
     when = function() return stagedBattles() end, full = true },
   { UiBackplates.arenaFill,
     "WHITE draws a solid white layer in front of the voxel world. GEN6 "
@@ -915,10 +914,9 @@ mod.hooks:wrap("ui.options.rows", function(next, game, rows)
   end
   local full = Voxel.isFull(Pipelines.level("voxel"))
   if full then
-    -- FULL owns the rows that PARAMETERISE the diorama -- the wireframe, the
-    -- horizon bend, the blur, the hour -- so those come off the menu and
-    -- DAYTIME is held at SYNC while its row is unreachable.
-    DayNight.forceSync(game)
+    -- FULL owns the stock tilt-shift presentation row. Scott's categorized
+    -- WORLD & CAMERA screen still exposes DAYTIME, including both accelerated
+    -- game clocks, because time is no longer pinned by this preset.
     dropRow(out, "pipeline:tiltshift")
   end
   -- Keep the stock OPTIONS page short. Every former row remains reachable,
@@ -944,11 +942,6 @@ mod.events:on("mod.options_changed", function(payload)
   -- that has to follow it.
   if stagedBattles() then OverworldBattle.forceOG() end
   BattleArt.forceRomPlayer()
-  -- and DAYTIME changed from the manager's page while FULL owns it snaps
-  -- straight back to SYNC -- the OPTIONS row is hidden, but the manager's is
-  -- not, and FULL's pin must hold against both
-  local Pipelines = require("src.render.Pipelines")
-  if Voxel.isFull(Pipelines.level("voxel")) then DayNight.forceSync() end
 end)
 
 -- ------- keeping the geometry in step with the world
@@ -1254,6 +1247,16 @@ BattleExit.install()
 -- the composited flat world, between the world blit and the UI blit; the
 -- reasoning for that exact instant is in the file.
 DayTint.install()
+
+-- Enter through a compact, code-drawn Scott wipe on BattleTransition's public
+-- style/registry seam. It owns no encounter state: the engine still freezes
+-- the map, starts music, holds on black and pushes the battle at exactly its
+-- native times. Installed after the other finished-frame consumers so its
+-- stable renderer dispatcher is the outer visual layer on first load; F5 can
+-- then refresh that dispatcher even if a later provider wraps outside it.
+-- If either transition API is unavailable, install() leaves the engine's
+-- original eight Gen-1 wipes selected.
+mod.exports.battleEntryWipe = BattleEntryWipe.install(mod)
 
 -- ------- what time it is
 --

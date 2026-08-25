@@ -44,12 +44,13 @@ local TRADE_STONE_EFFECT = "SCOTTS_TRADE_STONE_EFFECT"
 local GAPPED_LAND_RENDER_MARKER = "_scottsTweaksGappedLandRenderHook"
 local GAPPED_LAND_INVALIDATE_MARKER = "_scottsTweaksGappedLandInvalidateHook"
 local VOXEL_BRIDGE_MARKER = "_scottsTweaksVoxelRunBridge"
+local FREE_FLY_COCKPIT_MARKER = "_scottsTweaksMountOnlyCockpit"
 local GAPPED_LAND_RADIUS = 1024
 local GAPPED_LAND_CELL = 64
 -- Native terrain and Flora's detailed apron occupy roughly y=-2..-37.
 -- Keep the broad procedural ground below both so it only fills the void.
 local GAPPED_LAND_Y = -40
-local RELEASE_VERSION = "0.12.6"
+local RELEASE_VERSION = "0.12.7"
 
 local OPTION_DEFAULTS = {
   hm_without_badges = true,
@@ -653,7 +654,7 @@ local function defineOptions(mod, vendorHost)
       type = "toggle",
       label = "FLY COCKPIT",
       default = false,
-      help = "Show the rider and flying Pokemon in first-person. On a physical Thor they appear on the upper gameplay display; third-person flight is unchanged.",
+      help = "Show the flying Pokemon as a first-person cockpit. Your own head and rider stay hidden; on a physical Thor the mount appears on the upper gameplay display. Third-person flight is unchanged.",
     },
     {
       key = GAPPED_LAND_OPTION,
@@ -2418,6 +2419,57 @@ local function installFreeFlyCockpitControl(mod)
   if type(originalHide) ~= "function" then
     status.reason = "first_person_visibility_api_missing"
     return status
+  end
+
+  -- A physical Thor asks Free Fly's public cockpit provider for a complete
+  -- player/mount composite because it is the only first-person world card on
+  -- the upper display. From inside the player's head that complete composite
+  -- includes Red's own head, enlarged at the bottom of the view. Keep the
+  -- useful flying Pokemon, but narrow that one first-person provider request
+  -- to mount-only. Ordinary single-screen Free Fly already requests only the
+  -- mount, and third person never meets hidePlayer(), so both stay unchanged.
+  local overlay = exports.cockpitOverlay
+  if type(overlay) == "table" and type(overlay.draw) == "function" then
+    local record = rawget(overlay, FREE_FLY_COCKPIT_MARKER)
+    if type(record) == "table" and record.owner == mod.id
+        and rawget(overlay, "draw") == record.wrapper then
+      record.isFlying = exports.isFlying
+      record.hidePlayer = originalHide
+      status.cockpitOverlay = "mount_only_refreshed"
+      status.riderHidden = true
+    elseif record == nil then
+      record = {
+        owner = mod.id,
+        inner = overlay.draw,
+        isFlying = exports.isFlying,
+        hidePlayer = originalHide,
+      }
+      record.wrapper = function(game, viewport, opts)
+        local okFlying, flying = pcall(record.isFlying)
+        local okHidden, hidden = pcall(record.hidePlayer)
+        if not (okFlying and flying == true and okHidden and hidden == true)
+            or type(opts) ~= "table"
+            or (opts.fullComposite ~= true and opts.showRider ~= true) then
+          return record.inner(game, viewport, opts)
+        end
+        local mountOnly = {}
+        for key, value in pairs(opts) do mountOnly[key] = value end
+        mountOnly.fullComposite = false
+        mountOnly.showRider = false
+        mountOnly.mountOnly = true
+        return record.inner(game, viewport, mountOnly)
+      end
+      rawset(overlay, "draw", record.wrapper)
+      rawset(overlay, FREE_FLY_COCKPIT_MARKER, record)
+      status.cockpitOverlay = "mount_only_installed"
+      status.riderHidden = true
+    else
+      status.cockpitOverlay = "externally_owned"
+    end
+  else
+    -- Verified older Free Fly builds draw directly in render.hud and never
+    -- offered the Thor fullComposite route, so they are already mount-only.
+    status.cockpitOverlay = "provider_not_exported"
   end
 
   local warnedReplacement = false

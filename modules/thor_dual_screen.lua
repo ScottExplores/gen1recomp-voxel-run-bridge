@@ -58,7 +58,10 @@ local BATTLE_PANEL_REGIONS = {
   },
 }
 
-local THOR_START_VISIBLE_ROWS = 4
+-- Keep Start at the same 2x pixel scale as every other classic UI surface.
+-- Eight double-spaced rows are the most the authored 18-tile screen can hold;
+-- scrolling still covers any extra rows supplied by mods.
+local THOR_START_VISIBLE_ROWS = 8
 
 local unpackValues = table.unpack or unpack
 
@@ -289,6 +292,13 @@ local function topState(mod)
   return ok and type(state) == "table" and state or nil
 end
 
+local function stackStates(mod)
+  local game = liveGame(mod)
+  local stack = game and game.stack
+  return type(stack) == "table" and type(stack.states) == "table"
+    and stack.states or nil
+end
+
 local function startMenuHasSideArt(state)
   local game = type(state) == "table" and state.game or nil
   local save, overworld = game and game.save, game and game.overworld
@@ -425,6 +435,94 @@ local function activeBattlePanel(mod, uiWidth, uiHeight)
   return battlePanelRegion(battle.phase, uiWidth, uiHeight)
 end
 
+local function tileRegion(state, txKey, tyKey, twKey, thKey,
+    uiWidth, uiHeight)
+  if type(state) ~= "table" then return nil end
+  local tx, ty = tonumber(state[txKey]), tonumber(state[tyKey])
+  local tw, th = positive(state[twKey]), positive(state[thKey])
+  if not (finite(tx) and finite(ty) and tw and th) then return nil end
+  local region = {
+    x = tx * 8, y = ty * 8,
+    width = tw * 8, height = th * 8,
+  }
+  if region.x < 0 or region.y < 0
+      or region.x + region.width > uiWidth
+      or region.y + region.height > uiHeight then
+    return nil
+  end
+  return region
+end
+
+local function smallChoiceRegion(state, uiWidth, uiHeight)
+  -- ChoiceBox has no screenId: it is a lightweight overlay state. Require its
+  -- behavioral fields as well as bounded tile geometry so an unrelated small
+  -- menu is never mistaken for a dialogue answer.
+  if type(state) ~= "table" or state.screenId ~= nil
+      or state.isTextBox ~= nil or type(state.onChoose) ~= "function"
+      or (state.index ~= 1 and state.index ~= 2) then
+    return nil
+  end
+  local region = tileRegion(state, "tx", "ty", "tw", "th",
+    uiWidth, uiHeight)
+  if not region or region.width > uiWidth * 0.75
+      or region.height > uiHeight * 0.75 then
+    return nil
+  end
+  return region
+end
+
+local function dialogueBelowChoice(mod, choice, uiWidth, uiHeight)
+  local states = stackStates(mod)
+  if type(states) ~= "table" then return nil end
+  for index = #states, 2, -1 do
+    if states[index] == choice then
+      local state = states[index - 1]
+      if not isDialogueState(state) then return nil end
+      return tileRegion(state, "boxTx", "boxTy", "boxTw", "boxTh",
+        uiWidth, uiHeight)
+    end
+  end
+  return nil
+end
+
+local function stackedChoicePanel(mod, uiWidth, uiHeight)
+  if tonumber(uiWidth) ~= 160 or tonumber(uiHeight) ~= 144 then return nil end
+  local choice = topState(mod)
+  local choiceRegion = smallChoiceRegion(choice, uiWidth, uiHeight)
+  if not choiceRegion then return nil end
+
+  -- TextBox choices have the live TextBox immediately below them. Battle
+  -- sayChoice draws its wording inside BattleState instead; current.choice is
+  -- the narrow proof that waitingUI is this prompt rather than Bag/Party/etc.
+  local dialogueRegion = dialogueBelowChoice(mod, choice, uiWidth, uiHeight)
+  local kind = "dialogue_choice"
+  if not dialogueRegion then
+    local staged = stageState(mod)
+    local battle = staged and staged.battle
+    local current = type(battle) == "table" and battle.current or nil
+    if battle and battle.waitingUI == true and type(current) == "table"
+        and type(current.choice) == "function" then
+      dialogueRegion = {
+        x = 0, y = BATTLE_PANEL_REGIONS.messages.y,
+        width = uiWidth, height = BATTLE_PANEL_REGIONS.messages.height,
+      }
+      kind = "battle_dialogue_choice"
+    end
+  end
+  if not dialogueRegion then return nil end
+
+  return {
+    x = dialogueRegion.x,
+    y = dialogueRegion.y,
+    width = dialogueRegion.width,
+    height = dialogueRegion.height + choiceRegion.height,
+    kind = kind,
+    placement = "stacked_choice",
+    dialogue = dialogueRegion,
+    choice = choiceRegion,
+  }
+end
+
 local function ordinaryDialoguePanel(mod, uiWidth, uiHeight)
   if tonumber(uiWidth) ~= 160 or tonumber(uiHeight) ~= 144
       or stageState(mod) ~= nil then
@@ -464,7 +562,7 @@ local function startMenuPanel(mod, uiWidth, uiHeight)
   end
   return {
     x = x, y = y, width = width, height = height,
-    kind = "start_menu", placement = "fit",
+    kind = "start_menu", placement = "start",
   }
 end
 
@@ -941,34 +1039,41 @@ function ThorDualScreen.install(mod, opts)
     uiWidth, uiHeight = uiWidth or 160, uiHeight or 144
     local transform = integerContain(uiWidth, uiHeight,
       ThorDualScreen.OUTPUT_WIDTH, ThorDualScreen.OUTPUT_HEIGHT)
-    local panel = activeBattlePanel(mod, uiWidth, uiHeight)
+    local panel = stackedChoicePanel(mod, uiWidth, uiHeight)
+      or activeBattlePanel(mod, uiWidth, uiHeight)
       or ordinaryDialoguePanel(mod, uiWidth, uiHeight)
       or startMenuPanel(mod, uiWidth, uiHeight)
     local drawX, drawY = transform.x, transform.y
     local boxX, boxY = 0, 0
     local boxWidth, boxHeight = ThorDualScreen.OUTPUT_WIDTH,
       ThorDualScreen.OUTPUT_HEIGHT
-    if panel and panel.placement == "fit" then
-      -- The classic Start menu is a narrow right-side box.  On the 400x360
-      -- Thor transport, fitting that authored box itself (instead of its
-      -- otherwise-empty 160x144 canvas) gives it a crisp 4x presentation in
-      -- the common layout. Four visible rows keep the original double-spaced
-      -- artwork and scrolling while using most of the physical lower panel.
-      local fitted = integerContain(panel.width, panel.height,
-        ThorDualScreen.OUTPUT_WIDTH, ThorDualScreen.OUTPUT_HEIGHT)
-      if fitted then
-        transform = {
-          x = fitted.x - panel.x * fitted.scaleX,
-          y = fitted.y - panel.y * fitted.scaleY,
-          width = uiWidth * fitted.scaleX,
-          height = uiHeight * fitted.scaleY,
-          scaleX = fitted.scaleX,
-          scaleY = fitted.scaleY,
-        }
-        drawX, drawY = transform.x, transform.y
-        boxX, boxY = fitted.x, fitted.y
-        boxWidth, boxHeight = fitted.width, fitted.height
-      end
+    if panel and panel.placement == "start" then
+      -- Start uses the normal full-surface integer scale (2x on the 400x360
+      -- transport), but centers its authored narrow box instead of retaining
+      -- the otherwise-empty left side of the 160x144 canvas. Its eight-row
+      -- geometry spends the extra room vertically, not by widening the font.
+      local scaleX, scaleY = transform.scaleX, transform.scaleY
+      local fittedWidth = panel.width * scaleX
+      local fittedHeight = panel.height * scaleY
+      boxX = math.floor((ThorDualScreen.OUTPUT_WIDTH - fittedWidth) * 0.5)
+      boxY = math.floor((ThorDualScreen.OUTPUT_HEIGHT - fittedHeight) * 0.5)
+      boxWidth, boxHeight = fittedWidth, fittedHeight
+      drawX = boxX - panel.x * scaleX
+      drawY = boxY - panel.y * scaleY
+      transform = {
+        x = drawX, y = drawY,
+        width = uiWidth * scaleX, height = uiHeight * scaleY,
+        scaleX = scaleX, scaleY = scaleY,
+      }
+    elseif panel and panel.placement == "stacked_choice" then
+      local dialogue, choice = panel.dialogue, panel.choice
+      local scaleX, scaleY = transform.scaleX, transform.scaleY
+      boxX = transform.x + dialogue.x * scaleX
+      boxY = ThorDualScreen.BATTLE_PANEL_TOP
+      boxWidth = dialogue.width * scaleX
+      boxHeight = (dialogue.height + choice.height) * scaleY
+      drawX = boxX - dialogue.x * scaleX
+      drawY = boxY - dialogue.y * scaleY
     elseif panel then
       -- Treat the selected source band as one joined control cluster.  The
       -- source canvas origin moves upward while a tight scissor omits the
@@ -987,7 +1092,16 @@ function ThorDualScreen.install(mod, opts)
       graphics.setCanvas(canvas)
       neutralGraphics(graphics)
       graphics.clear(0, 0, 0, 1)
-      if panel and panel.paper and type(graphics.rectangle) == "function" then
+      if panel and panel.placement == "stacked_choice"
+          and type(graphics.rectangle) == "function" then
+        -- The question supplies its own full-width paper. Only the narrower
+        -- answer row needs a paper-colored backing; the rest stays black.
+        graphics.setColor(1, 1, 1, 1)
+        graphics.rectangle("fill", boxX,
+          boxY + panel.dialogue.height * transform.scaleY,
+          boxWidth, panel.choice.height * transform.scaleY)
+        graphics.setColor(1, 1, 1, 1)
+      elseif panel and panel.paper and type(graphics.rectangle) == "function" then
         local paper = panel.paper
         graphics.setColor(1, 1, 1, 1)
         graphics.rectangle("fill",
@@ -997,7 +1111,36 @@ function ThorDualScreen.install(mod, opts)
           paper.height * transform.scaleY)
         graphics.setColor(1, 1, 1, 1)
       end
-      if ctx.uiCanvas and ctx.renderer
+      if panel and panel.placement == "stacked_choice" and ctx.uiCanvas then
+        local function drawRegion(region, destinationX, destinationY)
+          local regionDrawX = destinationX - region.x * transform.scaleX
+          local regionDrawY = destinationY - region.y * transform.scaleY
+          local regionWidth = region.width * transform.scaleX
+          local regionHeight = region.height * transform.scaleY
+          if ctx.renderer and type(ctx.renderer.blitCanvas) == "function" then
+            local drew, drawError = pcall(ctx.renderer.blitCanvas, ctx.renderer,
+              ctx.uiCanvas, transform.scaleX, transform.scaleY,
+              ctx.zones, transform.scaleX, transform.scaleY,
+              regionDrawX, regionDrawY,
+              destinationX, destinationY, regionWidth, regionHeight, 1, 1)
+            if not drew then error(drawError, 0) end
+          else
+            if type(graphics.setScissor) == "function" then
+              graphics.setScissor(destinationX, destinationY,
+                regionWidth, regionHeight)
+            end
+            graphics.draw(ctx.uiCanvas, regionDrawX, regionDrawY, 0,
+              transform.scaleX, transform.scaleY)
+            if type(graphics.setScissor) == "function" then
+              graphics.setScissor()
+            end
+          end
+        end
+        drawRegion(panel.dialogue, boxX, boxY)
+        drawRegion(panel.choice,
+          boxX + boxWidth - panel.choice.width * transform.scaleX,
+          boxY + panel.dialogue.height * transform.scaleY)
+      elseif ctx.uiCanvas and ctx.renderer
           and type(ctx.renderer.blitCanvas) == "function" then
         local drew, drawError = pcall(ctx.renderer.blitCanvas, ctx.renderer,
           ctx.uiCanvas, transform.scaleX, transform.scaleY,

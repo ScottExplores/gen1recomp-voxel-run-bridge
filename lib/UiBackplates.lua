@@ -43,14 +43,14 @@ end
 
 -- ------- HUD COLOR -------
 
--- COLOR keeps the engine's black HUD glyphs and green/yellow/red HP bars,
--- adding a bright one-pixel shadow so they remain legible over terrain.
--- INVERTED is the established fork presentation: white ink with a dark
--- shadow. COLOR comes first because it is the fresh-install default used by
--- the other forks. A white arena must use black ink regardless of the saved
--- choice or the HUD would disappear into its background.
+-- The stored values stay COLOR / INVERTED so old saves keep their exact
+-- presentation, but the player-facing names say what actually changes:
+-- BLACK or WHITE battle text. White comes first so a fresh install gets the
+-- clearest HUD over the translucent world cards requested for Scott's pack.
+-- A white arena must still use black ink regardless of the saved choice or
+-- the HUD would disappear into its background.
 UiBackplates.hudColor = ModSetting.new("hudColor", "HUD COLOR",
-  { "COLOR", "INVERTED" }, { "COLOR", "INVERTED" })
+  { "INVERTED", "COLOR" }, { "WHITE", "BLACK" })
 
 function UiBackplates.hudUsesColor()
   return UiBackplates.arenaWhite()

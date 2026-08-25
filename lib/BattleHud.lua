@@ -533,6 +533,116 @@ function BattleHud.drawStatusExtras(battle, slide)
   }
 end
 
+-- ------- move effectiveness cue
+--
+-- Modern games preview whether the highlighted attack is a good matchup.
+-- Keep that useful cue in the same language as Gen 1: a tiny hand-authored
+-- pixel arrow at the far right of the selected move row, with no font or
+-- texture dependency. The engine's own TypeChart remains authoritative, so
+-- dual types, immunities and mod-added chart entries all behave exactly like
+-- the damage calculation.
+local typeChartModule = nil
+
+local function typeChart()
+  if typeChartModule == false then return nil end
+  if typeChartModule == nil then
+    local ok, loaded = pcall(require, "src.battle.TypeChart")
+    typeChartModule = ok and loaded or false
+  end
+  return typeChartModule or nil
+end
+
+function BattleHud.selectedMoveEffectiveness(battle)
+  if not battle or battle.phase ~= "moveSelect" then return nil end
+  if type(battle.bottomUIVisible) == "function" then
+    local ok, visible = pcall(battle.bottomUIVisible, battle)
+    if ok and visible == false then return nil end
+  end
+
+  local player, enemy, data = battle.player, battle.enemy, battle.data
+  local index = tonumber(battle.moveIndex)
+  local slot = player and player.curMoves and index
+               and player.curMoves[index] or nil
+  local def = slot and data and data.moves and data.moves[slot.id] or nil
+  local defenderTypes = enemy and enemy.curTypes
+  -- Status moves do not deal typed damage, so an arrow on them would promise
+  -- an advantage the actual move cannot use.
+  if not (def and def.type and tonumber(def.power)
+          and tonumber(def.power) > 0 and type(defenderTypes) == "table") then
+    return nil
+  end
+
+  local chart = typeChart()
+  if not (chart and type(chart.effectiveness) == "function") then return nil end
+  local ok, multiplier = pcall(chart.effectiveness, def.type, defenderTypes)
+  multiplier = ok and tonumber(multiplier) or nil
+  if not multiplier or multiplier == 10 then return nil end
+  return multiplier > 10 and "up" or "down", multiplier
+end
+
+local function arrowRows(direction)
+  if direction == "up" then
+    return { { 2, 1 }, { 1, 3 }, { 0, 5 }, { 2, 1 }, { 2, 1 }, { 2, 1 } }
+  end
+  return { { 2, 1 }, { 2, 1 }, { 2, 1 }, { 0, 5 }, { 1, 3 }, { 2, 1 } }
+end
+
+local function drawArrowPixels(g, x, y, rows, ox, oy, color)
+  g.setColor(color[1], color[2], color[3], color[4])
+  for row, span in ipairs(rows) do
+    g.rectangle("fill", x + span[1] + ox, y + row - 1 + oy,
+                span[2], 1)
+  end
+end
+
+local function usesWideLayout(battle)
+  if type(battle) ~= "table" then return false end
+  for _, name in ipairs({ "isWideBattleLayout", "wideLayout" }) do
+    local query = battle[name]
+    if type(query) == "function" then
+      local ok, wide = pcall(query, battle)
+      if ok then return wide == true end
+    end
+  end
+  return false
+end
+
+function BattleHud.moveEffectivenessPosition(battle)
+  local index = math.max(1, math.min(4,
+    math.floor(tonumber(battle and battle.moveIndex) or 1)))
+  if usesWideLayout(battle) then
+    local column = (index - 1) % 2
+    local row = math.floor((index - 1) / 2)
+    -- WideBattle's two move columns end at x=111 and x=215. The six-pixel
+    -- cue occupies the blank gutter immediately after each selected row,
+    -- before the next column / PP panel begins.
+    return column == 0 and 112 or 216, 113 + row * 16
+  end
+  return 145, 97 + index * 8
+end
+
+function BattleHud.drawMoveEffectiveness(battle)
+  local direction, multiplier = BattleHud.selectedMoveEffectiveness(battle)
+  local g = love and love.graphics
+  if not direction or not (g and type(g.rectangle) == "function"
+                           and type(g.setColor) == "function") then
+    return direction, multiplier
+  end
+
+  local oldColor = g.getColor and { g.getColor() } or { 1, 1, 1, 1 }
+  local x, y = BattleHud.moveEffectivenessPosition(battle)
+  local rows = arrowRows(direction)
+  -- One offset ink pass keeps the cue readable on both white paper and the
+  -- translucent Thor textbox without softening its one-pixel silhouette.
+  drawArrowPixels(g, x, y, rows, 1, 1, { 0.02, 0.03, 0.04, 0.88 })
+  drawArrowPixels(g, x, y, rows, 0, 0,
+    direction == "up" and { 0.20, 0.94, 0.34, 1 }
+                           or { 0.96, 0.20, 0.16, 1 })
+  g.setColor(oldColor[1] or 1, oldColor[2] or 1,
+             oldColor[3] or 1, oldColor[4] or 1)
+  return direction, multiplier
+end
+
 -- ------- flipping the glyphs
 --
 -- Over a dark panel the HUD's black text has to go white, and it cannot be

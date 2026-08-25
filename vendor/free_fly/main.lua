@@ -307,6 +307,7 @@ return function(mod)
   -- so an entity without them crashes both passes
   function Rider.new(player)
     return setmetatable({ player = player, passable = true,
+                          hideInFirstPerson = true,
                           px = player.px, py = player.py,
                           cellX = player.cellX, cellY = player.cellY }, Rider)
   end

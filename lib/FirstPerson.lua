@@ -88,6 +88,12 @@ FirstPerson.PITCH_DEFAULT = math.rad(10)
 -- how long the dive into (and out of) the head takes, in seconds
 FirstPerson.BLEND_TIME = 0.45
 
+-- A sight trainer turns the head, not the player's four-way body.  Keep the
+-- longest possible turn shorter than the encounter pause, while giving small
+-- corrections enough time to read as motion instead of a one-frame snap.
+FirstPerson.FOCUS_MIN_TIME = 0.14
+FirstPerson.FOCUS_MAX_TIME = 0.36
+
 -- ------- look input tuning
 --
 -- MOUSE_SENS is radians per relative-mode count -- about 0.18 degrees per
@@ -135,6 +141,7 @@ local mouseDX, mouseDY = 0, 0         -- relative counts since last update
 local lookTouch = nil                 -- { id, x, y } of the claimed finger
 local touchMove = nil                 -- the touch d-pad's analog deflection
 local captured = false                -- mouse relative mode engaged by us
+local focusTurn = nil                 -- scripted first-person head turn
 
 -- the placed-camera record this module last handed to Voxel3D, so passes
 -- that key behaviour off "is the first-person rig the one drawing" (the
@@ -249,24 +256,39 @@ function FirstPerson.hidePlayer()
   return FirstPerson.cardBlend() > 0.9
 end
 
+-- Decide whether one captured world-card belongs inside the first-person
+-- lens. Besides the player card itself, a presentation-only attachment can
+-- opt into the same rule (Free Fly's seated rider is the current user). The
+-- caller supplies the already-resolved hidePlayer answer so third person,
+-- orbit cameras and shallow transition blends preserve every card exactly as
+-- before. Keeping this predicate pure also prevents a second visibility query
+-- from disagreeing with the one used for the rest of the cast in a frame.
+function FirstPerson.poseHidden(pose, firstPersonHidesPlayer)
+  return firstPersonHidesPlayer == true and type(pose) == "table"
+    and (pose.isPlayer == true or pose.hideInFirstPerson == true)
+end
+
 -- ------- attitude
 
 -- Apply a look delta, in radians. Everything that turns the head funnels
 -- through here, so the clamps live once.
 function FirstPerson.lookBy(dyaw, dpitch)
+  -- A real look input takes the head back immediately.  Trainer focus runs
+  -- while dialogue owns input, so this is chiefly a safety valve for another
+  -- caller using focusWorldPoint outside that narrow encounter pause.
+  focusTurn = nil
   FirstPerson.yaw = wrapPi(FirstPerson.yaw + dyaw)
   FirstPerson.pitch = math.max(FirstPerson.PITCH_UP,
                        math.min(FirstPerson.PITCH_DOWN,
                                 FirstPerson.pitch + dpitch))
 end
 
--- Turn the live free-roam camera toward one world-space point.  Trainer
--- sight uses this immediately before its dialogue is pushed: the player has
--- not moved, and neither the player's four-way facing nor the trainer's
--- scripted approach belongs to the camera, so only the view attitude is
--- changed here.  Capture the same attitude into the staged-battle seed at
--- once; a dialogue can take the overworld off the top of the stack before
--- update() gets another free-roam frame in which to do that bookkeeping.
+-- Ease the live free-roam camera toward one world-space point. Trainer sight
+-- uses this immediately before its dialogue is pushed: the player has not
+-- moved, and neither the player's four-way facing nor the trainer's scripted
+-- approach belongs to the camera, so only the view attitude changes. The yaw
+-- delta is wrapped into [-pi, pi), which guarantees the short way around even
+-- when the camera and trainer straddle the -pi/pi seam.
 function FirstPerson.focusWorldPoint(targetX, targetZ, originX, originZ)
   targetX, targetZ = tonumber(targetX), tonumber(targetZ)
   originX, originZ = tonumber(originX), tonumber(originZ)
@@ -275,11 +297,70 @@ function FirstPerson.focusWorldPoint(targetX, targetZ, originX, originZ)
   end
   local dx, dz = targetX - originX, targetZ - originZ
   if dx * dx + dz * dz < 1e-9 then return false end
-  FirstPerson.yaw = wrapPi(math.atan2(dx, dz))
-  FirstPerson.pitch = FirstPerson.PITCH_DEFAULT
+  local targetYaw = wrapPi(math.atan2(dx, dz))
+  local targetPitch = FirstPerson.PITCH_DEFAULT
+  local dyaw = wrapPi(targetYaw - FirstPerson.yaw)
+  local dpitch = targetPitch - FirstPerson.pitch
+  local distance = math.max(math.abs(dyaw) / math.pi,
+    math.abs(dpitch) / math.max(1e-6,
+      FirstPerson.PITCH_DOWN - FirstPerson.PITCH_UP))
+  local duration = FirstPerson.FOCUS_MIN_TIME
+    + (FirstPerson.FOCUS_MAX_TIME - FirstPerson.FOCUS_MIN_TIME)
+      * math.min(1, distance)
+  focusTurn = {
+    yaw = FirstPerson.yaw,
+    pitch = FirstPerson.pitch,
+    dyaw = dyaw,
+    dpitch = dpitch,
+    targetYaw = targetYaw,
+    targetPitch = targetPitch,
+    duration = duration,
+    elapsed = 0,
+  }
+  -- Keep the battle seed authoritative on every tween frame. If the target is
+  -- already under the reticle, finish now rather than retaining a zero-motion
+  -- turn for the minimum duration.
+  if math.abs(dyaw) < 1e-7 and math.abs(dpitch) < 1e-7 then
+    focusTurn = nil
+    FirstPerson.yaw, FirstPerson.pitch = targetYaw, targetPitch
+  end
   FirstPerson.lastYaw = FirstPerson.yaw
   FirstPerson.lastPitch = FirstPerson.pitch
   return true
+end
+
+-- Advance only the scripted turn. Kept public and tiny so compatibility tests
+-- can exercise the temporal contract without constructing a renderer frame.
+function FirstPerson.stepFocus(dt)
+  local turn = focusTurn
+  if not turn then return false end
+  dt = tonumber(dt) or 0
+  if dt < 0 or dt ~= dt or dt == math.huge then dt = 0 end
+  turn.elapsed = math.min(turn.duration, turn.elapsed + dt)
+  local t = turn.duration > 0 and turn.elapsed / turn.duration or 1
+  local e = ease(t)
+  FirstPerson.yaw = wrapPi(turn.yaw + turn.dyaw * e)
+  FirstPerson.pitch = math.max(FirstPerson.PITCH_UP,
+    math.min(FirstPerson.PITCH_DOWN, turn.pitch + turn.dpitch * e))
+  if t >= 1 then
+    FirstPerson.yaw = turn.targetYaw
+    FirstPerson.pitch = turn.targetPitch
+    focusTurn = nil
+  end
+  FirstPerson.lastYaw = FirstPerson.yaw
+  FirstPerson.lastPitch = FirstPerson.pitch
+  return true
+end
+
+function FirstPerson.focusState()
+  if not focusTurn then return nil end
+  return {
+    targetYaw = focusTurn.targetYaw,
+    targetPitch = focusTurn.targetPitch,
+    deltaYaw = focusTurn.dyaw,
+    duration = focusTurn.duration,
+    elapsed = focusTurn.elapsed,
+  }
 end
 
 -- A bearing as one of the grid's four directions -- the 45-degree
@@ -496,6 +577,7 @@ function FirstPerson.update(dt)
     FirstPerson.pitch = FirstPerson.PITCH_DEFAULT
   end
   wasEngaged = engagedNow
+  if not engagedNow then focusTurn = nil end
 
   -- Capture the live attitude into the last-known record WHILE the rung is
   -- engaged AND continuing (not on the entry frame): the entry frame resets
@@ -583,6 +665,13 @@ function FirstPerson.update(dt)
                          cp * FirstPerson.STICK_PITCH * dt)
     end
   end
+
+  -- Dialogue takes the overworld off the top of the stack, but the voxel
+  -- pipeline and its camera keep updating underneath it. That is precisely
+  -- when a sight-trainer turn should play, after the approach and before the
+  -- battle wipe. It intentionally runs after live input so the encounter's
+  -- scripted focus owns this short, input-locked interval.
+  if engagedNow then FirstPerson.stepFocus(dt) end
 end
 
 -- ------- the rig itself

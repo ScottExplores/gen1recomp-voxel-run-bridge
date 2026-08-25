@@ -30,6 +30,9 @@ vendor/*/docs/
 vendor/*/.github/
 tests/coexist_standalone.lua
 tests/art_rendering.lua
+tests/battle_entry_wipe.lua
+tests/dynamic_scaling_daynight.lua
+tests/dynamic_scaling_engine_compat.lua
 tests/unique_menu_icons_options.lua
 tests/vendor_host_assets.lua
 tests/wilds_follower_gold_seam.lua
@@ -83,3 +86,4 @@ dist/voxel_run_bridge-0.12.3.zip
 dist/voxel_run_bridge-0.12.4.zip
 dist/voxel_run_bridge-0.12.5.zip
 dist/voxel_run_bridge-0.12.6.zip
+dist/voxel_run_bridge-0.12.7.zip

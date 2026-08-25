@@ -42,6 +42,14 @@ local FirstPerson = assert(loadfile(sourceRoot .. "/lib/FirstPerson.lua"))({
   require = function(name) return firstPersonDeps[name] end,
 })
 function FirstPerson.frame(me) return me.lift or 0 end
+T.eq(FirstPerson.poseHidden({ isPlayer = true }, true), true,
+  "true first person hides the ordinary player world card")
+T.eq(FirstPerson.poseHidden({ hideInFirstPerson = true }, true), true,
+  "true first person also hides a tagged flight-rider attachment")
+T.eq(FirstPerson.poseHidden({ hideInFirstPerson = true }, false), false,
+  "third-person and orbit cameras keep the flight rider visible")
+T.eq(FirstPerson.poseHidden({}, true), false,
+  "unrelated Pokemon and NPC cards remain visible in first person")
 local sharedVoxel = {
   FreeMove = FreeMove, FirstPerson = FirstPerson, VoxelState = VoxelState,
 }
@@ -162,10 +170,24 @@ T.eq(focusStatus and focusStatus.active, true,
   "trainer camera focus installs beside the first-person renderer")
 T.eq(focusStatus and focusStatus.reason, "first_person_sight_focus",
   "trainer focus reports its narrow sight-path ownership")
+T.eq(FirstPerson.yaw, -0.75,
+  "trainer focus begins from the live head attitude without a snap")
+local eastFocus = FirstPerson.focusState()
+T.check(type(eastFocus) == "table" and eastFocus.duration > 0,
+  "trainer focus schedules a restrained timed head turn")
+T.check(eastFocus and eastFocus.duration <= FirstPerson.FOCUS_MAX_TIME,
+  "trainer focus never outlasts the encounter pause")
+FirstPerson.stepFocus(eastFocus.duration / 2)
+T.check(FirstPerson.yaw > -0.75 and FirstPerson.yaw < math.pi / 2,
+  "trainer focus visibly eases between its start and target")
+T.check(FirstPerson.pitch < 0.6
+    and FirstPerson.pitch > FirstPerson.PITCH_DEFAULT,
+  "trainer focus eases pitch toward the readable neutral angle")
+FirstPerson.stepFocus(eastFocus.duration)
 T.check(math.abs(FirstPerson.yaw - math.pi / 2) < 0.00001,
-  "first-person sight rotates east toward the approaching trainer")
+  "first-person sight finishes facing the approaching trainer")
 T.eq(FirstPerson.pitch, FirstPerson.PITCH_DEFAULT,
-  "trainer focus restores a readable neutral pitch")
+  "trainer focus finishes at a readable neutral pitch")
 T.eq(FirstPerson.lastYaw, FirstPerson.yaw,
   "trainer focus seeds the staged battle with the corrected yaw")
 T.eq(FirstPerson.lastPitch, FirstPerson.pitch,
@@ -203,8 +225,17 @@ FirstPerson.yaw = 0.2
 RuntimeFocus.emit("world.trainer_engaged", {
   npc = focusNpc, sight = { distance = 3, dir = "down" },
 })
+T.eq(FirstPerson.yaw, 0.2,
+  "Gen 2 sight payload also starts without snapping the camera")
+local goldFocus = FirstPerson.focusState()
+T.check(type(goldFocus) == "table"
+    and math.abs(math.abs(goldFocus.targetYaw) - math.pi) < 0.00001,
+  "Gen 2 sight payload aims the turn back toward its trainer")
+T.check(goldFocus and math.abs(goldFocus.deltaYaw) <= math.pi,
+  "trainer focus always chooses the shortest wrapped yaw arc")
+FirstPerson.stepFocus(goldFocus.duration)
 T.check(math.abs(math.abs(FirstPerson.yaw) - math.pi) < 0.00001,
-  "Gen 2 sight payload turns the first-person camera back toward its trainer")
+  "Gen 2 sight focus reaches the trainer after its eased turn")
 T.eq(focusStatus and focusStatus.focusCount, 2,
   "Gen 2's explicit sight path triggers one camera focus")
 T.eq(focusPlayer.facing, "up",

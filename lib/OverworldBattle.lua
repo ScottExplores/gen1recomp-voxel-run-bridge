@@ -59,6 +59,39 @@ local session = nil
 local ANIMATION_PROJECTION_HOOK = "battleArtAnimationProjectionHook"
 local ANIMATION_PROJECTION_OWNER = "BATTLE_ART_VOXEL_FORK"
 local SPLIT_PRESENTATION_KEY = "battleArtSplitPresentation"
+local UI_BACKPLATES_SERVICE = "scottsTweaksUiBackplatesService"
+local UI_BACKPLATES_OWNER = "BATTLE_ART_VOXEL_FORK"
+local uiBackplatesService = nil
+
+-- BattleState's broad draw wrappers intentionally survive F5. Keep the
+-- settings reader behind one equally persistent record so those older
+-- wrappers consume the freshly loaded UiBackplates/ModSetting generation
+-- instead of retaining the values cached when the process first started.
+local function liveUiBackplates()
+  local record = uiBackplatesService
+  if type(record) == "table"
+     and record.owner == UI_BACKPLATES_OWNER
+     and type(record.module) == "table" then
+    return record.module
+  end
+  return UiBackplates
+end
+
+local function refreshUiBackplatesService(BattleState)
+  local record = rawget(BattleState, UI_BACKPLATES_SERVICE)
+  if type(record) ~= "table" or record.owner ~= UI_BACKPLATES_OWNER then
+    record = {
+      owner = UI_BACKPLATES_OWNER,
+      module = UiBackplates,
+      generation = 0,
+    }
+    rawset(BattleState, UI_BACKPLATES_SERVICE, record)
+  end
+  record.module = UiBackplates
+  record.generation = (record.generation or 0) + 1
+  uiBackplatesService = record
+  return record
+end
 
 local function animationProjectionRecord()
   local ok, BattleState = pcall(require, "src.battle.BattleState")
@@ -960,8 +993,9 @@ end
 -- shot.scale, which is why HALF only lined up in FIXED.
 local function drawStyledTextArea(battle, draw)
   local graphics = love.graphics
-  local style = UiBackplates.textboxFillStyle()
-  local whiteInk = UiBackplates.textboxUsesWhiteInk()
+  local ui = liveUiBackplates()
+  local style = ui.textboxFillStyle()
+  local whiteInk = ui.textboxUsesWhiteInk()
   local drawEngineText = function() draw(battle) end
 
   -- Preserve the latest build's WHITE rendering, including its black-ink
@@ -986,7 +1020,7 @@ local function drawStyledTextArea(battle, draw)
     graphics.setBlendMode("replace")
     graphics.setColor(style[1], style[2], style[3], style[4])
     for _, rect in pairs(OverworldBattle.textPaperRects(
-                           battle, UiBackplates.textboxMode())) do
+                           battle, ui.textboxMode())) do
       graphics.rectangle("fill", rect[1], rect[2], rect[3], rect[4])
     end
     graphics.setColor(color[1], color[2], color[3], color[4])
@@ -1270,6 +1304,8 @@ end
 
 local SPRITE_OWNERSHIP_HOOK = "battleArtSpriteOwnershipHook"
 local SPRITE_OWNERSHIP_OWNER = "BATTLE_ART_VOXEL_FORK"
+local MOVE_EFFECTIVENESS_HOOK = "scottsTweaksMoveEffectivenessHook"
+local MOVE_EFFECTIVENESS_OWNER = "BATTLE_ART_VOXEL_FORK"
 local unpackValues = table.unpack or unpack
 
 local function packValues(...)
@@ -1534,6 +1570,53 @@ function OverworldBattle.refreshAnimationProjectionHook()
   return false
 end
 
+-- Draw the colored move cue after BattleState has finished its own text and
+-- palette passes. A persistent dispatcher is important here: BattleState and
+-- its broad staging wrapper survive F5, while this module and BattleHud are
+-- evaluated again. Refreshing the callback gives both a live-updated install
+-- and an upgrade from a pre-cue release the new behavior without stacking
+-- wrappers or requiring a restart.
+function OverworldBattle.refreshMoveEffectivenessHook()
+  local BattleState = require("src.battle.BattleState")
+  local record = rawget(BattleState, MOVE_EFFECTIVENESS_HOOK)
+  if type(record) ~= "table" or record.owner ~= MOVE_EFFECTIVENESS_OWNER then
+    record = {
+      owner = MOVE_EFFECTIVENESS_OWNER,
+      inner = BattleState.draw,
+      installCount = 0,
+      generation = 0,
+    }
+    record.wrapper = function(self, ...)
+      local results = packValues(record.inner(self, ...))
+      local callback = record.callback
+      if type(callback) == "function" then callback(self) end
+      return unpackValues(results, 1, results.n)
+    end
+    rawset(BattleState, MOVE_EFFECTIVENESS_HOOK, record)
+  end
+
+  record.callback = function(battle)
+    if battle and battle.dramaticShapeShot then
+      local cap = BattleScene.capture
+      if cap and cap.hideTextBox then return end
+      if BattlePresentation.suppressed("text", battle) then return end
+    end
+    BattleHud.drawMoveEffectiveness(battle)
+  end
+  record.generation = (record.generation or 0) + 1
+
+  if BattleState.draw == record.inner then
+    BattleState.draw = record.wrapper
+    record.installCount = (record.installCount or 0) + 1
+    return true
+  end
+  if BattleState.draw == record.wrapper then return false end
+
+  -- A broad staging/provider wrapper may own the outer method while still
+  -- calling this dispatcher. Updating the record is sufficient in that case.
+  return false
+end
+
 function OverworldBattle.install()
   local OverworldState = require("src.world.OverworldController")
   if not OverworldState.dramaticShapeBattleHook then
@@ -1550,6 +1633,11 @@ function OverworldBattle.install()
 
   local BattleState = require("src.battle.BattleState")
 
+  -- Refresh this before any broad-hook early return. An installed battle
+  -- wrapper may belong to the prior hot-reload generation, but its shared
+  -- service record now points at this generation's live option readers.
+  refreshUiBackplatesService(BattleState)
+
   -- BATTLE ART owns every selected species frame, ordinary and shiny. Install
   -- an initial guard now; mods.loaded refreshes it around providers loaded
   -- later, so their post-update assignment cannot produce an alternating
@@ -1559,6 +1647,10 @@ function OverworldBattle.install()
   -- Refresh even when the broad battle hook below is already installed: the
   -- class and animation record survive F5, but this module's session does not.
   OverworldBattle.refreshAnimationProjectionHook()
+
+  -- This narrow post-draw seam is refreshed before the broad-hook early
+  -- return below, so a v0.12.6 -> v0.12.7 F5 receives the cue immediately.
+  OverworldBattle.refreshMoveEffectivenessHook()
 
   if not BattleState.dramaticShapeTrainerPartyHook then
     local newTrainer = BattleState.newTrainer
@@ -1808,7 +1900,8 @@ function OverworldBattle.install()
       -- SPRITE LIGHT: UNLIT draws the player back pic flat and true-colour,
       -- with no night tint -- same as the 3D cards in BattleScene. Neutralise
       -- the shot's hour tint (and the wavy-path exception below) when unlit.
-      local tint = not self.grayPics and (UiBackplates.spritesUnlit()
+      local ui = liveUiBackplates()
+      local tint = not self.grayPics and (ui.spritesUnlit()
                     and { 1, 1, 1 } or shot.tint) or nil
       local metric = pinnedSpeciesMetric()
       if metric then
@@ -1902,8 +1995,9 @@ function OverworldBattle.install()
     -- COLOR preserves the engine's black glyphs and HP-bar colours, adding a
     -- white shadow; INVERTED maps its ink to white with a black shadow. The
     -- former also owns ARENA FILL: WHITE, where white ink would disappear.
-    local color = UiBackplates.hudUsesColor()
-    local colorShadow = UiBackplates.hudUsesColorShadow()
+    local ui = liveUiBackplates()
+    local color = ui.hudUsesColor()
+    local colorShadow = ui.hudUsesColorShadow()
     if not self.dramaticShapeShot then
       return innerHUDs(self, slide)
     end
@@ -1999,9 +2093,10 @@ function OverworldBattle.snapHUDs(battle, shot)
   -- coloured bars with a white shadow; INVERTED makes the ink white with a
   -- black shadow. iOS does not reach this function (it uses the engine's own
   -- in-frame HUD); see update().
-  local color = UiBackplates.hudUsesColor()
-  local colorShadow = UiBackplates.hudUsesColorShadow()
-  local panelDark = not UiBackplates.arenaWhite()
+  local ui = liveUiBackplates()
+  local color = ui.hudUsesColor()
+  local colorShadow = ui.hudUsesColorShadow()
+  local panelDark = not ui.arenaWhite()
   if session then session.dark = panelDark end
   local layer = OverworldBattle.hudTexture(battle, slide, true, color,
                                            colorShadow)

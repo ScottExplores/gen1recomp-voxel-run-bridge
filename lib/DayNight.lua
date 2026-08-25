@@ -1,12 +1,11 @@
 -- Voxel world mode: the day/night cycle -- one clock, and everything the
 -- frame asks it.
 --
--- THE CLOCK is twenty minutes around: ten of day, ten of night. The DAYTIME
--- row either PINS it -- DAY, NIGHT, DUSK and DAWN are fixed times on that
--- dial, not separate looks -- or lets it run (CYCLE), in which case the pin
--- the player left is where the cycle picks up. Everything below is a pure
--- function of the clock, so the pinned settings and the running cycle can
--- never drift apart: DUSK is simply the cycle stopped at sunset.
+-- THE CLOCK uses one shared dial. GAME 20 MIN runs the full day quickly;
+-- GAME 1 HOUR takes exactly 3,600 real seconds from morning through day,
+-- dusk, night and back to morning. The DAYTIME row can also pin DAY, NIGHT,
+-- DUSK or DAWN. Everything below is a pure function of that one clock, so a
+-- pinned DUSK and the dusk reached by either running mode can never drift.
 --
 -- THE SUN's noon is this mod's existing sun, exactly: shear (-0.85, -0.55),
 -- hanging in the southeast about 45 degrees up. That is the DAY setting and
@@ -76,8 +75,8 @@ DayNight.LABEL = "DAYTIME"
 DayNight.setting = ModSetting.new(DayNight.KEY, DayNight.LABEL,
                                   { "sync", "day", "night", "dusk",
                                     "dawn", "cycle", "hour" },
-                                  { "SYNC", "DAY", "NIGHT", "DUSK",
-                                    "DAWN", "20 MIN", "1 HOUR" })
+                                  { "REAL CLOCK", "DAY", "NIGHT", "DUSK",
+                                    "DAWN", "GAME 20 MIN", "GAME 1 HOUR" })
 
 -- The one writer for the FULL pin. While VOXEL sits on FULL the DAYTIME
 -- row is off the menu with the rest of the rows the preset owns, and the

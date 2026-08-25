@@ -1,5 +1,51 @@
 # Changelog
 
+## 0.12.7 - 2026-08-24
+
+- **Cleaned up true first-person flight.** Free Fly still shows the flying
+  Pokémon when its cockpit is enabled, but the player's separate rider/head
+  card is omitted while the camera is inside the character. The physical Thor
+  also requests a mount-only upper-screen composite, so neither the lower UI
+  capture nor the upper gameplay view can duplicate Red's head. Third-person,
+  2D, grounded play, landing, and the mount remain unchanged.
+- **Made trainer focus a visible head turn.** Sight encounters now ease the
+  first-person yaw along the shortest arc instead of snapping in one frame.
+  Direct conversations, actor facing, movement, and every other view keep their
+  existing behavior.
+- **Added a Gen-1-style battle-entry wipe.** Trainer and wild encounters close
+  three horizontal bands behind small code-drawn pixel Poké Balls, alternating
+  in opposite directions for the two encounter types before finishing on
+  black. It uses Gen1Recomp's public transition registry/style seam, preserves
+  native encounter timing and music, covers widescreen/Thor primaries, and
+  falls back to the engine's original wipes if that API is unavailable.
+- **Restored a sensible Thor Start-menu size.** Start keeps its original
+  border, cursor, narrow width, normal crisp 2× text, and eight double-spaced
+  rows while using the lower screen vertically. Safari retains its complete
+  two-box surface. Closing, unplugging, disabling, render failure, and F5 still
+  restore the ordinary single-screen geometry.
+- **Recomposed small Thor choices near the hinge.** TextBox and battle
+  questions draw first at the top of the lower display, with YES/NO directly
+  below. Only the horizontal answer band receives the extra white backing;
+  the rest remains black. Fight, move, Mimic, Bag, Party, and other surfaces
+  retain their dedicated layouts.
+- **Improved staged battle readability and move selection.** Pokémon names,
+  levels, HP label, and HP numbers default to white over translucent world
+  cards, with a straightforward HUD COLOR: WHITE/BLACK choice that preserves
+  old COLOR/INVERTED save values. The highlighted damaging move receives a
+  tiny green up arrow when super effective or a red down arrow when resisted
+  or immune, using the engine's live type chart; neutral and status moves stay
+  uncluttered.
+- **Split Dynamic Scaling into three controls.** TRAINERS, BOSSES, and WILD
+  POKEMON now have independent OFF/NORMAL/MEDIUM/HARD tiers. BOSSES covers Gym
+  Leaders, Elite Four, Champion, and the optional Oak fight while ordinary
+  rivals remain TRAINERS. A save with the former single difficulty choice
+  seeds only missing new values in one durable migration, and all active enemy
+  battler/HUD caches follow rebuilt levels across Gen1Recomp 0.1.75-0.1.96.
+- **Clarified accelerated game time.** The DAYTIME ladder now distinguishes
+  REAL CLOCK, GAME 20 MIN, and GAME 1 HOUR. GAME 1 HOUR completes morning,
+  day, dusk, night, and the return to morning in exactly 3,600 real seconds;
+  fixed DAY/NIGHT/DUSK/DAWN choices and existing saved tokens are unchanged.
+
 ## 0.12.6 - 2026-08-22
 
 - **Made ART PACK selectable in place.** Left/Right now cycles the built-in

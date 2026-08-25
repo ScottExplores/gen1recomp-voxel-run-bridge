@@ -1,24 +1,24 @@
 # Scott's Tweaks
 
-**0.12.6 makes the Thor interface and bundled Pokémon art much easier to use.**
-ART PACK now cycles through Crystal 2.0 and matching Battle Art Gen 1-5 front
-and back sprites. On the physical lower screen, ordinary dialogue moves to the
-hinge, Fight/Mimic panels have a continuous white surface, and the original
-Start menu grows to a crisp four-row 4× presentation. Sight trainers turn the
-first-person camera toward themselves, while gained EXP visibly fills the blue
-bar instead of blinking to its new width. The native-pixel Pocket Bag, 3D
-voxel Kanto renderer, visible wild Pokémon, followers, Free Fly integration,
-and Scott's gameplay tweaks remain bundled so one launcher update carries the
-full set. Separately installed copies are no longer required; when one is
-present, the standalone copy remains the owner and the matching bundled copy
-stands down.
+**0.12.7 polishes first-person encounters, battle choices, and the Thor layout.**
+True first-person Free Fly keeps the flying Pokémon but no longer puts Red's
+own head in the camera. Sight-trainer focus now turns smoothly, and trainer or
+wild encounters enter through a three-band Gen-1-style pixel Poké Ball wipe.
+On the lower Thor screen, the Start menu is tall rather than oversized, and
+questions stay near the hinge with YES/NO directly below. Battles default to
+white status text, offer WHITE/BLACK control, and preview move effectiveness
+with tiny pixel arrows. Trainer, Gym/Elite boss, and wild difficulty can be
+tuned independently, while GAME 1 HOUR runs a complete in-game day in exactly
+one real hour. The native-pixel Pocket Bag, selectable Pokémon art, voxel
+Kanto, visible wild Pokémon, followers, Free Fly, and Scott's other tweaks
+remain one updater package.
 
 Scott's Tweaks is the next version of **Voxel Run Bridge**. The display name
 is broader, but its internal mod ID remains `voxel_run_bridge`. Existing
 installations therefore update in place, keep their settings, and do not
 become a duplicate mod.
 
-Version 0.12.6 keeps the existing updater identity and provides one categorized
+Version 0.12.7 keeps the existing updater identity and provides one categorized
 **START > MOD MENUS > MOD SETTINGS** home for all of its settings. Its
 features are:
 
@@ -39,7 +39,14 @@ features are:
   backing and the player's EXP progress below HP now animates as it grows.
   Current engines use their native Poké Ball glyph to mark caught wild species
   in both flat and staged battles; the staged renderer supplies a compatibility
-  glyph on older builds.
+  glyph on older builds. HUD text defaults WHITE and can be changed to BLACK;
+  damaging moves show a green up or red down pixel cue when the engine's own
+  type chart says they are effective or resisted.
+- **Independent difficulty:** TRAINERS, BOSSES (Gym Leaders, Elite Four, and
+  Champion), and WILD POKEMON each keep their own OFF/NORMAL/MEDIUM/HARD tier.
+  Existing saves with the earlier single difficulty row seed all three once.
+- **Pixel battle entry:** trainer and wild encounters use related three-band
+  Poké Ball shutters, with opposite directions so the two remain distinct.
 - **Built-in Pack and Pokegear:** Red's ITEM row appears as PACK, followed by
   CLOCK, MAP, PHONE, and RADIO Pokégear cards adapted to Red. It is entirely
   built in and never asks for a Gold ROM.
@@ -67,9 +74,10 @@ features are:
   first- and third-person views. This presentation option is on by default.
 - **Free Fly Now:** Free Fly can take off immediately without the Thunder
   Badge. This compatibility option is on by default.
-- **Free Fly cockpit control:** **FLY COCKPIT** shows the rider and mount in
-  first-person. On a physical Thor they now appear only on the upper gameplay
-  display; the default-off setting can still hide that picture entirely.
+- **Free Fly cockpit control:** **FLY COCKPIT** shows the flying Pokémon in
+  first-person while keeping the player's own head/rider out of the camera.
+  On a physical Thor that mount appears only on the upper gameplay display;
+  the default-off setting can still hide the cockpit picture entirely.
 - **Badge-free HMs:** use Cut, Fly, Surf, Strength, and Flash without their
   badge. A party Pokemon must still actually know the move. Normal map,
   terrain, and story restrictions remain in effect.
@@ -114,6 +122,24 @@ Pokemon on, classic step-based random battles off, and sprite-less hidden
 markers off. Selecting it also replaces conflicting settings from an older
 standalone Wilds install and rebuilds the current map once, so the label and
 the live grass encounters cannot silently disagree.
+
+Under **BATTLES**, **TRAINERS** and **BOSSES** independently select
+OFF/NORMAL/MEDIUM/HARD dynamic difficulty. BOSSES covers the eight Gym
+Leaders, Elite Four, Champion, and the optional Professor Oak fight; ordinary
+rivals remain under TRAINERS. **WILD POKEMON** lives under **WILD & FOLLOWERS**
+and uses the same four tiers. An older saved **DIFFICULTY** value initializes
+only missing new controls in one durable migration, preserving any category
+the player has already chosen.
+
+Under **WORLD & CAMERA**, **DAYTIME: REAL CLOCK** follows local wall time.
+**GAME 20 MIN** and **GAME 1 HOUR** instead run complete accelerated in-game
+days; GAME 1 HOUR takes exactly 3,600 real seconds through morning, day, dusk,
+night, and back to morning. The existing fixed DAY/NIGHT/DUSK/DAWN choices
+remain available.
+
+Under **BATTLES**, **HUD COLOR: WHITE / BLACK** controls the Pokémon names,
+levels, HP label, and HP numbers over staged scenery. WHITE is the new-install
+default; old COLOR/INVERTED save tokens retain their original appearance.
 
 `MENU ICONS` is built while the mod loads. Changing that row saves the new
 choice for the next restart; this keeps icon art and its true-color rendering
@@ -254,7 +280,7 @@ special canopy scenery so it does not flatten places that are supposed to be
 enclosed or water-covered.
 
 The renderer is selected by its stable mod ID and then checked for the required
-capabilities rather than trusted by display name alone. Version 0.12.6 targets
+capabilities rather than trusted by display name alone. Version 0.12.7 targets
 Pokemon Final, the verified Dramatic Shape 1.8.0-1.8.2 renderer contract, and
 Battle Art Voxel Fork's published renderer modules.
 If an active voxel provider does not expose the required renderer modules,
@@ -291,15 +317,16 @@ Pokemon Final compatibility.
 
 Free Fly can draw a separate mount picture at the bottom of an ordinary
 single-screen first-person HUD. Scott's Tweaks exposes that choice as **FLY
-COCKPIT**. It defaults to **OFF** for a clear view. When it is ON on a physical
-Thor, Scott's presenter removes that copy from the lower UI and draws the
-properly scaled rider and mount once on the upper gameplay display instead.
-Third-person keeps its normal world-space composite, and disconnecting or
-turning Thor mode off restores the ordinary single-screen behavior. Routing
-runs only while Free Fly's public state says flight is active, so all movement,
-eligibility, and landing rules remain owned by Free Fly. The adapter covers
-the verified 1.6.2 and bundled 1.8.0 HUD contracts; unknown standalone
-versions stand aside safely.
+COCKPIT**. It defaults to **OFF** for a clear view. True first person always
+omits the separate rider/head card while retaining the flying Pokémon; third
+person keeps its normal complete world-space composite. When the option is ON
+on a physical Thor, Scott's presenter removes the copy from the lower UI and
+draws the properly scaled mount once on the upper gameplay display instead.
+Disconnecting or turning Thor mode off restores ordinary single-screen
+routing. The adapter runs only while Free Fly's public state says flight is
+active, so all movement, eligibility, and landing rules remain owned by Free
+Fly. The adapter covers the verified 1.6.2 and bundled 1.8.0 HUD contracts;
+unknown standalone versions stand aside safely.
 
 ## Pokemon Final cache result compatibility
 
@@ -414,11 +441,14 @@ hinge at the top of the lower display; TYPE/PP and the move list stay joined
 directly below that band, bringing the active choices toward the middle of the
 device. Ordinary NPC/trainer dialogue uses that same hinge-side position.
 Fight and Mimic selection panels fill their unused upper-right area with white
-so the joined boxes remain flush. The original Start menu keeps its borders and
-double-spaced rows but shows four scrollable rows at crisp 4×, typically
-352×320 on the 400×360 lower surface. The Safari Zone keeps its complete
-two-box steps/balls layout at the normal full-surface scale. Full-screen Bag,
-Party, and settings surfaces remain centered.
+so the joined boxes remain flush. A question stays at the hinge and its small
+YES/NO box is recomposed directly below it; white fills only that horizontal
+answer band, leaving the rest of the lower display black. The original Start
+menu keeps its borders, normal 2× text, narrow authored width, and eight
+double-spaced rows while using 288 pixels of the lower display vertically. The
+Safari Zone keeps its complete two-box steps/balls layout at the normal
+full-surface scale. Full-screen Bag, Party, and settings surfaces remain
+centered.
 Disabling the option or unplugging the second display immediately restores the
 ordinary single-screen composition.
 
@@ -431,20 +461,21 @@ Scott's Tweaks choice was already saved.
 ## Install or update
 
 If Voxel Run Bridge or any earlier Scott's Tweaks release is installed, open
-Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.12.6
+Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.12.7
 update. It will appear as **Scott's Tweaks** afterward without creating a
 second entry.
 
 For a first installation:
 
 1. Open **MODS -> Import mod .zip** and choose
-   `voxel_run_bridge-0.12.6.zip`.
+   `voxel_run_bridge-0.12.7.zip`.
 2. Enable **Scott's Tweaks**, then restart the game if the manager asks.
 3. Open **START > MOD MENUS > MOD SETTINGS**. The Pocket Bag, trainer
    features, Oak's starter, B running, light run bob, gapped land, badge-free
    HMs, Free Fly Now, visible wild Pokemon, and one follower default on.
    Classic random battles and hidden encounter markers default off. EXP.SHARE
-   defaults OFF; Fly Cockpit and Thor Second Screen default off;
+   and all three difficulty categories default OFF; Fly Cockpit and Thor
+   Second Screen default off; battle HUD text defaults WHITE;
    Pack + Pokegear defaults on; run speed defaults to 1.5X and
    bob to 0.5X.
 4. Use the bundled Free Fly for free-roaming flight; no separate mod is needed.
@@ -516,17 +547,17 @@ After tests pass, build the updater ZIP from the committed tree. The repository
 attributes supply the exact release exclusions:
 
 ```powershell
-git archive --format=zip --output=dist/voxel_run_bridge-0.12.6.zip v0.12.6
+git archive --format=zip --output=dist/voxel_run_bridge-0.12.7.zip v0.12.7
 ```
 
 The archive keeps `manifest.json`, `main.lua`, `LICENSE`, notices, and the
 `modules/` directory at its root. Gen1Recomp's importer mounts those paths
 unchanged; development tests and unrelated workspace files are excluded.
 
-Version 0.12.6 is configured for Gen1Recomp's built-in GitHub update checks via
+Version 0.12.7 is configured for Gen1Recomp's built-in GitHub update checks via
 `ScottExplores/gen1recomp-voxel-run-bridge`.
 
-The download is deliberately named `voxel_run_bridge-0.12.6.zip` so the
+The download is deliberately named `voxel_run_bridge-0.12.7.zip` so the
 launcher selects it first from the matching GitHub release. Its internal ID
 remains `voxel_run_bridge`, so existing installs and saved settings update in
 place rather than appearing as a second mod.

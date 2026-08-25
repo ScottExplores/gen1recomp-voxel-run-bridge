@@ -1,7 +1,7 @@
 {
   "id": "voxel_run_bridge",
   "name": "Scott's Tweaks",
-  "version": "0.12.6",
+  "version": "0.12.7",
   "github": "ScottExplores/gen1recomp-voxel-run-bridge",
   "api": 2,
   "entry": "main.lua",
@@ -32,5 +32,5 @@
   "experimental": false,
   "affects_link": true,
   "permissions": ["engine_internals"],
-  "description": "Scott's organized gameplay menu: selectable Crystal/Battle Art Gen 1-5 sprites, native-pixel Pocket Bag and responsive PC skins, four-card Pokegear, Buddy/All EXP.SHARE, Trade Stone, trainer forfeits and rematches, Oak's spare starter, B-button running with light head bob, badge-free field moves, gapped land, automatic physical-Thor dual-screen control with enlarged and top-docked UI, and the built-in Scott's Battle Art Kanto voxel renderer: 3D Kanto, staged battles with animated EXP, first-person trainer focus, ceilings, horizons and weather."
+  "description": "Scott's organized gameplay menu: selectable Crystal/Battle Art Gen 1-5 sprites, native-pixel Pocket Bag and responsive PC skins, four-card Pokegear, Buddy/All EXP.SHARE, independent trainer/boss/wild difficulty, Trade Stone, trainer forfeits and rematches, Oak's spare starter, B-button running, badge-free field moves, visible wild Pokemon, followers, Free Fly, and automatic physical-Thor dual-screen control. The built-in Kanto voxel renderer adds 3D exploration, smooth first-person trainer focus, pixel battle-entry wipes, staged battles with animated EXP, ceilings, horizons and weather."
 }

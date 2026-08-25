@@ -209,10 +209,20 @@ local function fixture(opts)
     end
     return true, "TAKEOFF"
   end
+  local freeFlyCockpitOptions
+  local cockpitOverlay = {
+    apiVersion = 1,
+    kind = "player_mount",
+    draw = function(_, _, drawOptions)
+      freeFlyCockpitOptions = drawOptions
+      return "cockpit-result", nil, 23
+    end,
+  }
   local freeFly = {
     version = opts.freeFlyVersion or "1.5.0",
     exports = opts.freeFlyMalformed and {} or {
       isFlying = function() return opts.freeFlyFlying == true end,
+      cockpitOverlay = cockpitOverlay,
     },
   }
 
@@ -281,6 +291,8 @@ local function fixture(opts)
     loader = loader,
     freeFlyBadgeChecks = freeFlyBadgeChecks,
     freeFlyStartFlight = freeFlyStartFlight,
+    freeFly = freeFly,
+    freeFlyCockpitOptions = function() return freeFlyCockpitOptions end,
     cacheScreen = opts.cacheScreen,
   }
 end
@@ -332,7 +344,7 @@ eq(pokemonFinal.seen.walk, 2,
 eq(pokemonFinal.FreeMove.WALK, 1,
   "Pokemon Final walk speed is restored after tick")
 eq(speedCalls, 1, "Pokemon Final hook call count")
-eq(pokemonFinal.lib._voxelRunBridgeHook.version, "0.12.6",
+eq(pokemonFinal.lib._voxelRunBridgeHook.version, "0.12.7",
   "Pokemon Final bridge marker reports release version")
 
 -- Early Pokemon Final packages could start the disk-cache job successfully
@@ -365,7 +377,7 @@ eq(type(buggyCacheScreen._scottsTweaksCacheStartHook), "table",
   "cache screen receives an ownership marker")
 eq(buggyCacheScreen._scottsTweaksCacheStartHook.owner, "voxel_run_bridge",
   "cache screen marker identifies its owner")
-eq(buggyCacheScreen._scottsTweaksCacheStartHook.version, "0.12.6",
+eq(buggyCacheScreen._scottsTweaksCacheStartHook.version, "0.12.7",
   "cache screen marker identifies its release")
 eq(buggyCacheScreen._scottsTweaksCacheStartHook.original, buggyCacheStart,
   "cache screen marker retains the exact original")
@@ -626,7 +638,7 @@ eq(manifest:match('"id"%s*:%s*"([^"]+)"'), "voxel_run_bridge",
   "stable manifest id")
 eq(manifest:match('"name"%s*:%s*"([^"]+)"'), "Scott's Tweaks",
   "player-facing manifest name")
-eq(manifest:match('"version"%s*:%s*"([^"]+)"'), "0.12.6",
+eq(manifest:match('"version"%s*:%s*"([^"]+)"'), "0.12.7",
   "manifest patch version")
 
 -- Scott's Tweaks exposes the badge bypass as an ordinary, default-on option.
@@ -657,6 +669,14 @@ eq(cockpitOption and cockpitOption.type, "toggle",
   "Free Fly cockpit option type")
 eq(cockpitOption and cockpitOption.default, false,
   "Free Fly cockpit defaults to a clear first-person view")
+eq(cockpitOption and cockpitOption.help
+    and cockpitOption.help:find("head and rider stay hidden", 1, true) ~= nil,
+  true,
+  "Free Fly cockpit help states that true first person hides the rider")
+eq(cockpitOption and cockpitOption.help
+    and cockpitOption.help:find("mount appears", 1, true) ~= nil,
+  true,
+  "Free Fly cockpit help identifies the flying Pokemon as the visible mount")
 
 -- Free Fly 1.6.2's cockpit picture is gated by FirstPerson.hidePlayer inside
 -- its render.hud wrapper. Scott's higher-priority HUD link changes that one
@@ -718,6 +738,25 @@ eq(shownDuringHud, true,
   "enabled cockpit leaves Free Fly's original first-person gate intact")
 eq(cockpitShown.FirstPerson.hidePlayer, shownHide,
   "enabled cockpit never substitutes the visibility function")
+eq(cockpitShown.mod.exports.freeFlyCockpitControl.riderHidden, true,
+  "enabled first-person cockpit advertises its mount-only rider policy")
+local cockpitA, cockpitB, cockpitC =
+  cockpitShown.freeFly.exports.cockpitOverlay.draw({}, {}, {
+    target = "primary", fullComposite = true,
+  })
+local mountOnlyOptions = cockpitShown.freeFlyCockpitOptions()
+eq(mountOnlyOptions and mountOnlyOptions.fullComposite, false,
+  "Thor's complete cockpit request omits the first-person rider")
+eq(mountOnlyOptions and mountOnlyOptions.mountOnly, true,
+  "Thor cockpit explicitly retains the flying Pokemon only")
+eq(mountOnlyOptions and mountOnlyOptions.target, "primary",
+  "mount-only filtering preserves the physical primary target")
+eq(cockpitA, "cockpit-result",
+  "mount-only cockpit preserves the provider's first return")
+eq(cockpitB, nil,
+  "mount-only cockpit preserves an interior nil return")
+eq(cockpitC, 23,
+  "mount-only cockpit preserves the provider's final return")
 
 local groundedCockpit = fixture({
   freeFly = true,
@@ -733,6 +772,11 @@ eq(groundedDuringHud, true,
   "grounded HUD does not receive the cockpit substitution")
 eq(groundedCockpit.FirstPerson.hidePlayer, groundedHide,
   "grounded HUD leaves visibility ownership untouched")
+groundedCockpit.freeFly.exports.cockpitOverlay.draw({}, {}, {
+  fullComposite = true,
+})
+eq(groundedCockpit.freeFlyCockpitOptions().fullComposite, true,
+  "grounded cockpit requests preserve their original composition")
 
 local thirdPersonCockpit = fixture({
   freeFly = true,
@@ -749,6 +793,11 @@ eq(thirdDuringHud, false,
   "third-person visibility remains the provider's ordinary answer")
 eq(thirdPersonCockpit.FirstPerson.hidePlayer, thirdHide,
   "third-person flight never substitutes the visibility function")
+thirdPersonCockpit.freeFly.exports.cockpitOverlay.draw({}, {}, {
+  fullComposite = true,
+})
+eq(thirdPersonCockpit.freeFlyCockpitOptions().fullComposite, true,
+  "third-person composition is never stripped by the cockpit adapter")
 
 local throwingCockpit = fixture({
   freeFly = true,

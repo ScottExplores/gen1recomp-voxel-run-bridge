@@ -116,6 +116,23 @@ eq(BattleArt.flipsPlayerBack(), true,
 eq(BattleArt.flipsPlayerFront(), true,
   "new controls do not change the historical player-front policy")
 
+local HudOptions = assert(loadfile(root .. "/lib/UiBackplates.lua"))({
+  require = function(name)
+    assert(name == "ModSetting",
+      "unexpected UiBackplates dependency: " .. tostring(name))
+    return Setting
+  end,
+})
+eq(HudOptions.hudColor:get(), "INVERTED",
+  "fresh battle HUDs default to readable white ink")
+eq(HudOptions.hudColor.labels[1], "WHITE",
+  "HUD color option names the visible white result")
+HudOptions.hudColor:setIndex(2)
+eq(HudOptions.hudColor:get(), "COLOR",
+  "the historical COLOR save value remains the black-ink choice")
+eq(HudOptions.hudColor.labels[2], "BLACK",
+  "HUD color option names the visible black result")
+
 -- The BASIC Pokemon shortcuts may update more than one ownership key. Use
 -- the real ModSetting transaction so a failed device write cannot commit one
 -- side, leave another cached, or report a profile that disk never accepted.
@@ -564,7 +581,8 @@ function graphics.getColor() return 1, 1, 1, 1 end
 local previousLove = rawget(_G, "love")
 _G.love = { graphics = graphics }
 
-local picCalls, textCalls, hudCalls, hudExtraCalls = 0, 0, 0, 0
+local picCalls, textCalls, hudCalls, hudExtraCalls, effectivenessCalls,
+      uiBackplatesReads = 0, 0, 0, 0, 0, 0
 local animCalls = {}
 local BattleState = {
   update = function() end,
@@ -620,6 +638,7 @@ local fakeModules = {
   BattleHud = {
     invalidate = function() end,
     drawStatusExtras = function() hudExtraCalls = hudExtraCalls + 1 end,
+    drawMoveEffectiveness = function() effectivenessCalls = effectivenessCalls + 1 end,
     flipGlyphs = function(_, _, draw) return draw() end,
     layerTexture = function(_, _, _, draw)
       draw()
@@ -632,8 +651,14 @@ local fakeModules = {
     spritesUnlit = function() return false end,
     textboxFillStyle = function() return nil end,
     textboxUsesWhiteInk = function() return false end,
-    hudUsesColor = function() return false end,
-    hudUsesColorShadow = function() return false end,
+    hudUsesColor = function()
+      uiBackplatesReads = uiBackplatesReads + 1
+      return false
+    end,
+    hudUsesColorShadow = function()
+      uiBackplatesReads = uiBackplatesReads + 1
+      return false
+    end,
     arenaWhite = function() return false end,
   },
   TextboxStyle = { withFill = function(_, _, draw) return draw() end },
@@ -725,6 +750,8 @@ check(exported and exported.canvas == madeCanvases[1]
 
 BattleState.drawTextArea(stagedBattle)
 eq(textCalls, 1, "staged lower wording is drawn exactly once")
+eq(effectivenessCalls, 0,
+  "colored effectiveness cue is not folded into the monochrome text pass")
 BattleState.drawHUDs(stagedBattle)
 eq(hudCalls, 1, "staged lower HUD is drawn exactly once")
 eq(hudExtraCalls, 1,
@@ -738,6 +765,67 @@ BattleState.drawHUDs(flatBattle)
 eq(hudCalls, 2, "flat battle retains the engine HUD draw")
 eq(hudExtraCalls, extrasBeforeFlat,
   "flat/native battle does not receive staged status-card additions")
+BattleState.drawTextArea(flatBattle)
+eq(effectivenessCalls, 0,
+  "flat text drawing leaves the final-color cue to BattleState draw")
+eq(BattleState.draw(flatBattle), "engine-battle",
+  "post-draw cue wrapper preserves the engine battle return")
+eq(effectivenessCalls, 1,
+  "ordinary battle draw receives one final-color effectiveness cue")
+
+-- F5 leaves the broad BattleState wrapper in place but refreshes the narrow
+-- cue dispatcher's module callback. The identity stays stable and only the
+-- newly loaded BattleHud implementation is called.
+local firstGenerationDraw = BattleState.draw
+local oldEffectivenessCalls = effectivenessCalls
+local reloadedEffectivenessCalls = 0
+local reloadedUiBackplatesReads = 0
+local reloadedModules = {}
+for name, dependency in pairs(fakeModules) do
+  reloadedModules[name] = dependency
+end
+reloadedModules.BattleHud = {}
+for name, value in pairs(fakeModules.BattleHud) do
+  reloadedModules.BattleHud[name] = value
+end
+reloadedModules.BattleHud.drawMoveEffectiveness = function()
+  reloadedEffectivenessCalls = reloadedEffectivenessCalls + 1
+end
+reloadedModules.UiBackplates = {}
+for name, value in pairs(fakeModules.UiBackplates) do
+  reloadedModules.UiBackplates[name] = value
+end
+reloadedModules.UiBackplates.hudUsesColor = function()
+  reloadedUiBackplatesReads = reloadedUiBackplatesReads + 1
+  return false
+end
+reloadedModules.UiBackplates.hudUsesColorShadow = function()
+  reloadedUiBackplatesReads = reloadedUiBackplatesReads + 1
+  return false
+end
+local ReloadedOverworldBattle = assert(loadfile(
+  root .. "/lib/OverworldBattle.lua"))({
+    require = function(name)
+      local dependency = reloadedModules[name]
+      assert(dependency, "unexpected reloaded dependency: " .. tostring(name))
+      return dependency
+    end,
+    mod = fakeV.mod,
+  })
+ReloadedOverworldBattle.install()
+eq(BattleState.draw, firstGenerationDraw,
+  "F5 refreshes the effectiveness dispatcher without stacking draw wrappers")
+BattleState.draw(flatBattle)
+eq(effectivenessCalls, oldEffectivenessCalls,
+  "F5 retires the old BattleHud cue callback")
+eq(reloadedEffectivenessCalls, 1,
+  "F5 activates the newly loaded BattleHud cue callback")
+local oldUiReadsAfterReload = uiBackplatesReads
+BattleState.drawHUDs(stagedBattle)
+eq(uiBackplatesReads, oldUiReadsAfterReload,
+  "F5 retires the old UiBackplates settings reader")
+eq(reloadedUiBackplatesReads, 2,
+  "F5 routes the surviving HUD wrapper through fresh color settings")
 
 -- The same installed renderer publishes the selected orientation as explicit
 -- per-card metadata. Trainers stay authored even if every Pokemon switch is
@@ -870,9 +958,22 @@ _G.love = {
 local growthName = "src.pokemon.Growth"
 local oldGrowthLoaded, oldGrowthPreload = package.loaded[growthName],
                                            package.preload[growthName]
+local typeChartName = "src.battle.TypeChart"
+local oldTypeChartLoaded, oldTypeChartPreload = package.loaded[typeChartName],
+                                                 package.preload[typeChartName]
 package.loaded[growthName] = nil
 package.preload[growthName] = function()
   return { expForLevel = function(_, level) return level * 100 end }
+end
+package.loaded[typeChartName] = nil
+package.preload[typeChartName] = function()
+  return {
+    effectiveness = function(moveType)
+      if moveType == "FIRE" then return 20 end
+      if moveType == "WATER" then return 5 end
+      return 10
+    end,
+  }
 end
 local RealBattleHud = assert(loadfile(root .. "/lib/BattleHud.lua"))({
   require = function(name)
@@ -895,10 +996,21 @@ hudRectangles = {}
 local hudMon = { species = "TESTMON", level = 10, exp = 1050 }
 local hudBattle = {
   kind = "wild",
+  phase = "moveSelect",
+  moveIndex = 1,
   game = { save = { pokedex = { owned = { TESTMON = true } } } },
-  data = { constants = { levelCap = 100 }, growth_rates = {} },
-  player = { mon = hudMon, def = { growthRate = "TEST" } },
-  enemy = { mon = { species = "TESTMON" }, fainted = false },
+  data = {
+    constants = { levelCap = 100 }, growth_rates = {},
+    moves = { TEST_MOVE = { type = "FIRE", power = 40 } },
+  },
+  player = {
+    mon = hudMon, def = { growthRate = "TEST" },
+    curMoves = { { id = "TEST_MOVE", pp = 25 } },
+  },
+  enemy = {
+    mon = { species = "TESTMON" }, fainted = false,
+    curTypes = { "GRASS" },
+  },
   statusHUDVisible = function() return true end,
   growInScale = function() return false end,
 }
@@ -919,6 +1031,70 @@ end
 check(foundProgress,
   "half-full EXP progress fills 32 pixels inward from the right edge")
 check(foundBall, "caught marker keeps its crisp seven-pixel silhouette")
+
+-- The highlighted damaging move gets a tiny matchup arrow at the right of
+-- its own row. It is drawn after the monochrome textbox pass, preserving the
+-- authored green/red pixels and the caller's graphics color.
+hudRectangles = {}
+hudGraphics.setColor(0.3, 0.4, 0.5, 0.6)
+local cue, multiplier = RealBattleHud.drawMoveEffectiveness(hudBattle)
+eq(cue, "up", "super-effective moves receive the green up cue")
+eq(multiplier, 20, "effectiveness cue uses the engine chart multiplier")
+eq(#hudRectangles, 12,
+  "six-pixel arrow and its offset ink silhouette stay bounded")
+local greenApex = false
+for _, rect in ipairs(hudRectangles) do
+  if rect.x == 147 and rect.y == 105 and rect.w == 1 and rect.h == 1
+     and rect.color[2] == 0.94 then greenApex = true end
+end
+check(greenApex, "super-effective cue is a crisp green upward arrow")
+local cr, cg, cb, ca = hudGraphics.getColor()
+check(cr == 0.3 and cg == 0.4 and cb == 0.5 and ca == 0.6,
+  "effectiveness cue restores the incoming graphics color")
+
+hudRectangles = {}
+hudBattle.data.moves.TEST_MOVE.type = "WATER"
+cue, multiplier = RealBattleHud.drawMoveEffectiveness(hudBattle)
+eq(cue, "down", "resisted moves receive the red down cue")
+eq(multiplier, 5, "resisted cue retains the engine chart multiplier")
+local redTip = false
+for _, rect in ipairs(hudRectangles) do
+  if rect.x == 147 and rect.y == 110 and rect.w == 1 and rect.h == 1
+     and rect.color[1] == 0.96 then redTip = true end
+end
+check(redTip, "not-very-effective cue is a crisp red downward arrow")
+
+-- WIDE bypasses BattleState:drawTextArea and arranges moves in a 2x2 grid;
+-- the final BattleState draw hook still places the cue in the selected row's
+-- blank gutter instead of silently dropping it.
+hudRectangles = {}
+hudBattle.isWideBattleLayout = function() return true end
+hudBattle.moveIndex = 4
+hudBattle.player.curMoves[4] = { id = "TEST_MOVE", pp = 25 }
+cue, multiplier = RealBattleHud.drawMoveEffectiveness(hudBattle)
+eq(cue, "down", "wide move grid retains the resisted cue")
+local wideRedTip = false
+for _, rect in ipairs(hudRectangles) do
+  if rect.x == 218 and rect.y == 134 and rect.w == 1 and rect.h == 1
+     and rect.color[1] == 0.96 then wideRedTip = true end
+end
+check(wideRedTip,
+  "wide cue occupies the right-column gutter on its selected second row")
+hudBattle.isWideBattleLayout = nil
+hudBattle.moveIndex = 1
+hudBattle.player.curMoves[4] = nil
+
+hudRectangles = {}
+hudBattle.data.moves.TEST_MOVE.type = "NORMAL"
+eq(RealBattleHud.drawMoveEffectiveness(hudBattle), nil,
+  "neutral moves keep the original uncluttered move row")
+eq(#hudRectangles, 0, "neutral moves draw no indicator pixels")
+hudBattle.data.moves.TEST_MOVE.type = "FIRE"
+hudBattle.data.moves.TEST_MOVE.power = 0
+eq(RealBattleHud.drawMoveEffectiveness(hudBattle), nil,
+  "status moves do not promise a damaging type advantage")
+eq(#hudRectangles, 0, "status moves draw no indicator pixels")
+hudBattle.data.moves.TEST_MOVE.power = 40
 
 -- A live EXP increase must visibly grow instead of blinking to the final
 -- width. The deterministic clock locks both the rate and right anchoring.
@@ -1013,6 +1189,8 @@ eq(#hudRectangles, 0, "hidden staged details leave no floating primitives")
 
 package.loaded[growthName], package.preload[growthName] =
   oldGrowthLoaded, oldGrowthPreload
+package.loaded[typeChartName], package.preload[typeChartName] =
+  oldTypeChartLoaded, oldTypeChartPreload
 _G.love = previousLove
 
 -- The moving lines in the photographs are not voxel-grid seams: the card

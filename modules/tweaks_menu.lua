@@ -582,8 +582,15 @@ return function(mod, context)
     add(rows, vrow(CHOOSE_LEAD, "enabled", "CHOOSE LEAD", true))
     add(rows, vrow(CHOOSE_LEAD, "when", "ASK BEFORE", false))
     addAll(rows, vendorRest(CHOOSE_LEAD, choose), false)
-    local dynamic = { difficulty = true, randomize = true }
-    add(rows, vrow(DYNAMIC, "difficulty", "DIFFICULTY", true, {
+    local dynamic = {
+      trainer_difficulty = true, boss_difficulty = true,
+      wild_difficulty = true, randomize = true,
+    }
+    add(rows, vrow(DYNAMIC, "trainer_difficulty", "TRAINERS", true, {
+      off = "OFF", normal = "NORMAL +2", medium = "MEDIUM +5",
+      hard = "HARD +10",
+    }))
+    add(rows, vrow(DYNAMIC, "boss_difficulty", "BOSSES", true, {
       off = "OFF", normal = "NORMAL +2", medium = "MEDIUM +5",
       hard = "HARD +10",
     }))
@@ -605,6 +612,10 @@ return function(mod, context)
     curated.enabled = true
     curated.random_encounters = true
     add(rows, encounterRow())
+    add(rows, vrow(DYNAMIC, "wild_difficulty", "WILD POKEMON", true, {
+      off = "OFF", normal = "NORMAL +2", medium = "MEDIUM +5",
+      hard = "HARD +10",
+    }))
     place("spawn_density", "SPAWN AMOUNT", true)
     place("follower_count", "FOLLOWERS", true)
     curated.sprite_style = true

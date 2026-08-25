@@ -733,6 +733,59 @@ eq(mimicPaper.width, 64,
 eq(mimicPaper.height, 80,
   "Mimic paper meets the full-width wording box below")
 
+-- BattleState:sayChoice owns the question in its y=96 message band and
+-- pushes a standalone ChoiceBox above it. Compose those authored regions as
+-- question then answer instead of centering their old answer-above-question
+-- source positions on Thor.
+local battleChoice = {
+  onChoose = function() end, index = 1,
+  tx = 14, ty = 7, tw = 6, th = 5,
+}
+local battleStack = { states = { panelBattle, battleChoice } }
+function battleStack:top() return self.states[#self.states] end
+panelFixture.mod.game = { stack = battleStack }
+panelBattle.phase = "messages"
+panelBattle.waitingUI = true
+panelBattle.current = { choice = function() end }
+panelFixture.clock.value = 1.75
+eq(panelFixture.frame(panelCtx).handled, true,
+  "battle choice prompt keeps physical composition")
+eq(#panelLower.blits, 2,
+  "battle choice composes question and answer as separate authored regions")
+local questionBlit, answerBlit = panelLower.blits[1], panelLower.blits[2]
+eq(questionBlit.args[7], -180,
+  "battle-choice question moves from y=96 to the hinge margin")
+eq(questionBlit.args[9], Thor.BATTLE_PANEL_TOP,
+  "battle-choice question is the first panel")
+eq(questionBlit.args[11], 96,
+  "battle-choice question retains its complete six-tile frame")
+eq(answerBlit.args[6], 40,
+  "answer source offset preserves the authored right alignment")
+eq(answerBlit.args[7], -4,
+  "answer source moves directly below the question")
+eq(answerBlit.args[8], 264,
+  "answer box remains right-aligned inside the paper band")
+eq(answerBlit.args[9], 108,
+  "answer box begins immediately below the question")
+eq(answerBlit.args[10], 96,
+  "answer crop retains the complete six-tile width")
+eq(answerBlit.args[11], 80,
+  "answer crop retains the complete five-tile height")
+local answerPaper = assert(panelLower.rectangles[1],
+  "battle-choice horizontal paper band missing")
+eq(answerPaper.x, 40,
+  "battle-choice paper begins at the classic UI left edge")
+eq(answerPaper.y, 108,
+  "battle-choice paper begins only on the answer row")
+eq(answerPaper.width, 320,
+  "battle-choice paper fills left and right of the answer")
+eq(answerPaper.height, 80,
+  "battle-choice paper is limited to the answer row")
+
+panelBattle.current = nil
+panelFixture.mod.game = {
+  stack = { states = {}, top = function() return { isOpaque = true } end },
+}
 panelBattle.waitingUI = true
 panelFixture.clock.value = 2
 eq(panelFixture.frame(panelCtx).handled, true,
@@ -806,6 +859,39 @@ eq(dialogueBlit.args[7], -180,
 eq(dialogueBlit.args[11], 96,
   "0.1.75 dialogue retains its complete six-tile frame")
 
+local textboxPrompt = dialogueState
+local textboxChoice = {
+  onChoose = function() end, index = 2, anchor = "bottom",
+  tx = 14, ty = 7, tw = 6, th = 5,
+}
+local dialogueStack = dialogueFixture.mod.game.stack
+dialogueStack.states = { textboxPrompt, textboxChoice }
+function dialogueStack:top() return self.states[#self.states] end
+dialogueFixture.clock.value = 1.5
+eq(dialogueFixture.frame(dialogueCtx).handled, true,
+  "TextBox-backed choice prompt keeps the Thor split active")
+eq(#dialogueLower.blits, 2,
+  "TextBox choice composes the prompt and answer independently")
+questionBlit, answerBlit = dialogueLower.blits[1], dialogueLower.blits[2]
+eq(questionBlit.args[9], Thor.BATTLE_PANEL_TOP,
+  "TextBox question remains top-docked")
+eq(questionBlit.args[11], 96,
+  "TextBox question keeps the complete six-tile panel")
+eq(answerBlit.args[9], 108,
+  "TextBox answer follows directly beneath its question")
+eq(answerBlit.args[10], 96,
+  "TextBox answer keeps the authored narrow width")
+local textboxPaper = assert(dialogueLower.rectangles[1],
+  "TextBox-choice horizontal paper band missing")
+eq(textboxPaper.x, 40,
+  "TextBox-choice paper starts at the prompt's left edge")
+eq(textboxPaper.width, 320,
+  "TextBox-choice paper fills only the answer's horizontal band")
+eq(textboxPaper.height, 80,
+  "TextBox-choice paper does not fill the lower-screen remainder")
+
+dialogueStack.states = nil
+dialogueStack.top = function() return dialogueState end
 dialogueState = {
   -- A menu-like state can expose box geometry, but has no typewriter model.
   boxTx = 0, boxTy = 12, boxTw = 20, boxTh = 6,
@@ -821,10 +907,10 @@ eq(dialogueBlit.args[7], 36,
 eq(dialogueBlit.args[11], Thor.OUTPUT_HEIGHT,
   "a non-dialogue state keeps the complete lower surface")
 
--- The physical Start menu keeps the original bordered Menu renderer and
--- double-spaced rows, but four visible rows let the authored source box fit at
--- a much larger whole-number scale. screen.pushed applies geometry before the
--- first draw; screen.popped restores the exact single-screen values.
+-- The physical Start menu keeps the original bordered Menu renderer, normal
+-- 2x text and double-spaced rows. Eight visible rows use the available height
+-- without stretching the narrow box across the lower screen. screen.popped
+-- still restores the exact single-screen values.
 local startFixture = makeFixture()
 local activeStartState
 startFixture.mod.game = {
@@ -849,29 +935,30 @@ function startState:clampScroll()
 end
 activeStartState = startState
 startFixture.events:emit("screen.pushed", { state = startState })
-eq(startState.maxVisible, 4,
-  "physical Start menu shows four large original rows at once")
-eq(startState.th, 10,
-  "physical Start menu keeps double spacing in a ten-tile frame")
+eq(startState.maxVisible, 8,
+  "physical Start menu shows all eight original rows at once")
+eq(startState.th, 18,
+  "physical Start menu keeps double spacing in an eighteen-tile frame")
 startFixture.clock.value = 1
 eq(startFixture.frame(startFixture.context("live")).handled, true,
-  "enlarged Start menu keeps the Thor split active")
+  "vertically expanded Start menu keeps the Thor split active")
 local startLower = startFixture.bridge.pushes[#startFixture.bridge.pushes].source
-local startBlit = assert(startLower.blits[1], "enlarged Start-menu blit missing")
-eq(startBlit.args[1], 4,
-  "Start menu artwork and text use a crisp 4x scale")
-eq(startBlit.args[6], -264,
-  "Start menu source origin crops the empty left side")
-eq(startBlit.args[7], 20,
+local startBlit = assert(startLower.blits[1],
+  "vertically expanded Start-menu blit missing")
+eq(startBlit.args[1], 2,
+  "Start menu artwork and text use the normal crisp 2x scale")
+eq(startBlit.args[6], -32,
+  "Start menu source origin centers its narrow authored box")
+eq(startBlit.args[7], 36,
   "Start menu is vertically centered in the lower display")
-eq(startBlit.args[8], 24,
+eq(startBlit.args[8], 112,
   "Start menu visible box is horizontally centered")
-eq(startBlit.args[9], 20,
+eq(startBlit.args[9], 36,
   "Start menu visible box uses the full-height composition margin")
-eq(startBlit.args[10], 352,
-  "Start menu fills nearly the complete Thor lower width")
-eq(startBlit.args[11], 320,
-  "Start menu fills nearly the complete Thor lower height")
+eq(startBlit.args[10], 176,
+  "Start menu retains its authored narrow width at normal scale")
+eq(startBlit.args[11], 288,
+  "Start menu uses the normal UI viewport's full vertical height")
 startFixture.events:emit("screen.popped", { state = startState })
 eq(startState.maxVisible, 8,
   "closing physical Start restores the original visible-row count")
@@ -881,10 +968,10 @@ eq(startState.th, 18,
 -- A developer F5 can happen while Start is still open. The retiring runtime
 -- must first remove its live geometry decoration; if the replacement cannot
 -- attach (simulated here by unplugging the panel), ordinary single-screen
--- dimensions must be left behind rather than a stale four-row menu.
+-- dimensions must be left behind rather than stale Thor-owned geometry.
 startFixture.events:emit("screen.pushed", { state = startState })
-eq(startState.maxVisible, 4,
-  "open Start menu is enlarged again before the F5 handoff")
+eq(startState.maxVisible, 8,
+  "open Start menu is configured again before the F5 handoff")
 local refreshedStartController = installFixture(startFixture, loadThor())
 startFixture.bridge.availableFlag = false
 startFixture.clock.value = 2
@@ -907,6 +994,39 @@ eq(detachedStart.maxVisible, 8,
   "a detached lower display never changes Start-menu geometry")
 eq(detachedStart.th, 18,
   "a detached lower display preserves the original Start artwork frame")
+
+-- Safari Start has a second authored steps/BALL box on the left. It must keep
+-- the full classic surface instead of applying the single-box center crop.
+local safariFixture = makeFixture()
+local safariStart = {
+  screenId = "StartMenu",
+  items = { {}, {}, {}, {}, {}, {}, {}, {} },
+  tx = 9, ty = 0, tw = 11, th = 18, rowStep = 2, maxVisible = 8,
+  clampScroll = function() end,
+  game = {
+    save = { safari = {} },
+    overworld = {
+      map = {},
+      inSafariStepZone = function() return true end,
+    },
+  },
+}
+safariFixture.mod.game = {
+  stack = { top = function() return safariStart end },
+}
+installFixture(safariFixture, loadThor())
+eq(safariFixture.frame(safariFixture.context("live")).handled, true,
+  "Safari Start keeps physical composition")
+eq(safariStart.maxVisible, 8,
+  "Safari Start keeps its engine-authored row geometry")
+local safariLower = safariFixture.bridge.pushes[1].source
+local safariBlit = assert(safariLower.blits[1], "Safari Start blit missing")
+eq(safariBlit.args[6], 40,
+  "Safari Start retains the complete centered classic canvas")
+eq(safariBlit.args[10], Thor.OUTPUT_WIDTH,
+  "Safari Start is not cropped around only the right-side menu")
+eq(safariBlit.args[11], Thor.OUTPUT_HEIGHT,
+  "Safari Start retains both authored boxes at normal scale")
 
 -- Battle Stage v3 is armed before Thor publishes a physical frame. The first
 -- compose arrived after the engine already rendered uiCanvas, so it falls
@@ -1346,7 +1466,7 @@ local function realLoaderRegression(engineRoot)
   local files = {
     [prefix .. "manifest.json"] = [[{
       "id":"voxel_run_bridge","name":"Scott's Tweaks Thor Loader Test",
-      "version":"0.12.6","api":2,"entry":"main.lua",
+      "version":"0.12.7","api":2,"entry":"main.lua",
       "profile":"content","priority":200,"dependencies":[],
       "optional_dependencies":[],"conflicts":[],"games":["gen1"],
       "permissions":["engine_internals"]
@@ -1487,7 +1607,7 @@ local function realLoaderRegression(engineRoot)
   }
   run2Exports.testSetBattleActive(false)
 
-  activeState = {
+  local legacyDialogue = {
     -- The unmarked 0.1.75 TextBox typewriter shape.
     boxTx = 0, boxTy = 12, boxTw = 20, boxTh = 6,
     maxCols = 18, textX = 8, line1Y = 112, line2Y = 128,
@@ -1495,6 +1615,7 @@ local function realLoaderRegression(engineRoot)
     pageIndex = 1, lineIndex = 1, charIndex = 0,
     waiting = false, done = false,
   }
+  activeState = legacyDialogue
   loaderClock.value = 2
   eq(draw(run2.loader, ctx("menu")), true,
     "real Loader top-docks legacy unmarked dialogue")
@@ -1505,6 +1626,39 @@ local function realLoaderRegression(engineRoot)
     "real Loader legacy dialogue source reaches the hinge")
   eq(dialogueBlit.args[11], 96,
     "real Loader legacy dialogue keeps its complete six-tile frame")
+
+  -- Use this release's real ChoiceBox constructor. The presenter recognizes
+  -- the stable behavioral/geometry shape on every supported Loader, then
+  -- independently crops the legacy TextBox underneath it.
+  local ChoiceBox = require("src.ui.ChoiceBox")
+  local liveChoice = ChoiceBox.new(EngineGame, function() end,
+    { anchor = "bottom" })
+  EngineGame.stack.states = { legacyDialogue, liveChoice }
+  activeState = liveChoice
+  loaderClock.value = 2.5
+  eq(draw(run2.loader, ctx("menu")), true,
+    "real Loader composes its native ChoiceBox beneath the question")
+  local choiceLower = loaderBridge.pushes[#loaderBridge.pushes].source
+  eq(#choiceLower.blits, 2,
+    "real Loader choice prompt has independent question and answer crops")
+  local liveQuestion, liveAnswer = choiceLower.blits[1], choiceLower.blits[2]
+  eq(liveQuestion.args[9], 12,
+    "real Loader choice question stays at the hinge margin")
+  eq(liveAnswer.args[8], 264,
+    "real Loader native ChoiceBox remains right-aligned")
+  eq(liveAnswer.args[9], 108,
+    "real Loader native ChoiceBox follows below the question")
+  local liveChoicePaper = assert(choiceLower.rectangles[1],
+    "real Loader choice paper band missing")
+  eq(liveChoicePaper.x, 40,
+    "real Loader choice paper retains black outside classic UI width")
+  eq(liveChoicePaper.y, 108,
+    "real Loader choice paper begins below the question")
+  eq(liveChoicePaper.width, 320,
+    "real Loader choice paper fills the horizontal answer band")
+  eq(liveChoicePaper.height, 80,
+    "real Loader choice paper does not fill the lower-screen remainder")
+  EngineGame.stack.states = nil
 
   local startState = {
     screenId = "StartMenu",
@@ -1522,24 +1676,24 @@ local function realLoaderRegression(engineRoot)
   end
   activeState = startState
   run2.loader.events:emit("screen.pushed", { state = startState })
-  eq(startState.maxVisible, 4,
-    "real Loader enlarges Start through its public push event")
-  eq(startState.th, 10,
-    "real Loader applies the four-row Start frame before draw")
+  eq(startState.maxVisible, 8,
+    "real Loader configures Start through its public push event")
+  eq(startState.th, 18,
+    "real Loader applies the eight-row Start frame before draw")
   loaderClock.value = 3
   eq(draw(run2.loader, ctx("menu")), true,
     "real Loader detects the live Start state")
   local startLower = loaderBridge.pushes[#loaderBridge.pushes].source
   local startBlit = assert(startLower.blits[1],
-    "real Loader enlarged Start lower blit missing")
-  eq(startBlit.args[1], 4,
-    "real Loader Start artwork uses crisp 4x scaling")
-  eq(startBlit.args[6], -264,
-    "real Loader Start crop removes the empty left canvas")
-  eq(startBlit.args[10], 352,
-    "real Loader Start crop fills the Thor width")
-  eq(startBlit.args[11], 320,
-    "real Loader Start crop preserves the four-row frame")
+    "real Loader vertically expanded Start lower blit missing")
+  eq(startBlit.args[1], 2,
+    "real Loader Start artwork uses normal crisp 2x scaling")
+  eq(startBlit.args[6], -32,
+    "real Loader Start crop centers its narrow authored box")
+  eq(startBlit.args[10], 176,
+    "real Loader Start crop retains the authored width")
+  eq(startBlit.args[11], 288,
+    "real Loader Start crop uses the full normal UI height")
   run2.loader.events:emit("screen.popped", { state = startState })
   eq(startState.maxVisible, 8,
     "real Loader Start pop restores the engine row count")
@@ -1610,7 +1764,7 @@ local function realFusedFreeFlyRegression(engineRoot)
   local files = {
     [prefix .. "manifest.json"] = [[{
       "id":"voxel_run_bridge","name":"Scott's Tweaks Fused Flight Test",
-      "version":"0.12.6","api":2,"entry":"main.lua",
+      "version":"0.12.7","api":2,"entry":"main.lua",
       "profile":"content","priority":200,"dependencies":[],
       "optional_dependencies":[],"conflicts":[],"games":["gen1"],
       "permissions":["engine_internals"]
