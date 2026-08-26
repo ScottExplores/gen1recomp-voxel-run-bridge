@@ -46,6 +46,7 @@
 local V = ...
 
 local ModSetting = V.require("ModSetting")
+local Astronomy = V.require("Astronomy")
 local PaletteFX = require("src.render.PaletteFX")
 
 local DayNight = {}
@@ -91,6 +92,11 @@ function DayNight.forceSync(game)
 end
 
 DayNight.clock = DayNight.T.day     -- the running cycle's own position
+-- Completed accelerated game days.  Kept separately from `clock`, whose
+-- value intentionally wraps every day, so the Moon can move through an
+-- eight-day pixel-art phase cycle instead of repeating the same Moon nightly.
+DayNight.astronomyDay = 0
+DayNight.MOON_PHASE_DAYS = Astronomy.DEFAULT_GAME_CYCLE_DAYS
 
 -- ------- the two arcs
 --
@@ -113,10 +119,11 @@ DayNight.ALPHA_SUN = 0.40     -- the existing midday shadow weight
 DayNight.ALPHA_MOON = 0.26    -- moonlight is a softer press
 DayNight.FADE_DEG = 12        -- shadows fade out over the last degrees of a rise/set
 
--- disc PLACEMENT only: the true elevation would put the noon sun far above
--- any frame, so the arc the discs ride is squashed toward the horizon. The
--- shadows always use the true elevation.
-DayNight.ELEV_SQUASH = 0.14
+-- Disc PLACEMENT only.  The old 0.14 factor held even the noon sun only six
+-- degrees over the horizon, making the whole day look like a sunset.  This
+-- still keeps the body inside the diorama's useful sky, but now gives it a
+-- clear twenty-plus-degree arc. Shadows continue to use the true elevation.
+DayNight.ELEV_SQUASH = 0.55
 
 -- three-point arc: a at s=0, b at s=0.5, c at s=1
 local function arc(a, b, c, s)
@@ -265,11 +272,33 @@ end
 -- moves as the cycle runs, and the cycle moves it slowly.
 local palCache = { key = nil, pal = nil }
 
+local function moonNightWeight(mix)
+  -- Violet is the handoff into or out of night; let half the lunar lift reach
+  -- it so the sky changes without a brightness step at the keyframe.
+  return math.min(1, (mix.night or 0) + (mix.violet or 0) * 0.5)
+end
+
+local function moonIllumination(t)
+  if not DayNight.astronomy then return 1 end
+  local ok, lunar = pcall(DayNight.astronomy, t)
+  if ok and type(lunar) == "table"
+      and type(lunar.illuminated) == "number" then
+    return math.max(0, math.min(1, lunar.illuminated))
+  end
+  return 1
+end
+
 function DayNight.palette(t)
   t = t or DayNight.time()
-  local key = math.floor(t % DayNight.CYCLE)
+  local illum = moonIllumination(t)
+  local phaseStep = math.floor(illum * 32 + 0.5)
+  local key = math.floor(t % DayNight.CYCLE) * 64 + phaseStep
   if palCache.key == key then return palCache.pal end
   local mix = DayNight.mix(t)
+  -- Darker under a new moon, gently brighter under a full one. These modest
+  -- limits retain the authored navy palette and never turn night into day.
+  local moonScale = 0.74 + illum * 0.38
+  local scale = 1 + moonNightWeight(mix) * (moonScale - 1)
   local pal = {}
   for i = 1, #DayNight.PALETTES.day do
     local r, g, b = 0, 0, 0
@@ -279,7 +308,7 @@ function DayNight.palette(t)
       g = g + c[2] * w
       b = b + c[3] * w
     end
-    pal[i] = { q8(r), q8(g), q8(b) }
+    pal[i] = { q8(r * scale), q8(g * scale), q8(b * scale) }
   end
   palCache.key, palCache.pal = key, pal
   return pal
@@ -293,7 +322,9 @@ local NEUTRAL = { 1, 1, 1 }
 function DayNight.tint(outdoor, t)
   if not outdoor then return NEUTRAL end
   t = t or DayNight.time()
-  local key = math.floor(t % DayNight.CYCLE)
+  local illum = moonIllumination(t)
+  local phaseStep = math.floor(illum * 32 + 0.5)
+  local key = math.floor(t % DayNight.CYCLE) * 64 + phaseStep
   if tintCache.key ~= key then
     -- NOT re-quantised: this is a light level the shader multiplies by, not
     -- a palette colour, and the lattice's 248 ceiling would make even noon
@@ -306,8 +337,12 @@ function DayNight.tint(outdoor, t)
       g = g + c[2] * w
       b = b + c[3] * w
     end
+    local moonScale = 0.84 + illum * 0.20
+    local scale = 1 + moonNightWeight(mix) * (moonScale - 1)
+    r, g, b = r * scale, g * scale, b * scale
     tintCache.key = key
-    tintCache.tint = { r / 255, g / 255, b / 255 }
+    tintCache.tint = { math.min(1, r / 255), math.min(1, g / 255),
+                       math.min(1, b / 255) }
   end
   return tintCache.tint
 end
@@ -353,6 +388,72 @@ end
 -- Both running modes read the same dial; only the rate they advance differs.
 local function isRunning(m) return m == "cycle" or m == "hour" end
 
+-- A named seam for deterministic tests. Lunar phase is global, so no GPS or
+-- network lookup is needed: one Unix timestamp is enough for REAL CLOCK.
+function DayNight.timestamp()
+  local host = rawget(_G, "os")
+  if type(host) ~= "table" or type(host.time) ~= "function" then
+    return Astronomy.NEW_MOON_EPOCH
+  end
+  -- Pass the stable host function straight to pcall.  An inline closure here
+  -- used to allocate on every astronomy consumer, several times per frame.
+  local ok, stamp = pcall(host.time)
+  return ok and tonumber(stamp) or Astronomy.NEW_MOON_EPOCH
+end
+
+-- The current lunar state. Accelerated clocks use an eight-game-day cycle;
+-- REAL CLOCK and pinned views follow the actual ~29.53-day lunar cycle.
+-- `t` lets all consumers in one frame ask about exactly the same dial value.
+-- The snapshot is quantised and reused: palette, tint, shadows, sky and water
+-- all ask during one frame, and none should allocate the same table again.
+local astronomyCache = { source = nil, key = nil, days = nil, value = nil }
+local timestampCache = { value = nil, age = math.huge }
+local TIMESTAMP_REFRESH_SECONDS = 60
+
+function DayNight.resetAstronomyCache()
+  astronomyCache.source, astronomyCache.key = nil, nil
+  astronomyCache.days, astronomyCache.value = nil, nil
+  timestampCache.value, timestampCache.age = nil, math.huge
+end
+
+local function astronomyTimestamp()
+  if timestampCache.value == nil
+      or timestampCache.age >= TIMESTAMP_REFRESH_SECONDS then
+    timestampCache.value = DayNight.timestamp()
+    timestampCache.age = 0
+  end
+  return timestampCache.value
+end
+
+function DayNight.astronomy(t)
+  local m = mode()
+  if isRunning(m) then
+    t = tonumber(t) or DayNight.clock
+    local gameDay = DayNight.astronomyDay
+                    + ((t % DayNight.CYCLE) / DayNight.CYCLE)
+    local key = math.floor(gameDay * 1024 + 0.5)
+    if astronomyCache.source ~= "game" or astronomyCache.key ~= key
+        or astronomyCache.days ~= DayNight.MOON_PHASE_DAYS then
+      astronomyCache.source, astronomyCache.key = "game", key
+      astronomyCache.days = DayNight.MOON_PHASE_DAYS
+      astronomyCache.value = Astronomy.snapshot(
+        "game", key / 1024, DayNight.MOON_PHASE_DAYS)
+    end
+    return astronomyCache.value
+  end
+  -- The lunar phase cannot visibly move from frame to frame.  Read the host
+  -- clock at most once a minute, then keep the existing five-minute snapshot
+  -- key below.  This avoids repeated OS calls and pcall allocations on Thor.
+  local stamp = astronomyTimestamp()
+  local key = math.floor(stamp / 300) -- phase cannot move visibly in five min
+  if astronomyCache.source ~= "sync" or astronomyCache.key ~= key then
+    astronomyCache.source, astronomyCache.key = "sync", key
+    astronomyCache.days = nil
+    astronomyCache.value = Astronomy.snapshot("sync", stamp)
+  end
+  return astronomyCache.value
+end
+
 function DayNight.time()
   local m = mode()
   if isRunning(m) then return DayNight.clock end
@@ -366,6 +467,10 @@ end
 -- the pin the player was just looking at: DUSK then CYCLE rolls on into
 -- night rather than teleporting the sky.
 function DayNight.update(dt)
+  if dt and dt > 0 and timestampCache.value ~= nil then
+    timestampCache.age = math.min(TIMESTAMP_REFRESH_SECONDS,
+      timestampCache.age + dt)
+  end
   local m = mode()
   if m ~= lastMode then
     if isRunning(m) then
@@ -378,8 +483,12 @@ function DayNight.update(dt)
   end
   if isRunning(m) and dt and dt > 0 then
     local period = DayNight.PERIOD[m] or DayNight.PERIOD.cycle
-    DayNight.clock = (DayNight.clock + dt * (DayNight.CYCLE / period))
-      % DayNight.CYCLE
+    local total = DayNight.clock + dt * (DayNight.CYCLE / period)
+    local completed = math.floor(total / DayNight.CYCLE)
+    if completed > 0 then
+      DayNight.astronomyDay = DayNight.astronomyDay + completed
+    end
+    DayNight.clock = total % DayNight.CYCLE
   end
 end
 
@@ -406,7 +515,8 @@ function DayNight.applyRig(outdoor)
   local kx, kz, moon = DayNight.shearAt(t)
   ShadowMap.KX, ShadowMap.KZ = kx, kz
   Voxel3D.SHADOW_KX, Voxel3D.SHADOW_KZ = kx, kz
-  local base = moon and DayNight.ALPHA_MOON or DayNight.ALPHA_SUN
+  local base = moon and (DayNight.ALPHA_MOON * moonIllumination(t))
+                    or DayNight.ALPHA_SUN
   Voxel3D.SHADOW_ALPHA = base * DayNight.strengthAt(t)
   return t
 end
@@ -419,7 +529,8 @@ function DayNight.shadowScale(outdoor, t)
   t = t or DayNight.rigTime()
   local _, _, moon = DayNight.bodyAt(t)
   local s = DayNight.strengthAt(t)
-  return moon and s * (DayNight.ALPHA_MOON / DayNight.ALPHA_SUN) or s
+  return moon and s * (DayNight.ALPHA_MOON / DayNight.ALPHA_SUN)
+                    * moonIllumination(t) or s
 end
 
 -- The disc to hang in the sky, or nil when the body is set or behind the
@@ -432,12 +543,20 @@ function DayNight.body(t)
   if el < -2 then return nil end
   local e = math.rad(el * DayNight.ELEV_SQUASH)
   local b = math.rad(th)
-  return {
+  local body = {
     dx = math.cos(b) * math.cos(e),
     dy = math.sin(e),
     dz = math.sin(b) * math.cos(e),
     moon = moon,
   }
+  if moon then
+    local lunar = DayNight.astronomy(t)
+    body.phase = lunar.phase
+    body.illuminated = lunar.illuminated
+    body.moonlight = lunar.moonlight
+    body.phaseName = lunar.name
+  end
+  return body
 end
 
 -- Maps under a CANOPY: not outdoor -- there is no sky to paint and no sun
@@ -497,23 +616,33 @@ end
 -- with the slot on its own -- writing the value is all there is to do.
 
 DayNight.SAVE_KEY = "clock"
+DayNight.ASTRONOMY_SAVE_KEY = "astronomy_day"
 
 function DayNight.store()
   local saveApi = V.mod and V.mod.save
   if not (saveApi and saveApi.set) then return end
   pcall(saveApi.set, saveApi, DayNight.SAVE_KEY, DayNight.clock)
+  pcall(saveApi.set, saveApi, DayNight.ASTRONOMY_SAVE_KEY,
+        DayNight.astronomyDay)
 end
 
 function DayNight.restore()
   local saveApi = V.mod and V.mod.save
   local stored = nil
+  local astronomyDay = nil
   if saveApi and saveApi.get then
     local ok, got = pcall(saveApi.get, saveApi, DayNight.SAVE_KEY)
     if ok then stored = got end
+    local okDay, gotDay = pcall(saveApi.get, saveApi,
+                                DayNight.ASTRONOMY_SAVE_KEY)
+    if okDay then astronomyDay = gotDay end
   end
   -- no time set: it is day (the requirement, verbatim)
   DayNight.clock = type(stored) == "number"
                    and stored % DayNight.CYCLE or DayNight.T.day
+  DayNight.astronomyDay = type(astronomyDay) == "number"
+    and math.max(0, math.floor(astronomyDay)) or 0
+  DayNight.resetAstronomyCache()
 end
 
 return DayNight

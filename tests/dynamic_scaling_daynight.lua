@@ -305,6 +305,9 @@ dayV.require = function(name)
     local chunk = assert(loadfile("lib/ModSetting.lua"))
     return chunk(dayV)
   end
+  if name == "Astronomy" then
+    return assert(loadfile("lib/Astronomy.lua"))(dayV)
+  end
   error("unexpected DayNight dependency: " .. tostring(name))
 end
 local DayNight = assert(loadfile("lib/DayNight.lua"))(dayV)

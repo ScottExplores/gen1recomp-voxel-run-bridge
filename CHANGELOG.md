@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.12.8 - 2026-08-25
+
+- **Protected the Pokémon Tower Marowak encounter.** Until the scripted ghost
+  Marowak has been defeated, visible wild Pokémon cannot spawn, wander, chase,
+  or begin a battle on its reserved Pokémon Tower 6F trigger cell. A stale
+  occupant left by an older session is removed safely, while ordinary visible
+  encounters elsewhere and the story event itself remain unchanged.
+- **Made third-person interiors camera-aware.** The CUTAWAY ceiling mode now
+  opens only a bounded section on the camera-near side of the player instead of
+  deleting a fixed half of the building. Distant walls and side structure stay
+  intact as the camera turns, and the cache follows only eight stable camera
+  directions so the handheld renderer does not rebuild continuously.
+- **Made overhead surfaces one-sided.** Ceiling, beam, lid, and cave-roof
+  undersides remain visible from inside, but an elevated third-person camera no
+  longer sees them as an opaque top that cuts the building in half. Replaced
+  camera-sector geometry is released when the view changes rather than
+  accumulating GPU objects.
+- **Added an optional PIXEL HILLS horizon.** The existing HORIZON ART row can
+  now draw pixel-quantized mountain, foothill, and forest silhouettes behind
+  the real Kanto map. The layer follows day/night tint, uses fixed draw caps for
+  the Thor, and adds no panorama image, map cells, collision, or distant 3D
+  terrain.
+- **Raised the sun and added a coherent pixel Moon.** The sun and Moon now
+  travel on a visibly elevated arc. REAL CLOCK derives the lunar phase from the
+  device clock, while GAME 20 MIN and GAME 1 HOUR use a persistent eight-day
+  in-game cycle. The dithered crescent, quarter, gibbous, full, and new Moon
+  frames, water reflection, night tint, shadows, and moonlight all use the same
+  phase.
+- **Added a phase-linked pixel Milky Way.** One cached night-sky layer is
+  strongest near a new moon and recedes under a bright full moon, retaining the
+  original low-resolution aesthetic without a model or high-detail skybox.
+- **Added optional calendar-only seasonal rain.** RAIN: LOCAL SEASON uses the
+  device's month and day to vary broad northern-temperate winter, spring,
+  summer, and autumn shower patterns with stable daily variation. It never
+  requests GPS, a location, network access, or an online weather service;
+  SOMETIMES remains the default and the existing OFF/ALWAYS modes are unchanged.
+- **Kept the renderer Gen-1-focused.** This release imports no Gen 2/Stadium
+  character models, Pokémon models, or terrain. Its additions remain 2D pixel
+  cards and lightweight voxel/pixel scenery built around the original Kanto
+  maps.
+
 ## 0.12.7 - 2026-08-24
 
 - **Cleaned up true first-person flight.** Free Fly still shows the flying

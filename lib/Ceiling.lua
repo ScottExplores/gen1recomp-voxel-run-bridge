@@ -1,5 +1,5 @@
 -- The interior CEILING and RISERS: the room's missing upper storey.
--- payload-version: 28
+-- payload-version: 30
 --
 -- v1/v2 proved the concept: a flat lid at wall height (16) closed the
 -- room in first person.  v3 is the liveable version:
@@ -21,11 +21,11 @@
 --              surface reads as a surface.
 --
 --   CUTAWAY    in the DIORAMA rungs (third person), a Sims-style cut:
---              walls whose south side faces open floor -- the ones
---              between the camera and the room -- keep their low 16px
---              stubs, walls behind the room rise, and the ceiling opens
---              in a wide hole that follows the player.  The shipped
---              open-dollhouse look is one options toggle away.
+--              only the nearby wall between the live camera and player
+--              keeps its low 16px stub.  Side and far walls stay raised,
+--              so turning the camera never slices away half the building.
+--              The ceiling opens in a wide hole that follows the player.
+--              The shipped open-dollhouse look is one options toggle away.
 --
 -- Geometry is textured straight from the map's terrain atlas (the same
 -- palette-baked image the mesher draws with), handed in by the scene as
@@ -93,7 +93,22 @@ local BLEND_GATE = 0.5
 local RISER_SHADE = { pz = 0.85, nz = 0.62, px = 0.80, nx = 0.66 }
 local CEIL_SHADE = { 0.42, 0.48 }
 
-local cache = nil  -- { map, key, mesh, note }
+local cache = nil  -- { map, key, mesh, ceiling, note, decorative meshes... }
+
+-- A camera turn can now rebuild a cutaway without changing maps. Release
+-- every host-owned mesh from the old record, not only the main wall shell, so
+-- repeated 3RD turns do not leave posters, glow, doors or ceiling meshes for
+-- the handheld GPU's collector to discover later.
+local function releaseCache(record)
+  if type(record) ~= "table" then return end
+  for _, key in ipairs({
+    "mesh", "ceiling", "posters", "glow", "doors", "windows",
+  }) do
+    local resource = record[key]
+    if resource and resource.release then pcall(resource.release, resource) end
+    record[key] = nil
+  end
+end
 
 status("loaded (v3); awaiting the first frame indoors")
 
@@ -510,9 +525,50 @@ local function pushRiserFace(verts, indexMap, quads, map, cx, cy, y0, y1, dir,
   return quads
 end
 
+-- Is this nearby cell on the camera side of the player?  A cutaway is a
+-- cross-section, not deletion of the whole near half of the room: the radius
+-- keeps the opening local and the dot product follows whichever side the live
+-- camera actually occupies.  Exposed as a tiny pure seam for regression tests.
+local function cameraNearCell(pcx, pcy, cx, cy, towardX, towardZ, radius)
+  if not (pcx and pcy and cx and cy and towardX and towardZ) then return false end
+  radius = radius or HOLE_RADIUS
+  if math.max(math.abs(cx - pcx), math.abs(cy - pcy)) > radius then
+    return false
+  end
+  return (cx - pcx) * towardX + (cy - pcy) * towardZ > 0
+end
+Ceiling.cameraNearCell = cameraNearCell
+
+-- Quantize the camera bearing just enough that a free-look camera does not
+-- rebuild the room mesh for every tiny stick movement. Eight cardinal/
+-- diagonal bearings are plenty for a cell-grid cross-section. The old
+-- south-facing cut is the safe fallback when no eye is published.
+local function cameraSide(state, pcx, pcy)
+  local p = state and state.player
+  local eye = Voxel3D.eye
+  local ex, ez = eye and tonumber(eye[1]), eye and tonumber(eye[3])
+  local playerX = p and tonumber(p.px)
+  local playerZ = p and tonumber(p.py)
+  if playerX then playerX = playerX + 8
+  else playerX = ((pcx or 0) + 0.5) * 16 end
+  if playerZ then playerZ = playerZ + 8
+  else playerZ = ((pcy or 0) + 0.5) * 16 end
+  local dx, dz = ex and (ex - playerX), ez and (ez - playerZ)
+  local length = dx and dz and math.sqrt(dx * dx + dz * dz) or 0
+  if length < 0.001 then return 0, 1, "0,1" end
+  local function axis(value)
+    if math.abs(value) < 0.3826834324 then return 0 end -- sin(22.5 degrees)
+    return value > 0 and 1 or -1
+  end
+  local qx, qz = axis(dx / length), axis(dz / length)
+  return qx, qz, tostring(qx) .. "," .. tostring(qz)
+end
+Ceiling.cameraSide = cameraSide
+
 -- ------- the build.  `mode` is "fp" (full lid and risers) or "cutaway"
--- (Sims: south-facing walls stay stubs, the lid opens around the player).
-local function build(map, H, mode, pcx, pcy, tex)
+-- (Sims: the camera-near wall stays a stub and the lid opens around the
+-- player). `towardX/towardZ` point from the player toward the live camera.
+local function build(map, H, mode, pcx, pcy, tex, towardX, towardZ)
   -- the room's own settings: build() is called from the draw, but it is
   -- a module-level function and does not inherit its locals
   local cfg = config()
@@ -641,15 +697,31 @@ local function build(map, H, mode, pcx, pcy, tex)
   end
 
   local verts, indexMap, quads = {}, {}, 0
+  -- A lid is useful only from inside the room. Put downward-facing panels in
+  -- a separate batch so the elevated camera can look through their backs;
+  -- upright walls and trim remain visible from either side as before.
+  local roofVerts, roofIndices, roofQuads = {}, {}, 0
+  local function addUnderside(c1, c2, c3, c4, uv, shade)
+    local u0, v0, u1, v1 = unpack(uv)
+    -- Reversing the corner order points the ordinary quad helper toward -Y;
+    -- the rearranged UVs keep the authored tile orientation unchanged.
+    roofVerts[#roofVerts + 1] = { c1[1], c1[2], c1[3], u0, v0, shade }
+    roofVerts[#roofVerts + 1] = { c4[1], c4[2], c4[3], u0, v1, shade }
+    roofVerts[#roofVerts + 1] = { c3[1], c3[2], c3[3], u1, v1, shade }
+    roofVerts[#roofVerts + 1] = { c2[1], c2[2], c2[3], u1, v0, shade }
+    Voxel3D.pushQuad(roofIndices, roofQuads)
+    roofQuads = roofQuads + 1
+  end
 
 
   local boundary = 0
 
-  -- the melt: in cutaway, anything on the player's row or south of it
-  -- drops to its stub so the camera sees in -- the cross-section follows
-  -- the player around the room
-  local function melted(cy)
-    return mode == "cutaway" and pcy and cy >= pcy
+  -- The melt follows the camera instead of assuming it always lives south of
+  -- the map.  Only the nearby camera-side shell drops to its stub; the far
+  -- shell stays intact so 3RD never looks like a building cut in half.
+  local function melted(cx, cy)
+    return mode == "cutaway"
+       and cameraNearCell(pcx, pcy, cx, cy, towardX, towardZ, HOLE_RADIUS)
   end
 
   -- One synthesized boundary face, floor to lid, wearing the far wall's
@@ -778,7 +850,7 @@ local function build(map, H, mode, pcx, pcy, tex)
 
   local function pushBoundary(cx, cy, dir)
     if not ceilTile then return end
-    if melted(cy) then return end
+    if melted(cx, cy) then return end
     if isDoor(cx, cy) then return pushDoorFace(cx, cy, dir) end
     local shade = RISER_SHADE[dir]
     local x0, z0 = cx * 16, cy * 16
@@ -850,9 +922,8 @@ local function build(map, H, mode, pcx, pcy, tex)
           shade = shade + (hash01(cx, cy, 163) - 0.5) * 0.07
         end
         local uv = ceilTile and { uvFor(map, ceilTile) } or { 0, 0, 0, 0 }
-        quads = pushQuad(verts, indexMap, quads,
-                         { x0, H, z0 + 16 }, { x0 + 16, H, z0 + 16 },
-                         { x0 + 16, H, z0 }, { x0, H, z0 }, uv, shade)
+        addUnderside({ x0, H, z0 + 16 }, { x0 + 16, H, z0 + 16 },
+                     { x0 + 16, H, z0 }, { x0, H, z0 }, uv, shade)
       end
 
       -- the risers: WALL-classed cells grow to the lid, one face per
@@ -860,7 +931,7 @@ local function build(map, H, mode, pcx, pcy, tex)
       -- 16px tall (props, plants, cutouts) is furniture, not wall, and
       -- keeps its own silhouette.  The cutaway melts these by row.
       if isWall[cy][cx] and not isVoid[cy][cx]
-         and ch >= WALL_H and ch < H and not melted(cy) then
+         and ch >= WALL_H and ch < H and not melted(cx, cy) then
         do
           if heightAt(cx, cy + 1) < WALL_H then
             quads = pushRiserFace(verts, indexMap, quads, map,
@@ -906,7 +977,7 @@ local function build(map, H, mode, pcx, pcy, tex)
           local x0, z0 = cx * 16, cy * 16
           if along_x then
             local zc = z0 + 8
-            quads = pushQuad(verts, indexMap, quads,
+            addUnderside(
               { x0, H - BD, zc + BW }, { x0 + 16, H - BD, zc + BW },
               { x0 + 16, H - BD, zc - BW }, { x0, H - BD, zc - BW },
               buv, 0.30)
@@ -920,7 +991,7 @@ local function build(map, H, mode, pcx, pcy, tex)
               buv, 0.22)
           else
             local xc = x0 + 8
-            quads = pushQuad(verts, indexMap, quads,
+            addUnderside(
               { xc - BW, H - BD, z0 }, { xc - BW, H - BD, z0 + 16 },
               { xc + BW, H - BD, z0 + 16 }, { xc + BW, H - BD, z0 },
               buv, 0.30)
@@ -987,7 +1058,7 @@ local function build(map, H, mode, pcx, pcy, tex)
     for cy = 0, hc - 1 do
       for cx = 0, wc - 1 do
         local roofed = heightAt(cx, cy) < H and not isVoid[cy][cx]
-        if roofed and not melted(cy)
+        if roofed and not melted(cx, cy)
            and not (mode == "cutaway" and pcx
                     and math.max(math.abs(cx - pcx), math.abs(cy - pcy))
                         <= HOLE_RADIUS) then
@@ -995,10 +1066,9 @@ local function build(map, H, mode, pcx, pcy, tex)
           local y = rockAt(cx, cy)
           local uv = rockTile and { uvFor(map, rockTile) } or { 0, 0, 0, 0 }
           -- the underside, seen from below
-          quads = pushQuad(verts, indexMap, quads,
-                           { x0, y, z0 + 16 }, { x0 + 16, y, z0 + 16 },
-                           { x0 + 16, y, z0 }, { x0, y, z0 }, uv,
-                           0.52 + hash01(cx, cy, 263) * 0.22)
+          addUnderside({ x0, y, z0 + 16 }, { x0 + 16, y, z0 + 16 },
+                       { x0 + 16, y, z0 }, { x0, y, z0 }, uv,
+                       0.52 + hash01(cx, cy, 263) * 0.22)
           rocks = rocks + 1
           -- a skirt where this panel hangs below its neighbour, so the
           -- rock has thickness rather than being a floating sheet
@@ -1347,7 +1417,7 @@ local function build(map, H, mode, pcx, pcy, tex)
         }
         -- a melted wall has nothing to hang a rail or a picture on; the
         -- floor shadow stays, since the floor is still there
-        local gone = melted(cy)
+        local gone = melted(cx, cy)
         for _, sd in ipairs(sides) do
           if sd[2] then
             if cfg.windows ~= false and not gone and not organic then
@@ -1395,14 +1465,21 @@ local function build(map, H, mode, pcx, pcy, tex)
     end
   end
 
-  local note = ("%d quads (%d boundary), %d wall cells of %dx%d, "
-    .. "lid at %d, %s"):format(quads, boundary, walls, wc, hc, H, mode)
+  local note = ("%d quads + %d one-sided overhead (%d boundary), "
+    .. "%d wall cells of %dx%d, lid at %d, %s")
+    :format(quads, roofQuads, boundary, walls, wc, hc, H, mode)
   -- accents belong in the note so a monotonous room can be diagnosed
   note = note .. (", %d accents, field %s"):format(#accents,
     scores and ("plain#" .. tostring(ceilTile)) or "by frequency")
-  if quads == 0 then return nil, note .. " -- nothing to build" end
-  local mesh = Voxel3D.newMesh(verts, indexMap)
-  if not mesh then return nil, note .. " -- driver refused the mesh" end
+  if quads == 0 and roofQuads == 0 then
+    return nil, note .. " -- nothing to build"
+  end
+  local mesh = quads > 0 and Voxel3D.newMesh(verts, indexMap) or nil
+  local roofMesh = roofQuads > 0
+    and Voxel3D.newMesh(roofVerts, roofIndices) or nil
+  if not mesh and not roofMesh then
+    return nil, note .. " -- driver refused the mesh"
+  end
   local pMesh = nil
   if pQuads > 0 then pMesh = Voxel3D.newMesh(pVerts, pIdx) end
   local gMesh = nil
@@ -1422,7 +1499,7 @@ local function build(map, H, mode, pcx, pcy, tex)
   note = note .. ((beams > 0) and (", %d beams"):format(beams) or "")
   note = note .. ((rocks > 0) and (", %d rock, %d spikes")
                                   :format(rocks, spikes) or "")
-  return mesh, note, pMesh, posterImg, gMesh, dMesh, wMesh
+  return mesh, note, pMesh, posterImg, gMesh, dMesh, wMesh, roofMesh
 end
 
 -- ------- SELF-UNINSTALL.
@@ -1555,11 +1632,12 @@ function Ceiling.draw(state, atlasFor)
   end
 
   local H = cfg.headroom or 32
-  local pcx, pcy
+  local pcx, pcy, towardX, towardZ, sideKey
   if mode == "cutaway" then
     local p = state.player
     pcx = p and p.cellX or 0
     pcy = p and p.cellY or 0
+    towardX, towardZ, sideKey = cameraSide(state, pcx, pcy)
   end
   -- the atlas is needed BEFORE the build: plainness is measured from it
   local tex = nil
@@ -1568,20 +1646,31 @@ function Ceiling.draw(state, atlasFor)
     if okT then tex = t end
   end
 
-  local key = table.concat({ mode, H, pcx or "-", pcy or "-" }, ":")
+  local key = table.concat({ mode, H, pcx or "-", pcy or "-",
+                             sideKey or "-" }, ":")
   if not cache or cache.map ~= map or cache.key ~= key then
-    if cache and cache.mesh then pcall(cache.mesh.release, cache.mesh) end
-    local mesh, note, pMesh, pImg, gMesh, dMesh, wMesh =
-      build(map, H, mode, pcx, pcy, tex)
+    releaseCache(cache)
+    local mesh, note, pMesh, pImg, gMesh, dMesh, wMesh, roofMesh =
+      build(map, H, mode, pcx, pcy, tex, towardX, towardZ)
     cache = { map = map, key = key, mesh = mesh, note = tostring(note),
               posters = pMesh, sheet = pImg, glow = gMesh, doors = dMesh,
-              windows = wMesh }
+              windows = wMesh, ceiling = roofMesh }
   end
-  if cache.mesh then
+  if cache.mesh or cache.ceiling then
     status(mapId .. ": DRAWING " .. cache.note
            .. (tex and ", textured" or ", untextured"))
     guarded(function()
-      Voxel3D.draw(cache.mesh, tex or white(), nil)
+      if cache.mesh then Voxel3D.draw(cache.mesh, tex or white(), nil) end
+      if cache.ceiling then
+        -- Cull just the upward backs of overhead panels. Walls remain
+        -- two-sided, and a camera below the panel still sees its underside.
+        local setCull = love and love.graphics
+                        and love.graphics.setMeshCullMode
+        local changed = type(setCull) == "function"
+                        and pcall(setCull, "back")
+        Voxel3D.draw(cache.ceiling, tex or white(), nil)
+        if changed then pcall(setCull, "none") end
+      end
       -- the pictures, on their own sheet
       if cache.doors and doorArt() then
         Voxel3D.draw(cache.doors, doorArt(), nil)
@@ -1610,13 +1699,7 @@ function Ceiling.draw(state, atlasFor)
 end
 
 function Ceiling.invalidate()
-  if cache and cache.mesh then pcall(cache.mesh.release, cache.mesh) end
-  if cache and cache.posters then pcall(cache.posters.release, cache.posters) end
-  if cache and cache.glow then pcall(cache.glow.release, cache.glow) end
-  if cache and cache.doors then pcall(cache.doors.release, cache.doors) end
-  if cache and cache.windows then
-    pcall(cache.windows.release, cache.windows)
-  end
+  releaseCache(cache)
   cache = nil
 end
 

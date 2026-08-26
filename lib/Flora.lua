@@ -38,6 +38,9 @@
 --
 -- RAIN.  Gen 1 has no weather, so this mod keeps its own: long dry
 -- spells broken by showers, on a clock seeded per session, outdoors only.
+-- LOCAL SEASON is the privacy-safe alternative to live weather: it reads
+-- only the device's local calendar month, never location or the network,
+-- and uses a stable per-day seed to vary a broad four-season profile.
 -- Drops fall around the eye and burst on landing; the world does not get
 -- wet, because nothing here may touch the game.  While it rains every
 -- NPC puts up an UMBRELLA -- a small pixel canopy generated in code,
@@ -145,6 +148,103 @@ local DRY_MIN, DRY_MAX = 240, 900     -- seconds between showers
 local WET_MIN, WET_MAX = 45, 150      -- seconds a shower lasts
 local STORM_ODDS = 0.14               -- how many showers turn into storms
 
+-- LOCAL SEASON intentionally does not pretend a calendar is a weather
+-- station.  These are broad temperate-season tendencies: winter stays wet
+-- longer, spring is showery, summer is mostly dry with the occasional short
+-- thunderstorm, and autumn sits between them.  The calendar follows a broad
+-- northern-temperate rhythm; it does not guess a location or hemisphere.
+-- No GPS, IP lookup, external API, or permission is involved.
+Flora._seasonal = {
+  profiles = {
+    WINTER = { dryMin = 160, dryMax = 520, wetMin = 75, wetMax = 190,
+               stormOdds = 0.10 },
+    SPRING = { dryMin = 210, dryMax = 680, wetMin = 55, wetMax = 160,
+               stormOdds = 0.20 },
+    SUMMER = { dryMin = 600, dryMax = 1500, wetMin = 35, wetMax = 100,
+               stormOdds = 0.22 },
+    AUTUMN = { dryMin = 260, dryMax = 820, wetMin = 55, wetMax = 165,
+               stormOdds = 0.16 },
+    -- If a platform withholds its calendar, seasonal mode remains usable and
+    -- deterministic with the established SOMETIMES cadence.
+    MILD = { dryMin = DRY_MIN, dryMax = DRY_MAX,
+             wetMin = WET_MIN, wetMax = WET_MAX,
+             stormOdds = STORM_ODDS },
+  },
+  rngMod = 2147483647,
+  rngMul = 48271,
+}
+
+function Flora._seasonal.number(value, lo, hi, fallback)
+  value = tonumber(value)
+  if not value then return fallback end
+  value = math.floor(value)
+  if value < lo or value > hi then return fallback end
+  return value
+end
+
+function Flora._seasonal.season(month)
+  if month == 12 or month <= 2 then return "WINTER" end
+  if month <= 5 then return "SPRING" end
+  if month <= 8 then return "SUMMER" end
+  return "AUTUMN"
+end
+
+function Flora._seasonal.seed(year, month, day)
+  -- YYYYMMDD is small enough that the Park-Miller mix remains exact in a
+  -- Lua number.  The result is non-zero, as that generator requires.
+  local stamp = year * 10000 + month * 100 + day
+  local seed = (stamp * Flora._seasonal.rngMul) % Flora._seasonal.rngMod
+  if seed <= 0 then seed = 104729 end
+  return seed
+end
+
+-- Pure seam used by the focused test.  Production passes os.date("*t") in;
+-- nil or a malformed table deliberately selects the deterministic fallback.
+function Flora._seasonal.profile(calendar)
+  if type(calendar) ~= "table" then
+    local mild = Flora._seasonal.profiles.MILD
+    return {
+      season = "MILD", dateKey = "calendar-unavailable", seed = 104729,
+      dryMin = mild.dryMin, dryMax = mild.dryMax,
+      wetMin = mild.wetMin, wetMax = mild.wetMax,
+      stormOdds = mild.stormOdds,
+    }
+  end
+
+  local year = Flora._seasonal.number(calendar.year, 1, 9999, 2000)
+  local month = Flora._seasonal.number(calendar.month, 1, 12, nil)
+  local day = Flora._seasonal.number(calendar.day, 1, 31, 1)
+  if not month then return Flora._seasonal.profile(nil) end
+
+  local season = Flora._seasonal.season(month)
+  local base = Flora._seasonal.profiles[season]
+  return {
+    season = season,
+    dateKey = ("%04d-%02d-%02d"):format(year, month, day),
+    seed = Flora._seasonal.seed(year, month, day),
+    dryMin = base.dryMin, dryMax = base.dryMax,
+    wetMin = base.wetMin, wetMax = base.wetMax,
+    stormOdds = base.stormOdds,
+  }
+end
+
+function Flora._seasonal.normalizedSeed(seed)
+  seed = math.floor(math.abs(tonumber(seed) or 0))
+         % Flora._seasonal.rngMod
+  return seed > 0 and seed or 104729
+end
+
+-- Also pure: the nth roll for a date seed, without touching math.random or
+-- its global sequence.  Seasonal scheduling uses the same one-step update.
+function Flora._seasonal.roll(seed, index)
+  local state = Flora._seasonal.normalizedSeed(seed)
+  index = math.max(1, math.floor(tonumber(index) or 1))
+  for _ = 1, index do
+    state = (state * Flora._seasonal.rngMul) % Flora._seasonal.rngMod
+  end
+  return state / Flora._seasonal.rngMod
+end
+
 -- ------- lightning, with care.
 -- Flashing light is a genuine photosensitivity risk, so this is built to
 -- be rare and gentle rather than dramatic: strikes are far apart, never
@@ -238,6 +338,81 @@ local function now()
   local ok, t = pcall(function() return love.timer.getTime() end)
   return ok and t or 0
 end
+
+function Flora._seasonal.deviceCalendar()
+  local host = rawget(_G, "os")
+  if type(host) ~= "table" or type(host.date) ~= "function" then
+    return nil
+  end
+  local ok, value = pcall(host.date, "*t")
+  if ok and type(value) == "table" then return value end
+  return nil
+end
+
+function Flora._seasonal.next(clock)
+  clock.rng = (Flora._seasonal.normalizedSeed(clock.rng)
+               * Flora._seasonal.rngMul) % Flora._seasonal.rngMod
+  return clock.rng / Flora._seasonal.rngMod
+end
+
+function Flora._seasonal.span(clock, lo, hi)
+  return lo + Flora._seasonal.next(clock) * (hi - lo)
+end
+
+-- Advance the private LOCAL SEASON clock.  It is separate from the legacy
+-- SOMETIMES timer so selecting this mode and later returning cannot disturb
+-- the established random sequence or its in-progress shower.
+function Flora._seasonal.update(t)
+  local clock = Flora._seasonal.clock
+  local needsCalendar = not clock
+    or clock.checkedAt == nil
+    or t < clock.checkedAt
+    or t - clock.checkedAt >= 60
+
+  if needsCalendar then
+    local profile = Flora._seasonal.profile(
+      Flora._seasonal.deviceCalendar())
+    if not clock or clock.dateKey ~= profile.dateKey then
+      clock = {
+        checkedAt = t, dateKey = profile.dateKey, profile = profile,
+        rng = profile.seed, dryUntil = nil, rainUntil = nil, storm = false,
+      }
+      Flora._seasonal.clock = clock
+    else
+      clock.checkedAt = t
+      clock.profile = profile
+    end
+  end
+
+  local profile = clock.profile
+  local wantRain = false
+  if not clock.dryUntil and not clock.rainUntil then
+    clock.dryUntil = t
+      + Flora._seasonal.span(clock, profile.dryMin, profile.dryMax)
+  end
+  if clock.rainUntil then
+    if t > clock.rainUntil then
+      clock.rainUntil = nil
+      clock.dryUntil = t
+        + Flora._seasonal.span(clock, profile.dryMin, profile.dryMax)
+      clock.storm = false
+    else
+      wantRain = true
+    end
+  elseif clock.dryUntil and t > clock.dryUntil then
+    clock.dryUntil = nil
+    clock.rainUntil = t
+      + Flora._seasonal.span(clock, profile.wetMin, profile.wetMax)
+    clock.storm = Flora._seasonal.next(clock) < profile.stormOdds
+    wantRain = true
+  end
+  return wantRain, wantRain and clock.storm or false, profile
+end
+
+-- Deliberately tiny, pure test surface.  Keeping the calendar and PRNG seams
+-- here also makes it clear that seasonal weather has no location/network IO.
+Flora._seasonalWeatherProfile = Flora._seasonal.profile
+Flora._seasonalWeatherRoll = Flora._seasonal.roll
 
 local function isOutdoor(map)
   local def = map and map.def
@@ -3680,9 +3855,15 @@ local function drawParticles(state, map, cfg, px, pz, yaw, t, dt, outdoor,
 
   -- ---------- the weather clock: dry spells broken by showers
   local rainMode = cfg.rain or "SOMETIMES"
+  local localSeason = rainMode == "LOCAL SEASON"
+                   or rainMode == "LOCAL_SEASON"
+                   or rainMode == "SEASONAL"
+  local seasonProfile = nil
   local wantRain = false
   if rainMode == "ALWAYS" then
     wantRain = true
+  elseif localSeason then
+    wantRain, storm, seasonProfile = Flora._seasonal.update(t)
   elseif rainMode ~= "OFF" then
     if not dryUntil and not rainUntil then
       dryUntil = t + DRY_MIN + math.random() * (DRY_MAX - DRY_MIN)
@@ -3713,6 +3894,8 @@ local function drawParticles(state, map, cfg, px, pz, yaw, t, dt, outdoor,
     storm = raining and storm or false,
     wetness = wetness,
     stoppedAt = (was.raining and not raining) and t or was.stoppedAt,
+    season = seasonProfile and seasonProfile.season or nil,
+    profileDate = seasonProfile and seasonProfile.dateKey or nil,
   }
   local rainNote = ""
 
@@ -4598,6 +4781,7 @@ function Flora.invalidate()
   canopyCache = nil
   tuftCache, partMesh, shellMesh, parts = nil, nil, nil, nil
   shaftMesh, drops, rainUntil, dryUntil = nil, nil, nil, nil
+  Flora._seasonal.clock = nil
   featureCache = nil
   for _, sc in pairs(MOUND.AMB.srcs) do
     if sc then pcall(sc.stop, sc) end

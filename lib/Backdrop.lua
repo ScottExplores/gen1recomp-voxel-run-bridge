@@ -22,6 +22,7 @@ local V = ...
 
 local Voxel3D = V.require("Voxel3D")
 local Mat4 = V.require("Mat4")
+local DistantWorld = V.require("DistantWorld")
 local okDN, DayNight = pcall(V.require, "DayNight")
 
 local Backdrop = {}
@@ -81,8 +82,9 @@ local function guarded(fn)
   local g = love and love.graphics
   if not (g and g.push and g.pop) then return pcall(fn) end
   local pushed = pcall(g.push, "all")
-  pcall(fn)
+  local ok, a, b = pcall(fn)
   if pushed then pcall(g.pop) end
+  return ok, a, b
 end
 
 local OPEN_AIR_TILESETS = {
@@ -210,14 +212,30 @@ local function abandoned()
   return rawget(_G, "__ds_ceiling_config") == nil
 end
 
-function Backdrop.draw(state)
-  if abandoned() then return end
+local function currentConfig()
   local cfg = {}
   local pub = rawget(_G, "__ds_ceiling_config")
   if type(pub) == "function" then
     local okCfg, c = pcall(pub)
     if okCfg and type(c) == "table" then cfg = c end
   end
+  return cfg
+end
+
+-- VoxelScene asks this before drawing background layers so the generated
+-- screen-space art can go after SkyLayer while the four cylinder panoramas
+-- retain their established order.
+function Backdrop.usesPixelHills(state)
+  if abandoned() then return false end
+  local cfg = currentConfig()
+  local map = state and state.map
+  return cfg.backdrop ~= false and cfg.horizonart == "PIXEL_HILLS"
+         and map ~= nil and isOutdoor(map)
+end
+
+function Backdrop.draw(state)
+  if abandoned() then return end
+  local cfg = currentConfig()
   if cfg.backdrop == false then
     status("backdrop switched off")
     return
@@ -227,6 +245,28 @@ function Backdrop.draw(state)
   if not map then return end
   if not isOutdoor(map) then
     status("indoors -- the ceiling owns this map")
+    return
+  end
+
+  -- The fifth HORIZON ART choice is generated in the already-bound scene
+  -- canvas.  It deliberately bypasses texture(), so choosing it neither reads
+  -- nor allocates one of the four panorama PNGs. Backdrop still owns the
+  -- outdoor/config gate and status surface for every horizon style.
+  if cfg.horizonart == "PIXEL_HILLS" then
+    local w, h = Voxel3D.size()
+    local p = state.player
+    local px = (p and p.px) or 0
+    local pz = (p and p.py) or 0
+    local look = Voxel3D.lookFlat or { 0, 0, -1 }
+    local ok, drew = guarded(function()
+      return DistantWorld.draw(w, h, Voxel3D.skyEdge, px, pz, Voxel3D.cell,
+                               look[1] or 0, look[3] or -1)
+    end)
+    if ok and drew then
+      status("PIXEL HILLS drawn (procedural, bounded)")
+    else
+      status("PIXEL HILLS unavailable on this graphics driver")
+    end
     return
   end
 
@@ -286,6 +326,7 @@ function Backdrop.invalidate()
   mesh = nil
   if underMesh then pcall(underMesh.release, underMesh) end
   underMesh = nil
+  if DistantWorld.invalidate then pcall(DistantWorld.invalidate) end
 end
 
 -- live registration: the installer hot-swaps refreshed modules

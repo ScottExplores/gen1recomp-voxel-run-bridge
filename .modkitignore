@@ -82,8 +82,14 @@ vendor/wilds/docs/analysis/future-manifest-games.example.json
 vendor/dynamic_scaling/main.lua.bak
 tests/wilds_behavior_tick_alloc.lua
 tests/modern_bag_integration.lua
+tests/astronomy.lua
+tests/ceiling_camera_cutaway.lua
+tests/pixel_hills.lua
+tests/seasonal_weather.lua
+tests/wilds_special_spawn_safety.lua
 dist/voxel_run_bridge-0.12.3.zip
 dist/voxel_run_bridge-0.12.4.zip
 dist/voxel_run_bridge-0.12.5.zip
 dist/voxel_run_bridge-0.12.6.zip
 dist/voxel_run_bridge-0.12.7.zip
+dist/voxel_run_bridge-0.12.8.zip

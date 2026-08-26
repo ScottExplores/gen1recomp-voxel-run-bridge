@@ -1,5 +1,5 @@
 -- The SKY: clouds that drift, and birds that cross it.
--- payload-version: 22
+-- payload-version: 23
 --
 -- Two layers over the outdoor world, both purely atmospheric and neither
 -- touching anything the game can feel.
@@ -138,12 +138,15 @@ local STAR_Y = 520
 local STAR_SPAN = 3400
 local STAR_TEX = 256
 local STAR_TILES = 3
+local MILKY_TEX = 128       -- one tiny generated texture; no shipped backdrop
+local MILKY_Y = STAR_Y - 3  -- a hair below the stars, avoiding depth shimmer
 local TWINKLERS = 24
 local TWINKLE_R = 700        -- dome radius for the animated stars
 local SHOOT_CHANCE = 0.05    -- per second, after dark
 local FADE_TIME = 2.5        -- seconds to fade the field in or out
 
 local starMesh, starImg, starDot = nil, nil, nil
+local milkyMesh, milkyImg = nil, nil
 local planeImg, blimpImg, puffImg = nil, nil, nil
 local planes, blimps, trails = nil, nil, nil
 
@@ -421,6 +424,52 @@ local function makeStars()
   return ok and img or nil
 end
 
+-- A separate Milky Way layer, so moonlight can wash it out without also
+-- erasing the ordinary stars. It is generated as coarse four-pixel dust
+-- cells with ordered-dither gaps: a diagonal Game Boy cloud of light, not a
+-- photographic galaxy texture. One 128px image and one quad are the whole
+-- runtime cost, which keeps it friendly to the Thor.
+local function makeMilkyWay()
+  local ok, img = pcall(function()
+    local data = love.image.newImageData(MILKY_TEX, MILKY_TEX)
+    local cells = MILKY_TEX / 4
+    local function hash(x, y, salt)
+      local n = (x * 157 + y * 263 + (salt or 0) * 61 + x * y * 17) % 997
+      return n / 997
+    end
+    for y = 0, MILKY_TEX - 1 do
+      for x = 0, MILKY_TEX - 1 do
+        local cx, cy = math.floor(x / 4), math.floor(y / 4)
+        -- Toroidal distance makes the diagonal join cleanly when the sky
+        -- sheet wraps at its edge.
+        local lane = (cy - cx - 5) % cells
+        local dist = math.min(lane, cells - lane)
+        local width = 5.4 + (hash(cx, cy, 2) - 0.5) * 2.2
+        local core = math.max(0, 1 - dist / math.max(1, width))
+        local grain = hash(cx, cy, 7)
+        local a = 0
+        if core > 0 then
+          a = core * (0.30 + grain * 0.54)
+          -- Break the band into chunky dark lanes and bright knots instead
+          -- of painting one smooth stripe across the sky.
+          if hash(cx, cy, 11) < 0.16 then a = a * 0.24 end
+          if dist < 1.4 and hash(cx, cy, 17) > 0.78 then a = 0.96 end
+        end
+        local warm = hash(cx, cy, 23) > 0.72
+        local r, g, b = warm and 0.72 or 0.50,
+                        warm and 0.68 or 0.58,
+                        warm and 0.82 or 0.86
+        data:setPixel(x, y, r, g, b, dither(x, y, a))
+      end
+    end
+    local i = love.graphics.newImage(data)
+    i:setWrap("repeat", "repeat")
+    i:setFilter("nearest", "nearest")
+    return i
+  end)
+  return ok and img or nil
+end
+
 -- a single star: a bright centre with a faint cross, which is what makes
 -- a handful of pixels read as a star instead of a smudge
 -- The bow itself: a broad arc of seven bands, brightest in the middle of
@@ -589,9 +638,9 @@ local function makePuff()
   return ok and img or nil
 end
 
-local function makeStarMesh()
-  local h, s = STAR_Y, STAR_SPAN * 0.5
-  local u = STAR_TILES
+local function makeStarMesh(height, tiles)
+  local h, s = height or STAR_Y, STAR_SPAN * 0.5
+  local u = tiles or STAR_TILES
   local verts = {
     { -s, h, -s, 0, 0, 1 }, {  s, h, -s, u, 0, 1 },
     {  s, h,  s, u, u, 1 }, { -s, h,  s, 0, u, 1 },
@@ -1024,6 +1073,110 @@ local function drawAircraft(cfg, px, pz, t, dt, yaw, mesh)
   return airNote
 end
 
+-- The night pass lives outside Sky.draw both for clarity and because LuaJIT
+-- caps a function at sixty captured locals. Keeping this self-contained also
+-- makes the phase-aware layer one extra draw call, not extra work in every
+-- bird/cloud loop below it.
+local function drawNightSky(cfg, px, pz, t, dt)
+  if cfg.stars == false then return "" end
+
+  local target = isNight() and 1 or 0
+  if dt > 0 then
+    local step = dt / FADE_TIME
+    nightAmt = nightAmt + math.max(-step, math.min(step, target - nightAmt))
+  end
+  if nightAmt <= 0.01 then return "" end
+
+  local lunar = { illuminated = 0, milkyWay = 1 }
+  if okDN and DayNight and type(DayNight.astronomy) == "function" then
+    local ok, got = pcall(DayNight.astronomy,
+                          DayNight.time and DayNight.time() or nil)
+    if ok and type(got) == "table" then lunar = got end
+  end
+  local illum = math.max(0, math.min(1, tonumber(lunar.illuminated) or 0))
+  local starVisibility = 1 - illum * 0.42
+  local milkyVisibility = math.max(0, math.min(1,
+    tonumber(lunar.milkyWay) or (1 - illum)))
+
+  if not starImg then starImg = makeStars() end
+  if starImg and not starMesh then starMesh = makeStarMesh() end
+  if not milkyImg then milkyImg = makeMilkyWay() end
+  if milkyImg and not milkyMesh then
+    -- One copy of the diagonal rather than STAR_TILES repeats: it should read
+    -- as one galactic band, not wallpaper.
+    milkyMesh = makeStarMesh(MILKY_Y, 1)
+  end
+  starDot = starDot or makeStarDot()
+  twinkles = twinkles or makeTwinkles()
+  shooters = shooters or {}
+  birdMesh = birdMesh or makeBirdMesh()
+
+  if not (starImg and starMesh) then return "" end
+  guarded(function()
+    love.graphics.setDepthMode("lequal", false)
+
+    -- Dark-sky dust first, then pin-point stars in front of it. Moon phase
+    -- only changes their alpha; neither texture nor mesh is regenerated.
+    if milkyImg and milkyMesh then
+      love.graphics.setColor(1, 1, 1, nightAmt * milkyVisibility)
+      Voxel3D.draw(milkyMesh, milkyImg, Mat4.translate(px, 0, pz))
+    end
+    love.graphics.setColor(1, 1, 1, nightAmt * starVisibility)
+    Voxel3D.draw(starMesh, starImg, Mat4.translate(px, 0, pz))
+
+    local yaw = (FirstPerson and FirstPerson.yaw) or 0
+    for _, w in ipairs(twinkles) do
+      local pulse = 0.45 + 0.55 * math.abs(math.sin(t * w.rate + w.phase))
+      love.graphics.setColor(1, 1, 1,
+                             nightAmt * starVisibility * pulse)
+      local sz = w.size * (0.7 + 0.5 * pulse)
+      Voxel3D.draw(birdMesh, starDot or starImg,
+                   Mat4.mul(Mat4.mul(
+                     Mat4.translate(px + w.x, w.y, pz + w.z),
+                     Mat4.rotateY(-yaw)), Mat4.scale(sz, sz, 1)))
+    end
+
+    if math.random() < SHOOT_CHANCE * dt * nightAmt * starVisibility then
+      local a = math.random() * math.pi * 2
+      local head = a + math.pi + (math.random() - 0.5) * 1.2
+      shooters[#shooters + 1] = {
+        x = math.cos(a) * TWINKLE_R * 1.2,
+        z = math.sin(a) * TWINKLE_R * 1.2,
+        y = STAR_Y * (0.55 + math.random() * 0.4),
+        head = head,
+        speed = 900 + math.random() * 500,
+        fall = 80 + math.random() * 120,
+        life = 0.55 + math.random() * 0.35,
+        max = 0.9,
+      }
+    end
+    for i = #shooters, 1, -1 do
+      local sh = shooters[i]
+      sh.life = sh.life - dt
+      if sh.life <= 0 then
+        table.remove(shooters, i)
+      else
+        sh.x = sh.x + math.cos(sh.head) * sh.speed * dt
+        sh.z = sh.z + math.sin(sh.head) * sh.speed * dt
+        sh.y = sh.y - sh.fall * dt
+        local fade = math.min(1, sh.life / (sh.max * 0.5))
+        love.graphics.setColor(1, 1, 1,
+                               nightAmt * starVisibility * fade)
+        Voxel3D.draw(birdMesh, starDot or starImg,
+                     Mat4.mul(Mat4.mul(
+                       Mat4.translate(px + sh.x, sh.y, pz + sh.z),
+                       Mat4.rotateY(-sh.head)), Mat4.scale(150 * fade, 5, 1)))
+      end
+    end
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.setDepthMode("lequal", true)
+  end)
+
+  return (", stars %.0f%%, Milky Way %.0f%%%s"):format(
+    nightAmt * starVisibility * 100, nightAmt * milkyVisibility * 100,
+    (#shooters > 0) and " (SHOOTING)" or "")
+end
+
 -- If the companion mod has been deleted, its config bridge is gone and
 -- this module is an orphan: draw nothing. The ceiling module does the
 -- actual clean-up; this just keeps quiet in the meantime.
@@ -1051,81 +1204,8 @@ function Sky.draw(state)
   local drewClouds, birdCount = false, 0
   local starNote = ""
 
-  -- ---- the night sky: field, twinklers, and the occasional streak
-  if cfg.stars ~= false then
-    local target = isNight() and 1 or 0
-    if dt > 0 then
-      local step = dt / FADE_TIME
-      nightAmt = nightAmt + math.max(-step, math.min(step, target - nightAmt))
-    end
-    if nightAmt > 0.01 then
-      if not starImg then starImg = makeStars() end
-      if starImg and not starMesh then starMesh = makeStarMesh() end
-      starDot = starDot or makeStarDot()
-      twinkles = twinkles or makeTwinkles()
-      shooters = shooters or {}
-      if starImg and starMesh then
-        guarded(function()
-          love.graphics.setDepthMode("lequal", false)
-          -- the field: fades in at dusk rather than snapping on
-          love.graphics.setColor(1, 1, 1, nightAmt)
-          Voxel3D.draw(starMesh, starImg, Mat4.translate(px, 0, pz))
-
-          -- twinklers over it, each on its own clock
-          local yaw = (FirstPerson and FirstPerson.yaw) or 0
-          for _, w in ipairs(twinkles) do
-            local pulse = 0.45 + 0.55
-              * math.abs(math.sin(t * w.rate + w.phase))
-            love.graphics.setColor(1, 1, 1, nightAmt * pulse)
-            local sz = w.size * (0.7 + 0.5 * pulse)
-            Voxel3D.draw(birdMesh, starDot or starImg,
-                         Mat4.mul(Mat4.mul(
-                           Mat4.translate(px + w.x, w.y, pz + w.z),
-                           Mat4.rotateY(-yaw)), Mat4.scale(sz, sz, 1)))
-          end
-
-          -- shooting stars: rare, quick, and stretched along their travel
-          if math.random() < SHOOT_CHANCE * dt * nightAmt then
-            local a = math.random() * math.pi * 2
-            local head = a + math.pi + (math.random() - 0.5) * 1.2
-            shooters[#shooters + 1] = {
-              x = math.cos(a) * TWINKLE_R * 1.2,
-              z = math.sin(a) * TWINKLE_R * 1.2,
-              y = STAR_Y * (0.55 + math.random() * 0.4),
-              head = head,
-              speed = 900 + math.random() * 500,
-              fall = 80 + math.random() * 120,
-              life = 0.55 + math.random() * 0.35,
-              max = 0.9,
-            }
-          end
-          for i = #shooters, 1, -1 do
-            local sh = shooters[i]
-            sh.life = sh.life - dt
-            if sh.life <= 0 then
-              table.remove(shooters, i)
-            else
-              sh.x = sh.x + math.cos(sh.head) * sh.speed * dt
-              sh.z = sh.z + math.sin(sh.head) * sh.speed * dt
-              sh.y = sh.y - sh.fall * dt
-              local fade = math.min(1, sh.life / (sh.max * 0.5))
-              love.graphics.setColor(1, 1, 1, nightAmt * fade)
-              -- the streak: wide along its heading, thin across it
-              Voxel3D.draw(birdMesh, starDot or starImg,
-                           Mat4.mul(Mat4.mul(
-                             Mat4.translate(px + sh.x, sh.y, pz + sh.z),
-                             Mat4.rotateY(-sh.head)),
-                             Mat4.scale(150 * fade, 5, 1)))
-            end
-          end
-          love.graphics.setColor(1, 1, 1, 1)
-          love.graphics.setDepthMode("lequal", true)
-        end)
-        starNote = (", stars %.0f%%%s"):format(nightAmt * 100,
-          (#shooters > 0) and " (SHOOTING)" or "")
-      end
-    end
-  end
+  -- ---- the night sky: phase-aware stars, Milky Way, and rare streaks
+  starNote = drawNightSky(cfg, px, pz, t, dt)
 
   -- ---- clouds
   if cfg.clouds ~= false then
@@ -1258,7 +1338,12 @@ function Sky.invalidate()
   decks = nil
   if birdMesh then pcall(birdMesh.release, birdMesh) end
   if starMesh then pcall(starMesh.release, starMesh) end
-  birdMesh, starMesh = nil, nil
+  if milkyMesh then pcall(milkyMesh.release, milkyMesh) end
+  for _, image in pairs({ starImg, starDot, milkyImg }) do
+    if image and image.release then pcall(image.release, image) end
+  end
+  birdMesh, starMesh, milkyMesh = nil, nil, nil
+  starImg, starDot, milkyImg = nil, nil, nil
   flocks, twinkles, shooters, nightAmt = nil, nil, nil, 0
   planes, blimps, trails = nil, nil, nil
   ground = nil

@@ -709,6 +709,9 @@ function Voxel3D.skyBody(w, h)
     x = (x / ww * 0.5 + 0.5) * w,
     y = (y / ww * 0.5 + 0.5) * h,
     moon = b.moon,
+    phase = b.phase,
+    illuminated = b.illuminated,
+    moonlight = b.moonlight,
     glowAmt = amt,
     glowColor = color,
   }

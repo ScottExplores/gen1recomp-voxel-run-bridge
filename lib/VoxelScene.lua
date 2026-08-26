@@ -42,6 +42,7 @@ local VoxelGrid = V.require("VoxelGrid")
 local DayNight = V.require("DayNight")
 local FirstPerson = V.require("FirstPerson")
 local WorldUnderlay = V.require("WorldUnderlay")
+local HorizonLayers = V.require("HorizonLayers")
 local RenderDistance = V.require("RenderDistance")
 local PaletteFX = require("src.render.PaletteFX")
 local Map = require("src.world.Map")
@@ -1111,13 +1112,11 @@ function VoxelScene.render(state, w, h, vw, vh, paletteFor)
     return nil
   end
 
-  -- One material-coloured plane below the whole loaded neighborhood closes
-  -- literal terrain holes without obscuring a single valid world fragment.
-  -- Drawn before terrain, depth alone decides where it remains visible.
-  WorldUnderlay.draw(state, cx, cy, underlayColor)
-  -- The panorama and sky sit behind every real surface.
-  pcall(Backdrop.draw, state)
-  pcall(SkyLayer.draw, state)
+  -- One ordered seam keeps the existing panorama path unchanged while the
+  -- depth-free PIXEL HILLS path goes after atmospheric sky art and before the
+  -- depth-writing underlay. In both cases real terrain follows and wins.
+  HorizonLayers.draw(Backdrop, SkyLayer, WorldUnderlay,
+                     state, cx, cy, underlayColor)
 
   Voxel3D.draw(terrain, atlasFor(state.map), nil)
 

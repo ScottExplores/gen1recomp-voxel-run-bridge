@@ -517,6 +517,8 @@ uniform float skyOn;         // 0 indoors: there is no sky to reflect
 uniform vec3 bodyDir;
 uniform float bodyOn;
 uniform float bodyMoon;
+uniform float bodyPhase;     // 0 new, 0.5 full
+uniform float bodyIllum;
 uniform float bodyAng;       // the disc's angular radius, in radians
 uniform vec3 bodyCore;
 uniform vec3 bodyMain;
@@ -682,6 +684,13 @@ vec3 bodyAt(vec3 d, vec3 c, float parity) {
     // sit on the moon the same way round every night
     vec3 t1 = normalize(cross(vec3(0.0, 1.0, 0.0), bodyDir));
     vec2 dc = vec2(dot(d, t1), dot(d, cross(bodyDir, t1))) / bodyAng;
+    if (bodyIllum <= 0.004) return c;
+    if (bodyIllum < 0.996) {
+      float nz = sqrt(max(0.0, 1.0 - dot(dc, dc)));
+      float pa = bodyPhase * 6.28318530718;
+      float light = dc.x * sin(pa) - nz * cos(pa);
+      if (light < -0.08 || (abs(light) <= 0.08 && parity < 0.5)) return c;
+    }
     float k = 0.0;
 //@CRATERS
     if (k > 0.0) { disc = bodyDark; }
@@ -1358,6 +1367,8 @@ function Water.sendSky(sh, ctx)
   local twilight = (amt or 0) > 0.25 and not body.moon
   send("bodyOn", 1)
   send("bodyMoon", body.moon and 1 or 0)
+  send("bodyPhase", body.phase or 0.5)
+  send("bodyIllum", body.illuminated or (body.moon and 1 or 0))
   send("bodyDir", { body.dx, body.dy, body.dz })
   send("bodyAng", rpx / perRadian)
   send("bodyCore", shade(1))

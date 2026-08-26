@@ -51,6 +51,7 @@
 local V = ...
 
 local DayNight = V.require("DayNight")
+local Astronomy = V.require("Astronomy")
 local PaletteFX = require("src.render.PaletteFX")
 
 local Sky = {}
@@ -355,6 +356,26 @@ Sky.CRATER_FRAC = 0.2
 
 local MOON_CRATERS = Sky.MOON_CRATERS
 
+-- Whether this whole pixel cell belongs to the illuminated part of the Moon.
+-- The terminator comes from a lit sphere, then is reduced to a one-cell
+-- checker at its edge: physically recognizable phases in the same hard pixel
+-- language as the rest of the generated sky. A missing phase keeps the old
+-- full-moon presentation for compatibility with an older DayNight provider.
+local function moonCellVisible(body, dx, dy, r)
+  if not (body and type(body.phase) == "number") then return true end
+  local illuminated = tonumber(body.illuminated)
+                      or Astronomy.illumination(body.phase)
+  if illuminated >= 0.996 then return true end
+  if illuminated <= 0.004 then return false end
+  local light = Astronomy.surfaceLight(dx / math.max(1, r),
+                                       dy / math.max(1, r), body.phase)
+  if light > 0.08 then return true end
+  if light < -0.08 then return false end
+  return (dx + dy) % 2 == 0
+end
+
+Sky._moonCellVisible = moonCellVisible
+
 -- The disc's four shades as the display mode has them, lightest first.
 -- Shared with the reflection pass, so the sun on the water is the same sun
 -- that is in the sky, in the same mode's palette.
@@ -406,6 +427,7 @@ local function paintDisc(body, edge, cell, w, h)
         -- dithered rim: the outer ring keeps only one parity of its cells
         local keep = d <= r - 0.9 or (dx + dy) % 2 == 0
         if body.moon then
+          keep = keep and moonCellVisible(body, dx, dy, r)
           for _, cr in ipairs(MOON_CRATERS) do
             local cdx = dx - math.floor(cr[1] * r + 0.5)
             local cdy = dy - math.floor(cr[2] * r + 0.5)

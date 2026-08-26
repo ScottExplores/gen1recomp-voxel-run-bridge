@@ -45,7 +45,8 @@ local ROWS = {
   { key = "backdrop", label = "HORIZON", type = "toggle", default = true },
   { key = "horizonart", label = "HORIZON ART", type = "choice", default = "VALLEY",
     choices = { { "KANTO", "KANTO" }, { "FUJI", "FUJI" },
-                { "VALLEY", "VALLEY" }, { "CITY", "CITY" } } },
+                { "VALLEY", "VALLEY" }, { "CITY", "CITY" },
+                { "PIXEL HILLS", "PIXEL_HILLS" } } },
   { key = "grass", label = "GRASS HEIGHT", type = "choice", default = "SUBTLE",
     choices = { { "OFF", "OFF" }, { "SUBTLE", "SUBTLE" },
                 { "WILD", "WILD" } } },
@@ -66,6 +67,7 @@ local ROWS = {
     choices = { { "OFF", "OFF" }, { "1", "1" }, { "2", "2" }, { "3", "3" } } },
   { key = "rain", label = "RAIN", type = "choice", default = "SOMETIMES",
     choices = { { "OFF", "OFF" }, { "SOMETIMES", "SOMETIMES" },
+                { "LOCAL SEASON", "LOCAL SEASON" },
                 { "ALWAYS", "ALWAYS" } } },
   { key = "umbrellas", label = "NPC UMBRELLAS", type = "toggle", default = true },
   { key = "puddles", label = "PUDDLES", type = "toggle", default = true },
@@ -167,10 +169,19 @@ local ART = {
 local panoramaChoice, panoramaCachedPath = nil, nil
 local function panoramaPath(force)
   local choice = opt("horizonart", "VALLEY")
-  if not force and choice == panoramaChoice and panoramaCachedPath then
+  -- A nil path is a real cached answer for the generated PIXEL HILLS choice.
+  -- Cache by choice rather than by path truthiness so the per-frame HUD bridge
+  -- does not probe the filesystem while procedural art is selected.
+  if not force and choice == panoramaChoice then
     return panoramaCachedPath
   end
-  local name = ART[choice] or "backdrop3.png"
+  local name = ART[choice]
+  if choice == "PIXEL_HILLS" then
+    panoramaChoice, panoramaCachedPath = choice, nil
+    return nil
+  end
+  -- Keep the former fail-safe for an unreadable/legacy stored choice.
+  name = name or "backdrop3.png"
   local ok, blob = pcall(mod.read, mod, "lib/" .. name)
   if not (ok and blob) then name = "backdrop.png" end
   panoramaChoice = choice

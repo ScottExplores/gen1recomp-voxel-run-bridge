@@ -175,6 +175,60 @@ lua tests\dynamic_scaling_engine_compat.lua <engine-root>
 luajit tests\dynamic_scaling_engine_compat.lua <engine-root>
 ```
 
+`astronomy.lua` is the 24-check contract for the shared sky clock. It covers a
+known real-world new-moon epoch, synodic wrapping, the persistent eight-day
+in-game accelerated cycle, throttled device-clock reads, raised celestial
+elevation, phase illumination, pixel Moon masks, Milky Way visibility, and
+the matching water reflection:
+
+```powershell
+lua tests\astronomy.lua
+luajit tests\astronomy.lua
+```
+
+`seasonal_weather.lua` is the 35-check privacy and determinism contract for
+**RAIN: LOCAL SEASON**. It proves the device calendar maps to the four broad
+northern-temperate profiles, the daily sequence does not consume
+`math.random`, timers remain separate from SOMETIMES, and missing or denied
+calendar access falls back safely. Flora uses LuaJIT syntax already present in
+the production module, so this focused suite runs with LuaJIT:
+
+```powershell
+luajit tests\seasonal_weather.lua
+```
+
+`ceiling_camera_cutaway.lua` is the 22-check third-person interior contract.
+It locks camera-near bounded removal for cardinal and diagonal views, preserves
+the far/side room shell, quantizes stable cache keys, and retains the headless
+fallback direction:
+
+```powershell
+lua tests\ceiling_camera_cutaway.lua .
+luajit tests\ceiling_camera_cutaway.lua .
+```
+
+`wilds_special_spawn_safety.lua` is the 26-check Pokémon Tower story guard. It
+proves the Marowak cell is reserved only until the real completion event,
+ordinary cells stay usable, stale and already-moving visible occupants are
+purged, and spawn, wander, chase, and battle paths all refuse the protected
+trigger:
+
+```powershell
+lua tests\wilds_special_spawn_safety.lua .
+luajit tests\wilds_special_spawn_safety.lua .
+```
+
+`pixel_hills.lua` is the ROM-free contract for **HORIZON ART: PIXEL HILLS**.
+It verifies pixel-grid coordinates, Thor-bounded batched geometry, restored
+graphics state, day/night tinting, all four unchanged panorama choices, a
+cached no-asset path, and one generated-horizon dispatch without a panorama
+mesh:
+
+```powershell
+lua tests\pixel_hills.lua .
+luajit tests\pixel_hills.lua .
+```
+
 `gapped_land.lua` is the focused, ROM-free 61-check suite for that visual
 layer. Run it from the repository root with either supported Lua runtime:
 

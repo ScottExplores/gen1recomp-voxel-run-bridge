@@ -1,24 +1,25 @@
 # Scott's Tweaks
 
-**0.12.7 polishes first-person encounters, battle choices, and the Thor layout.**
-True first-person Free Fly keeps the flying Pokémon but no longer puts Red's
-own head in the camera. Sight-trainer focus now turns smoothly, and trainer or
-wild encounters enter through a three-band Gen-1-style pixel Poké Ball wipe.
-On the lower Thor screen, the Start menu is tall rather than oversized, and
-questions stay near the hinge with YES/NO directly below. Battles default to
-white status text, offer WHITE/BLACK control, and preview move effectiveness
-with tiny pixel arrows. Trainer, Gym/Elite boss, and wild difficulty can be
-tuned independently, while GAME 1 HOUR runs a complete in-game day in exactly
-one real hour. The native-pixel Pocket Bag, selectable Pokémon art, voxel
-Kanto, visible wild Pokémon, followers, Free Fly, and Scott's other tweaks
-remain one updater package.
+**0.12.8 makes voxel Kanto safer, clearer in third person, and more alive after
+dark while keeping its original pixel identity.** Visible wild Pokémon can no
+longer occupy or interrupt Pokémon Tower's scripted Marowak encounter. Indoor
+third-person views open a small camera-side cross-section instead of cutting
+away half the building, and one-sided ceiling surfaces keep elevated cameras
+from looking into an opaque roof. The higher sun arc is joined by pixel lunar
+phases, phase-matched reflections and moonlight, and a subtle Milky Way that is
+most visible near the new moon. PIXEL HILLS adds an optional code-drawn
+mountain, foothill, and forest horizon. A calendar-only seasonal rain mode adds
+variety without GPS, a network connection, or a location permission. The
+native-pixel Pocket Bag, selectable Pokémon art, voxel Kanto, visible wild
+Pokémon, followers, Free Fly, and Scott's other tweaks remain one updater
+package; no Gen 2/Stadium models or terrain are imported.
 
 Scott's Tweaks is the next version of **Voxel Run Bridge**. The display name
 is broader, but its internal mod ID remains `voxel_run_bridge`. Existing
 installations therefore update in place, keep their settings, and do not
 become a duplicate mod.
 
-Version 0.12.7 keeps the existing updater identity and provides one categorized
+Version 0.12.8 keeps the existing updater identity and provides one categorized
 **START > MOD MENUS > MOD SETTINGS** home for all of its settings. Its
 features are:
 
@@ -68,7 +69,24 @@ features are:
   run by default. First-person voxel running receives a new, very light
   distance-based camera bob at 0.5X intensity by default. A sight trainer turns
   the first-person camera toward the trainer before the challenge dialogue.
-
+- **Story-safe visible wilds:** the scripted Marowak trigger on Pokémon Tower
+  6F stays reserved until that story encounter is complete. A visible wild
+  cannot spawn, wander, chase, or begin its own battle on the trigger cell.
+- **Cleaner third-person interiors:** CUTAWAY follows the camera and opens only
+  a bounded nearby section while preserving the far and side room shell.
+  Ceiling undersides remain visible from inside but do not become an opaque
+  lid when the camera rises above a building.
+- **Living pixel sky:** the sun travels on a noticeably higher arc. REAL CLOCK
+  derives the Moon's phase from the device clock; accelerated day modes cycle
+  it across eight in-game days. The pixel Moon, water reflection, moonlight,
+  and night palette agree on that phase, while the dithered Milky Way is most
+  apparent around a new moon.
+- **Private seasonal rain:** LOCAL SEASON uses only the device's month and day
+  for broad northern-temperate winter, spring, summer, and autumn rain habits.
+  It never requests GPS or weather data and never contacts a service.
+- **Lightweight pixel horizon:** PIXEL HILLS code-draws day/night-tinted
+  mountain, foothill, and forest silhouettes behind the real map. It ships no
+  new panorama asset and caps its geometry for the Thor.
 - **Gapped Land:** compatible Pokemon Final, Dramatic Shape, and Battle Art
   renderers can cover the empty visual space beneath the horizon in outdoor
   first- and third-person views. This presentation option is on by default.
@@ -131,11 +149,34 @@ and uses the same four tiers. An older saved **DIFFICULTY** value initializes
 only missing new controls in one durable migration, preserving any category
 the player has already chosen.
 
-Under **WORLD & CAMERA**, **DAYTIME: REAL CLOCK** follows local wall time.
-**GAME 20 MIN** and **GAME 1 HOUR** instead run complete accelerated in-game
-days; GAME 1 HOUR takes exactly 3,600 real seconds through morning, day, dusk,
-night, and back to morning. The existing fixed DAY/NIGHT/DUSK/DAWN choices
-remain available.
+Under **WORLD & WEATHER**, **DAYTIME: REAL CLOCK** follows local wall time and
+the real lunar cycle. **GAME 20 MIN** and **GAME 1 HOUR** instead run complete
+accelerated in-game days and move through a full Moon cycle in eight game days;
+GAME 1 HOUR takes exactly 3,600 real seconds through morning, day, dusk, night,
+and back to morning. The existing fixed DAY/NIGHT/DUSK/DAWN choices remain
+available. The sun now rises visibly above the horizon in every moving mode;
+the existing **NIGHT SKY** toggle controls the stars and Milky Way together.
+
+In **OPTIONS SHOWN: ALL**, **WORLD & WEATHER > RAIN** adds **LOCAL SEASON**
+beside OFF, SOMETIMES, and ALWAYS. LOCAL SEASON reads only the device calendar
+and applies a broad northern-temperate seasonal pattern with stable daily
+variation. It is not live local weather: there is no GPS, location lookup,
+network request, or new permission. **SOMETIMES** remains the default.
+
+In the same ALL-mode category, leave **HORIZON** on and select **HORIZON ART:
+PIXEL HILLS** for a lightweight code-drawn mountain, foothill, and forest
+horizon. It is pixel-quantized, follows day/night tint, and uses fixed handheld
+geometry limits instead of adding a panorama image or distant 3D terrain.
+
+Also in ALL mode, **VIEW & CAMERA > 3RD CEILING: CUTAWAY** keeps a small
+camera-near side of an interior open while leaving the distant walls and roof
+structure intact. NONE hides the third-person ceiling and FULL keeps the full
+room shell.
+
+Under **WILD & FOLLOWERS** in ALL mode, **CATCH HUD SIZE** changes only the
+small Ball inventory/power HUD on the top gameplay screen during overworld
+catching. Values 1–10 change its size; 5 is the default, and 0 hides that HUD
+without turning off overworld catching, Ball switching, aiming, or throws.
 
 Under **BATTLES**, **HUD COLOR: WHITE / BLACK** controls the Pokémon names,
 levels, HP label, and HP numbers over staged scenery. WHITE is the new-install
@@ -280,7 +321,7 @@ special canopy scenery so it does not flatten places that are supposed to be
 enclosed or water-covered.
 
 The renderer is selected by its stable mod ID and then checked for the required
-capabilities rather than trusted by display name alone. Version 0.12.7 targets
+capabilities rather than trusted by display name alone. Version 0.12.8 targets
 Pokemon Final, the verified Dramatic Shape 1.8.0-1.8.2 renderer contract, and
 Battle Art Voxel Fork's published renderer modules.
 If an active voxel provider does not expose the required renderer modules,
@@ -461,14 +502,14 @@ Scott's Tweaks choice was already saved.
 ## Install or update
 
 If Voxel Run Bridge or any earlier Scott's Tweaks release is installed, open
-Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.12.7
+Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.12.8
 update. It will appear as **Scott's Tweaks** afterward without creating a
 second entry.
 
 For a first installation:
 
 1. Open **MODS -> Import mod .zip** and choose
-   `voxel_run_bridge-0.12.7.zip`.
+   `voxel_run_bridge-0.12.8.zip`.
 2. Enable **Scott's Tweaks**, then restart the game if the manager asks.
 3. Open **START > MOD MENUS > MOD SETTINGS**. The Pocket Bag, trainer
    features, Oak's starter, B running, light run bob, gapped land, badge-free
@@ -547,17 +588,17 @@ After tests pass, build the updater ZIP from the committed tree. The repository
 attributes supply the exact release exclusions:
 
 ```powershell
-git archive --format=zip --output=dist/voxel_run_bridge-0.12.7.zip v0.12.7
+git archive --format=zip --output=dist/voxel_run_bridge-0.12.8.zip v0.12.8
 ```
 
 The archive keeps `manifest.json`, `main.lua`, `LICENSE`, notices, and the
 `modules/` directory at its root. Gen1Recomp's importer mounts those paths
 unchanged; development tests and unrelated workspace files are excluded.
 
-Version 0.12.7 is configured for Gen1Recomp's built-in GitHub update checks via
+Version 0.12.8 is configured for Gen1Recomp's built-in GitHub update checks via
 `ScottExplores/gen1recomp-voxel-run-bridge`.
 
-The download is deliberately named `voxel_run_bridge-0.12.7.zip` so the
+The download is deliberately named `voxel_run_bridge-0.12.8.zip` so the
 launcher selects it first from the matching GitHub release. Its internal ID
 remains `voxel_run_bridge`, so existing installs and saved settings update in
 place rather than appearing as a second mod.
@@ -571,6 +612,12 @@ renderer code, textures, or horizon art. It does not copy the existing
 `thorkdev/gen1recomp-running-shoes` implementation, whose repository currently
 does not declare a software license. That project is credited for publicly
 demonstrating and documenting the first-person movement gap.
+
+PIXEL HILLS adapts the procedural layered-ridge basis from MIT-licensed Kanto
+Dynamic Weather 1.0.3. Scott's version code-draws its own pixel-quantized
+silhouettes and includes no upstream art, weather runtime, renderer patch, or
+dependency. The attribution and MIT terms are preserved in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
 The consolidated release also incorporates Scott-owned MIT modules from Trainer Forfeit
 0.3.0, Oak's Spare Starter 0.1.1, Scott Mod, and Scott's Sprite Menu. Their

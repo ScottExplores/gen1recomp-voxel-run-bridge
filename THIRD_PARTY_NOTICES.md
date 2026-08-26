@@ -1,6 +1,6 @@
 # Incorporated MIT components
 
-Scott's Tweaks 0.7.0 incorporates and adapts the following independently
+Scott's Tweaks incorporates and adapts the following independently
 released MIT components. Their original mod identities remain supported as
 delegated providers; these notices do not imply that a legacy mod must be
 installed beside Scott's Tweaks.
@@ -18,6 +18,14 @@ installed beside Scott's Tweaks.
 - **Scott's Sprite Menu OptionScreen** (`scotts_sprite_hub`): the small
   semantic OptionRows screen reused by the categorized Tweaks menu.
   Copyright (c) 2026 Scott and contributors.
+- **Kanto Dynamic Weather 1.0.3 `DistantWorld`**
+  ([upstream](https://github.com/1-Camp0-1/Kanto-Dynamic-Weather/tree/v1.0.3)):
+  the procedural layered-ridge/parallax basis for the optional `PIXEL HILLS`
+  horizon. Scott's adaptation pixel-quantizes the silhouettes and batches and
+  caps their geometry for handheld rendering; it includes no upstream art,
+  weather runtime, Dramatic Shape patch or dependency. Copyright (c) 2026
+  1-Camp0-1.
+
 The following MIT terms apply to each work and copyright notice listed above:
 
 > Permission is hereby granted, free of charge, to any person obtaining a copy
