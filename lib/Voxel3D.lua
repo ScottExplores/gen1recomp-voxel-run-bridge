@@ -686,6 +686,23 @@ Voxel3D.glassNight = 0
 Voxel3D.glassPhase = 0
 Voxel3D.glassGlint = 0
 
+-- Project a direction at infinity through the current camera. This is shared
+-- by the sun/Moon and fixed deep-sky catalog art, so neither can drift from
+-- the camera, FOV or first-person yaw used for the world beneath it.
+function Voxel3D.skyPoint(w, h, direction)
+  local m = Voxel3D.vp
+  if not (m and direction) then return nil end
+  local dx = tonumber(direction.dx) or 0
+  local dy = tonumber(direction.dy) or 0
+  local dz = tonumber(direction.dz) or 0
+  local x = m[1] * dx + m[2] * dy + m[3] * dz
+  local y = m[5] * dx + m[6] * dy + m[7] * dz
+  local ww = m[13] * dx + m[14] * dy + m[15] * dz
+  if ww <= 1e-6 then return nil end
+  return (x / ww * 0.5 + 0.5) * w,
+         (y / ww * 0.5 + 0.5) * h
+end
+
 -- The sun or moon disc's place on this camera's canvas, or nil when the
 -- body is set, on the southern half of the sky, or behind the camera.
 --
@@ -697,21 +714,19 @@ Voxel3D.glassGlint = 0
 --
 -- Must run after beginScene has set Voxel3D.vp for this frame's camera.
 function Voxel3D.skyBody(w, h)
-  local m = Voxel3D.vp
-  local b = m and DayNight.body()
+  local b = Voxel3D.vp and DayNight.body()
   if not b then return nil end
-  local x = m[1] * b.dx + m[2] * b.dy + m[3] * b.dz
-  local y = m[5] * b.dx + m[6] * b.dy + m[7] * b.dz
-  local ww = m[13] * b.dx + m[14] * b.dy + m[15] * b.dz
-  if ww <= 1e-6 then return nil end
+  local x, y = Voxel3D.skyPoint(w, h, b)
+  if not x then return nil end
   local amt, color = DayNight.glow()
   return {
-    x = (x / ww * 0.5 + 0.5) * w,
-    y = (y / ww * 0.5 + 0.5) * h,
+    x = x,
+    y = y,
     moon = b.moon,
     phase = b.phase,
     illuminated = b.illuminated,
     moonlight = b.moonlight,
+    alpha = b.alpha,
     glowAmt = amt,
     glowColor = color,
   }
@@ -787,8 +802,16 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky, slot)
     -- are the same size as the world's own and follow every resize and zoom.
     -- The banded sky also hangs the hour's sun or moon (skyBody projects it
     -- through this very camera); a flat sky has no bands and hangs nothing.
+    local deepSky = sky.bands and Sky.deepSky and Sky.deepSky() or nil
+    if deepSky then
+      for _, object in ipairs(deepSky) do
+        object.x, object.y = Voxel3D.skyPoint(w, h, object.direction)
+        object.upX, object.upY = Voxel3D.skyPoint(
+          w, h, object.upDirection)
+      end
+    end
     Sky.paint(w, h, sky, Voxel3D.horizonY(h), Voxel3D.cell,
-              sky.bands and Voxel3D.skyBody(w, h) or nil)
+              sky.bands and Voxel3D.skyBody(w, h) or nil, deepSky)
   else
     love.graphics.clear(0, 0, 0, 0, true, true)
   end

@@ -18,10 +18,12 @@
 -- (the hours worth looking at) and passes overhead-behind-the-camera
 -- through midday, which is where a noon sun belongs.
 --
--- THE MOON arcs entirely through the northern sky -- rising northeast, due
--- north at mid-night, setting northwest -- so it hangs over the diorama all
--- night and the pinned NIGHT setting puts it dead centre. Its shadows fall
--- softly south, away from it, at about two-thirds the sun's weight.
+-- THE MOON arcs entirely through the northern sky -- rising northeast,
+-- crossing due north, setting northwest -- but its rise follows lunar age:
+-- new near sunrise, first quarter near noon, full near sunset and last
+-- quarter near midnight. The same phase clock therefore makes it rise a
+-- little later each real day (and each accelerated game day). Its shadows
+-- fall softly south, away from it, at about two-thirds the sun's weight.
 --
 -- SHADOWS are the shear the light throws: direction opposite the body's
 -- bearing, length its elevation's cotangent (clamped -- a rising sun throws
@@ -131,10 +133,32 @@ local function arc(a, b, c, s)
   return b + (c - b) * (2 * s - 1)
 end
 
+-- The Moon's own full-day path, independent of which body is currently the
+-- world's primary light. `lunar` is optional so tests and future callers can
+-- ask about a precise phase without disturbing the cached live snapshot.
+-- Positive elevation is the twelve hours between rise and set; negative is
+-- below the horizon. Only the positive half is ever painted by DayNight.body.
+function DayNight.moonAt(t, lunar)
+  t = (tonumber(t) or DayNight.time()) % DayNight.CYCLE
+  lunar = lunar or DayNight.astronomy(t)
+  local phase = type(lunar) == "table" and lunar.phase or lunar
+  local dayFraction = t / DayNight.CYCLE
+  local p = Astronomy.moonDayPosition(dayFraction, phase)
+  local elevation = EL_MOON * math.sin(math.pi * 2 * p)
+  if p <= 0.5 then
+    return arc(TH_MRISE, TH_MMID, TH_MSET, p * 2), elevation, true
+  end
+  -- Bearing is immaterial below the horizon, but continuing it through the
+  -- southern half keeps shadow direction continuous at rise and set.
+  return arc(TH_MSET, TH_MMID - 180, TH_MRISE - 360,
+             (p - 0.5) * 2), elevation, true
+end
+
 -- The body lighting the world at clock `t`: bearing and elevation in
 -- degrees, and whether it is the moon. The t == DAY_LEN boundary belongs to
 -- the SUN, so the pinned DUSK setting is the sun half-set in the northwest,
--- not the moon rising.
+-- not the moon rising. During the dark half the phase-aware Moon may still be
+-- below the horizon; that correctly leaves a moonless portion of the night.
 function DayNight.bodyAt(t)
   t = t % DayNight.CYCLE
   if t <= DayNight.DAY_LEN then
@@ -142,9 +166,29 @@ function DayNight.bodyAt(t)
     return arc(TH_RISE, TH_NOON, TH_SET, s),
            EL_NOON * math.sin(math.pi * s), false
   end
-  local s = (t - DayNight.DAY_LEN) / (DayNight.CYCLE - DayNight.DAY_LEN)
-  return arc(TH_MRISE, TH_MMID, TH_MSET, s),
-         EL_MOON * math.sin(math.pi * s), true
+  return DayNight.moonAt(t)
+end
+
+-- Presentation weight for the Moon at the two body handoffs. A Moon can be
+-- well above the horizon at dusk or dawn (quarter phases are the clearest
+-- example), so switching from the sun's half of bodyAt straight to that Moon
+-- would otherwise pop a bright disc and a full shadow into the frame. The
+-- smoothstep has zero slope at both ends and remains exactly one through the
+-- middle of the night. Public so Sky, Water and any future reflection pass
+-- can all consume the same fade rather than recreating its timing.
+function DayNight.moonHandoff(t)
+  t = (tonumber(t) or DayNight.time()) % DayNight.CYCLE
+  local distance
+  if t <= DayNight.DAY_LEN then return 0 end
+  if t < DayNight.DAY_LEN + DayNight.BLEND then
+    distance = (t - DayNight.DAY_LEN) / DayNight.BLEND
+  elseif t > DayNight.CYCLE - DayNight.BLEND then
+    distance = (DayNight.CYCLE - t) / DayNight.BLEND
+  else
+    return 1
+  end
+  distance = math.max(0, math.min(1, distance))
+  return distance * distance * (3 - 2 * distance)
 end
 
 -- The shadow shear that body throws: drift per pixel of height, opposite
@@ -160,10 +204,11 @@ end
 -- weight: full up high, gone at the horizon, so sunset hands off to
 -- moonrise through a soft shadowless gap instead of snapping.
 function DayNight.strengthAt(t)
-  local _, el = DayNight.bodyAt(t)
+  local _, el, moon = DayNight.bodyAt(t)
   local s = el / DayNight.FADE_DEG
   if s < 0 then return 0 end
-  return s < 1 and s or 1
+  s = s < 1 and s or 1
+  return moon and (s * DayNight.moonHandoff(t)) or s
 end
 
 -- ------- the palettes
@@ -425,6 +470,20 @@ local function astronomyTimestamp()
   return timestampCache.value
 end
 
+-- One continuous day coordinate for fixed celestial catalog entries. Game
+-- clocks follow their saved accelerated day plus the current dial fraction;
+-- REAL CLOCK and the four pinned views share the cached Unix timestamp used
+-- by lunar phase, so several sky consumers never turn into per-frame os.time
+-- calls. `t` is meaningful only for an accelerated clock.
+function DayNight.celestialDay(t)
+  local m = mode()
+  if isRunning(m) then
+    t = tonumber(t) or DayNight.clock
+    return DayNight.astronomyDay + (t / DayNight.CYCLE)
+  end
+  return astronomyTimestamp() / 86400
+end
+
 function DayNight.astronomy(t)
   local m = mode()
   if isRunning(m) then
@@ -548,6 +607,7 @@ function DayNight.body(t)
     dy = math.sin(e),
     dz = math.sin(b) * math.cos(e),
     moon = moon,
+    alpha = moon and DayNight.moonHandoff(t) or 1,
   }
   if moon then
     local lunar = DayNight.astronomy(t)

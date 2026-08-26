@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.12.10 - 2026-08-26
+
+- **Placed Scott's Orion Nebula photograph in the moving pixel sky.** The
+  supplied M42 image is transformed into a transparent 192×128, 24-color
+  pixel tile and cataloged at Orion's real right ascension and declination.
+  It rises, crosses and sets on the same sidereal turn as the stars and Milky
+  Way, stays faint, recedes under a bright Moon, and renders beyond the existing
+  terrain, horizons and cloud decks. The NIGHT SKY setting controls it; there
+  is no extra menu row.
+- **Made the catalog ready for more astrophotography.** Future images can be
+  added as data-only RA/declination rows and inherit the same camera tracking,
+  celestial rotation, Moon washout, cloud occlusion, nearest filtering and
+  Thor-safe lazy loading. The original full-resolution photograph is not
+  shipped; the runtime tile is about 8 KB on disk.
+- **Made Moon rise time follow lunar age.** New Moon rises near sunrise, first
+  quarter near noon, full Moon near sunset and last quarter near midnight.
+  REAL CLOCK delays moonrise by about 49 minutes per day, while the existing
+  eight-day accelerated phase cycle delays it three in-game hours per day.
+  Moonless portions of a night now occur naturally after moonset or before
+  moonrise. A short dusk/dawn handoff fades elevated quarter Moons, their
+  shadows and their water reflections cleanly instead of popping between the
+  solar and lunar rigs.
+
 ## 0.12.9 - 2026-08-26
 
 - **Gave the original Gen 1 ledges real visual depth.** Scott's Tweaks now

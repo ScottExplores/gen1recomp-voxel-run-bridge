@@ -695,7 +695,7 @@ vec3 bodyAt(vec3 d, vec3 c, float parity) {
 //@CRATERS
     if (k > 0.0) { disc = bodyDark; }
   }
-  return disc;
+  return mix(c, disc, clamp(bodyOn, 0.0, 1.0));
 }
 
 #ifndef SKY_ONLY
@@ -1365,7 +1365,7 @@ function Water.sendSky(sh, ctx)
     return { c[1] / 255, c[2] / 255, c[3] / 255 }
   end
   local twilight = (amt or 0) > 0.25 and not body.moon
-  send("bodyOn", 1)
+  send("bodyOn", body.alpha or 1)
   send("bodyMoon", body.moon and 1 or 0)
   send("bodyPhase", body.phase or 0.5)
   send("bodyIllum", body.illuminated or (body.moon and 1 or 0))

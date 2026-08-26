@@ -1,5 +1,5 @@
 -- The SKY: clouds that drift, and birds that cross it.
--- payload-version: 23
+-- payload-version: 24
 --
 -- Two layers over the outdoor world, both purely atmospheric and neither
 -- touching anything the game can feel.
@@ -43,8 +43,7 @@
 -- belongs in 1996 Kanto, strictly speaking, and both look wonderful.
 --
 -- STARS come out after dark: a generated field on a high plane -- sparse
--- points at four brightnesses, plus a soft nebula smear in one quadrant
--- so the sky has somewhere to look -- with a couple of dozen individual
+-- points at four brightnesses, with a couple of dozen individual
 -- TWINKLERS drawn over it that pulse on their own clocks, because a
 -- static texture alone reads as wallpaper.  Once in a while a SHOOTING
 -- STAR crosses: a streak stretched along its own heading, gone in under
@@ -71,6 +70,7 @@ if not (okFP and type(FirstPerson) == "table") then
   FirstPerson = { yaw = 0, blendEased = function() return 0 end }
 end
 local okDN, DayNight = pcall(V.require, "DayNight")
+local okCelestial, CelestialSky = pcall(V.require, "Sky")
 
 local Sky = {}
 
@@ -365,38 +365,12 @@ local function makeClouds(cut, seed)
   return okGen and img or nil
 end
 
--- The star field: points at four brightnesses so the sky has depth, and
--- a nebula smear built from the same value noise as the clouds but tinted
--- and kept faint -- it should be something you notice on the second look.
+-- The star field: points at four brightnesses so the sky has depth. The old
+-- anonymous procedural nebula has been retired in favour of Scott's actual
+-- M42 photograph, catalog-positioned by Sky.lua behind this field and clouds.
 local function makeStars()
   local ok, img = pcall(function()
     local data = love.image.newImageData(STAR_TEX, STAR_TEX)
-    -- nebula first, so stars sit in front of it
-    local G = 8
-    local seed = {}
-    for i = 0, G * G - 1 do seed[i] = math.random() end
-    local function lat(x, y) return seed[((y % G) * G + (x % G))] or 0 end
-    local function smooth(x, y, f)
-      local fx, fy = x * f, y * f
-      local x0, y0 = math.floor(fx), math.floor(fy)
-      local tx, ty = fx - x0, fy - y0
-      tx = tx * tx * (3 - 2 * tx); ty = ty * ty * (3 - 2 * ty)
-      local a = lat(x0, y0) + (lat(x0 + 1, y0) - lat(x0, y0)) * tx
-      local b = lat(x0, y0 + 1) + (lat(x0 + 1, y0 + 1) - lat(x0, y0 + 1)) * tx
-      return a + (b - a) * ty
-    end
-    for y = 0, STAR_TEX - 1 do
-      for x = 0, STAR_TEX - 1 do
-        local sx, sy = math.floor(x / 4) * 4, math.floor(y / 4) * 4
-        local n = smooth(sx, sy, 0.055) * 0.7 + smooth(sx, sy, 0.11) * 0.3
-        local a = 0
-        local r, g, b = 0.42, 0.30, 0.62      -- violet body
-        if n > 0.70 then a = 0.30
-        elseif n > 0.62 then a = 0.18; r, g, b = 0.30, 0.40, 0.62
-        elseif n > 0.56 then a = 0.09; r, g, b = 0.26, 0.36, 0.55 end
-        data:setPixel(x, y, r, g, b, dither(x, y, a))
-      end
-    end
     -- stars: sparse, four brightnesses, never adjacent
     local count = math.floor(STAR_TEX * STAR_TEX / 210)
     for _ = 1, count do
@@ -1097,6 +1071,17 @@ local function drawNightSky(cfg, px, pz, t, dt)
   local starVisibility = 1 - illum * 0.42
   local milkyVisibility = math.max(0, math.min(1,
     tonumber(lunar.milkyWay) or (1 - illum)))
+  local skyTurn = 0
+  if okCelestial and CelestialSky
+      and type(CelestialSky.siderealTurn) == "function" then
+    local ok, got = pcall(CelestialSky.siderealTurn,
+      DayNight and DayNight.time and DayNight.time() or 0, lunar)
+    if ok and type(got) == "number" then skyTurn = got end
+  end
+  local skyAngle = skyTurn * math.pi * 2
+  local skyModel = Mat4.mul(Mat4.translate(px, 0, pz),
+                            Mat4.rotateY(skyAngle))
+  local skyCos, skySin = math.cos(skyAngle), math.sin(skyAngle)
 
   if not starImg then starImg = makeStars() end
   if starImg and not starMesh then starMesh = makeStarMesh() end
@@ -1119,10 +1104,10 @@ local function drawNightSky(cfg, px, pz, t, dt)
     -- only changes their alpha; neither texture nor mesh is regenerated.
     if milkyImg and milkyMesh then
       love.graphics.setColor(1, 1, 1, nightAmt * milkyVisibility)
-      Voxel3D.draw(milkyMesh, milkyImg, Mat4.translate(px, 0, pz))
+      Voxel3D.draw(milkyMesh, milkyImg, skyModel)
     end
     love.graphics.setColor(1, 1, 1, nightAmt * starVisibility)
-    Voxel3D.draw(starMesh, starImg, Mat4.translate(px, 0, pz))
+    Voxel3D.draw(starMesh, starImg, skyModel)
 
     local yaw = (FirstPerson and FirstPerson.yaw) or 0
     for _, w in ipairs(twinkles) do
@@ -1130,9 +1115,11 @@ local function drawNightSky(cfg, px, pz, t, dt)
       love.graphics.setColor(1, 1, 1,
                              nightAmt * starVisibility * pulse)
       local sz = w.size * (0.7 + 0.5 * pulse)
+      local wx = skyCos * w.x + skySin * w.z
+      local wz = -skySin * w.x + skyCos * w.z
       Voxel3D.draw(birdMesh, starDot or starImg,
                    Mat4.mul(Mat4.mul(
-                     Mat4.translate(px + w.x, w.y, pz + w.z),
+                     Mat4.translate(px + wx, w.y, pz + wz),
                      Mat4.rotateY(-yaw)), Mat4.scale(sz, sz, 1)))
     end
 

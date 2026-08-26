@@ -1466,7 +1466,7 @@ local function realLoaderRegression(engineRoot)
   local files = {
     [prefix .. "manifest.json"] = [[{
       "id":"voxel_run_bridge","name":"Scott's Tweaks Thor Loader Test",
-      "version":"0.12.9","api":2,"entry":"main.lua",
+      "version":"0.12.10","api":2,"entry":"main.lua",
       "profile":"content","priority":200,"dependencies":[],
       "optional_dependencies":[],"conflicts":[],"games":["gen1"],
       "permissions":["engine_internals"]
@@ -1764,7 +1764,7 @@ local function realFusedFreeFlyRegression(engineRoot)
   local files = {
     [prefix .. "manifest.json"] = [[{
       "id":"voxel_run_bridge","name":"Scott's Tweaks Fused Flight Test",
-      "version":"0.12.9","api":2,"entry":"main.lua",
+      "version":"0.12.10","api":2,"entry":"main.lua",
       "profile":"content","priority":200,"dependencies":[],
       "optional_dependencies":[],"conflicts":[],"games":["gen1"],
       "permissions":["engine_internals"]

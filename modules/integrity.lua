@@ -17,6 +17,8 @@ local SENTINELS = {
   { path = "battle_art_main.lua", what = "Battle Art renderer entry" },
   { path = "lib/SettingsMenu.lua", what = "Battle Art lib/" },
   { path = "data/voxel_heights.lua", what = "Battle Art data/" },
+  { path = "assets/sky/astrophotography/m42_orion_nebula.png",
+    what = "Scott's pixel Orion astrophotography sky art" },
   { path = "assets/battle/front-static/README.md", what = "Battle Art battle art" },
   { path = "modules/vendor_host.lua", what = "bundled-mod host" },
   { path = "vendor/wilds/main.lua", what = "Wilds of Kanto" },

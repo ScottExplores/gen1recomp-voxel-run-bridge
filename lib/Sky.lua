@@ -56,6 +56,186 @@ local PaletteFX = require("src.render.PaletteFX")
 
 local Sky = {}
 
+-- Fixed deep-sky photographs.  Coordinates are their real equatorial catalog
+-- positions; only the PRESENTATION latitude is mirrored into the northern
+-- half of the diorama because that is the half every fixed Gen 1 camera can
+-- actually see.  Keeping placement data here means Scott's next photograph is
+-- one row, not another renderer.
+Sky.DEEP_SKY_CATALOG = {
+  {
+    id = "m42_orion_nebula",
+    label = "ORION NEBULA (M42)",
+    path = "assets/sky/astrophotography/m42_orion_nebula.png",
+    raHours = 5 + 35 / 60 + 17.3 / 3600,
+    decDegrees = -(5 + 23 / 60 + 28 / 3600),
+    widthFraction = 0.34, -- deliberately larger than life, still faint
+    maxAlpha = 0.14,
+  },
+}
+
+-- Release-day zero puts M42 on the meridian at the NIGHT pin.  A sidereal day
+-- is then allowed to run normally, so it rises, transits and sets with the
+-- stars and drifts about four minutes earlier per civil day.  The negative
+-- latitude mirrors Kanto's inaccessible southern celestial half into the
+-- north-facing diorama while preserving every catalog object's separation.
+Sky.CELESTIAL_REFERENCE_UNIX_DAY = 20691 -- 2026-08-26 UTC
+-- REAL CLOCK uses the continuous Unix day directly. This reference is local
+-- midnight in Scott's release timezone (07:00 UTC), avoiding mixed UTC/local
+-- rollovers and the pair of one-degree jumps they would otherwise cause.
+Sky.CELESTIAL_SYNC_REFERENCE_DAY = 20691 + 7 / 24
+Sky.CELESTIAL_LATITUDE = -36
+Sky.CELESTIAL_GAME_OFFSET = 0.48078568862037
+
+local deepFrame = {}
+local deepImages = {}
+
+local function nightSkyEnabled()
+  local provider = rawget(_G, "__ds_ceiling_config")
+  if type(provider) ~= "function" then return true end
+  local ok, cfg = pcall(provider)
+  return not (ok and type(cfg) == "table" and cfg.stars == false)
+end
+
+local function nightWeight(t)
+  if not (DayNight and type(DayNight.mix) == "function") then return 0 end
+  local ok, mix = pcall(DayNight.mix, t)
+  if not (ok and type(mix) == "table") then return 0 end
+  return math.max(0, math.min(1,
+    (tonumber(mix.night) or 0) + (tonumber(mix.violet) or 0) * 0.5))
+end
+
+Sky._nightWeight = nightWeight
+
+local function dayMode()
+  local setting = DayNight and DayNight.setting
+  if not (setting and type(setting.get) == "function") then return nil end
+  local ok, value = pcall(setting.get, setting)
+  return ok and value or nil
+end
+
+-- One celestial rotation shared by photographs, stars and the Milky Way.
+-- REAL CLOCK stays fully continuous on Unix time. Accelerated clocks use their
+-- saved game-day fraction. Fixed pins keep today's slow seasonal drift but use
+-- the selected dial position, so NIGHT still presents a useful midnight sky.
+function Sky.siderealTurn(t, lunar)
+  t = tonumber(t) or (DayNight.time and DayNight.time()) or 0
+  lunar = lunar or (DayNight.astronomy and DayNight.astronomy(t))
+             or { source = "game" }
+  local day = t / (DayNight.CYCLE or 1200)
+  if type(DayNight.celestialDay) == "function" then
+    local ok, got = pcall(DayNight.celestialDay, t)
+    if ok and type(got) == "number" then day = got end
+  end
+  local mode = dayMode()
+  if lunar.source == "game" or mode == "cycle" or mode == "hour" then
+    return Astronomy.siderealTurns(day, Sky.CELESTIAL_GAME_OFFSET)
+  end
+  if mode == "sync" or mode == nil then
+    return Astronomy.siderealTurns(
+      day - Sky.CELESTIAL_SYNC_REFERENCE_DAY,
+      Sky.DEEP_SKY_CATALOG[1].raHours / 24)
+  end
+  local pinnedDay = math.floor(day) - Sky.CELESTIAL_REFERENCE_UNIX_DAY
+                    + ((t % (DayNight.CYCLE or 1200))
+                       / (DayNight.CYCLE or 1200))
+  return Astronomy.siderealTurns(pinnedDay, Sky.CELESTIAL_GAME_OFFSET)
+end
+
+-- Active catalog rows for this frame, with normalized world directions.
+-- Voxel3D projects them through its current camera immediately before paint;
+-- this module deliberately never requires Voxel3D (which already requires us).
+function Sky.deepSky(t)
+  if not nightSkyEnabled() then return nil end
+  t = tonumber(t) or (DayNight.time and DayNight.time()) or 0
+  local dark = nightWeight(t)
+  if dark <= 0.001 then return nil end
+
+  local lunar = { source = "game", milkyWay = 1 }
+  if type(DayNight.astronomy) == "function" then
+    local ok, got = pcall(DayNight.astronomy, t)
+    if ok and type(got) == "table" then lunar = got end
+  end
+  local milky = math.max(0, math.min(1,
+    tonumber(lunar.milkyWay) or 1))
+
+  local turn = Sky.siderealTurn(t, lunar)
+
+  for i = #deepFrame, 1, -1 do deepFrame[i] = nil end
+  for _, entry in ipairs(Sky.DEEP_SKY_CATALOG) do
+    local direction = Astronomy.equatorialDirection(
+      entry.raHours, entry.decDegrees, turn, Sky.CELESTIAL_LATITUDE)
+    if direction.dy > 0 then
+      entry.direction = direction
+      -- A nearby catalog coordinate supplies celestial north, allowing the
+      -- artwork to remain fixed to the sphere as a first-person camera turns.
+      entry.upDirection = Astronomy.equatorialDirection(
+        entry.raHours, math.min(90, entry.decDegrees + 1), turn,
+        Sky.CELESTIAL_LATITUDE)
+      entry.alpha = entry.maxAlpha * dark * (0.25 + 0.75 * milky)
+      entry.x, entry.y, entry.upX, entry.upY = nil, nil, nil, nil
+      deepFrame[#deepFrame + 1] = entry
+    end
+  end
+  return deepFrame[1] and deepFrame or nil
+end
+
+local function deepImage(entry)
+  local cached = deepImages[entry.path]
+  if cached ~= nil then return cached or nil end
+  deepImages[entry.path] = false -- sticky failure; retry after invalidate only
+  local g = love and love.graphics
+  if not (g and g.newImage) then return nil end
+  local root = type(V.path) == "string" and V.path or ""
+  local slash = root ~= "" and "/" or ""
+  local ok, image = pcall(g.newImage, root .. slash .. entry.path)
+  if not (ok and image) then return nil end
+  if image.setFilter then pcall(image.setFilter, image, "nearest", "nearest") end
+  if image.setWrap then pcall(image.setWrap, image, "clamp", "clamp") end
+  deepImages[entry.path] = image
+  return image
+end
+
+local function paintDeepSky(objects, edge, cell, w, h)
+  if not (objects and objects[1]) then return end
+  local g = love and love.graphics
+  if not (g and g.draw and g.setScissor) then return end
+  local clipH = math.max(0, math.min(h, math.floor(edge)))
+  if clipH <= 0 then return end
+  local sx, sy, sw, sh
+  if g.getScissor then sx, sy, sw, sh = g.getScissor() end
+  g.setScissor(0, 0, w, clipH)
+
+  for _, object in ipairs(objects) do
+    if object.x and object.y and (object.alpha or 0) > 0 then
+      local image = deepImage(object)
+      if image and image.getDimensions then
+        local iw, ih = image:getDimensions()
+        if iw and ih and iw > 0 and ih > 0 then
+          local targetW = math.min(w * (object.widthFraction or 0.3),
+                                   h * 0.78 * iw / ih)
+          targetW = math.max(cell, math.floor(targetW / cell + 0.5) * cell)
+          local scale = targetW / iw
+          local x = math.floor(object.x / cell) * cell + cell / 2
+          local y = math.floor(object.y / cell) * cell + cell / 2
+          local roll = 0
+          if object.upX and object.upY then
+            roll = math.atan2(object.upX - object.x,
+                              -(object.upY - object.y))
+          end
+          g.setColor(1, 1, 1, math.min(object.maxAlpha or 1,
+                                      object.alpha))
+          -- A stale graphics handle after a device/context reset must not take
+          -- the whole overworld pass down; invalidate will rebuild it normally.
+          pcall(g.draw, image, x, y, roll, scale, scale, iw / 2, ih / 2)
+        end
+      end
+    end
+  end
+
+  g.setColor(1, 1, 1, 1)
+  if sx then g.setScissor(sx, sy, sw, sh) else g.setScissor() end
+end
+
 -- The most bands a phase palette may paint with. Eight leaves headroom over
 -- DayNight's six-band ones without paying for more; the ramp the shader reads
 -- them from is built at the width actually used, so the cap costs nothing.
@@ -437,7 +617,8 @@ local function paintDisc(body, edge, cell, w, h)
           end
         end
         if keep then
-          g.setColor(c[1] / 255, c[2] / 255, c[3] / 255, 1)
+          g.setColor(c[1] / 255, c[2] / 255, c[3] / 255,
+                     math.max(0, math.min(1, body.alpha or 1)))
           g.rectangle("fill", bx + dx * cell - cell / 2,
                       by + dy * cell - cell / 2, cell, cell)
         end
@@ -457,11 +638,13 @@ end
 -- `body` is the sun or moon to hang, already projected to canvas pixels by
 -- the caller's own camera (Voxel3D.skyBody), with the twilight glow riding
 -- along; nil hangs nothing and warms nothing.
+-- `deepSky` contains projected fixed-catalog art. It is painted after the
+-- bands but before the Moon and before every world/cloud layer.
 --
 -- Returns false when there is nothing to paint, in which case the caller's flat
 -- fill is the whole sky. That fill is the palest band, so a frame that declines
 -- this looks like a hazy day rather than like a bug.
-function Sky.paint(w, h, sky, horizonY, cell, body)
+function Sky.paint(w, h, sky, horizonY, cell, body, deepSky)
   local bands = sky and sky.bands
   if not (bands and bands[1]) then return false end
   if not (w and h and w > 0 and h > 0) then return false end
@@ -517,6 +700,7 @@ function Sky.paint(w, h, sky, horizonY, cell, body)
     end
   end
   if not sh then paintFlat(w, h, bands, edge, alpha, cell) end
+  paintDeepSky(deepSky, math.min(h, edge), cell, w, h)
   -- the disc goes over the glow, under nothing: plain rectangles, so it is
   -- there whether or not the shader built
   paintDisc(body, math.min(h, edge), cell, w, h)
@@ -535,6 +719,10 @@ function Sky.invalidate()
   shader = nil
   if cache.ramp and cache.ramp.release then pcall(cache.ramp.release, cache.ramp) end
   cache.ramp, cache.rampFor = nil, nil
+  for _, image in pairs(deepImages) do
+    if image and image.release then pcall(image.release, image) end
+  end
+  deepImages = {}
 end
 
 return Sky
