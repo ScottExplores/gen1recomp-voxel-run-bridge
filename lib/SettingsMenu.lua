@@ -48,8 +48,8 @@ local CATEGORY_KEYS = {
     "grid", "curve", "dof", "jump", "jumpkey", "jumppad",
   },
   world = {
-    "worldFill", "renderDistance", "water", "shadowQuality", "daytime",
-    "moonPhase",
+    "worldFill", "renderDistance", "ledgeDepth", "water", "shadowQuality",
+    "daytime", "moonPhase",
     "ceiling", "headroom", "cutaway", "rails", "spill", "fittings",
     "rock", "apron", "talltrees", "peaks", "pools", "sconces", "bats",
     "backdrop", "horizonart", "grass", "windows", "ceildetail",

@@ -1,13 +1,11 @@
 # Scott's Tweaks
 
-**0.12.11 places six of Scott's astrophotography targets in Kanto's moving
-pixel night sky.** Orion M42 is joined by the Horsehead and Flame Nebulae,
-Andromeda Galaxy, Dumbbell Nebula, Cygnus Loop/Veil, and Elephant's Trunk.
-Every transparent, limited-palette texture is constructed from exact 3×3 color
-blocks—not merely a softened low-resolution photograph—and follows its catalog
-position behind the clouds. Pinned NIGHT also gains NATURAL, FULL MOON, and NEW
-MOON viewing choices. The original Gen 1 ledge depth and all prior features
-remain.
+**0.12.12 makes Scott's raised Gen 1 ledges optional.** The new default-on
+**LEDGE DEPTH** setting lives in WORLD & WEATHER. Switch it OFF to return the
+surrounding voxel terrain to one flat level while keeping the game's original
+ledge artwork, collision and jumps unchanged; switch it ON to restore the
+bounded six-pixel terraces. The six moving block-pixel astrophotography targets,
+pinned-night Moon choices, and all prior features remain.
 
 The native-pixel Pocket Bag, selectable Pokémon art, voxel Kanto, visible wild
 Pokémon, followers, Free Fly, and Scott's other tweaks remain together in the
@@ -18,7 +16,7 @@ is broader, but its internal mod ID remains `voxel_run_bridge`. Existing
 installations therefore update in place, keep their settings, and do not
 become a duplicate mod.
 
-Version 0.12.11 keeps the existing updater identity and provides one categorized
+Version 0.12.12 keeps the existing updater identity and provides one categorized
 **START > MOD MENUS > MOD SETTINGS** home for all of its settings. Its
 features are:
 
@@ -74,8 +72,9 @@ features are:
 - **Real Gen 1 ledge depth:** Kanto's existing pixel ledges form bounded
   six-pixel terraces instead of lying on one flat plane. Terrain, water,
   foliage, characters, and rigid buildings share the same visual level while
-  the original collision and jump rules remain in charge. This is automatic
-  in Scott's built-in voxel renderer and adds no separate setting or asset.
+  the original collision and jump rules remain in charge. **LEDGE DEPTH** is
+  ON by default under WORLD & WEATHER; OFF restores flat surrounding terrain
+  without removing the original ledge art or changing gameplay.
 - **Cleaner third-person interiors:** CUTAWAY follows the camera and opens only
   a bounded nearby section while preserving the far and side room shell.
   Ceiling undersides remain visible from inside but do not become an opaque
@@ -330,7 +329,7 @@ special canopy scenery so it does not flatten places that are supposed to be
 enclosed or water-covered.
 
 The renderer is selected by its stable mod ID and then checked for the required
-capabilities rather than trusted by display name alone. Version 0.12.11 targets
+capabilities rather than trusted by display name alone. Version 0.12.12 targets
 Pokemon Final, the verified Dramatic Shape 1.8.0-1.8.2 renderer contract, and
 Battle Art Voxel Fork's published renderer modules.
 If an active voxel provider does not expose the required renderer modules,
@@ -511,18 +510,19 @@ Scott's Tweaks choice was already saved.
 ## Install or update
 
 If Voxel Run Bridge or any earlier Scott's Tweaks release is installed, open
-Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.12.11
+Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.12.12
 update. It will appear as **Scott's Tweaks** afterward without creating a
 second entry.
 
 For a first installation:
 
 1. Open **MODS -> Import mod .zip** and choose
-   `voxel_run_bridge-0.12.11.zip`.
+   `voxel_run_bridge-0.12.12.zip`.
 2. Enable **Scott's Tweaks**, then restart the game if the manager asks.
 3. Open **START > MOD MENUS > MOD SETTINGS**. The Pocket Bag, trainer
-   features, Oak's starter, B running, light run bob, gapped land, badge-free
-   HMs, Free Fly Now, visible wild Pokemon, and one follower default on.
+   features, Oak's starter, B running, light run bob, gapped land, ledge depth,
+   badge-free HMs, Free Fly Now, visible wild Pokemon, and one follower default
+   on.
    Classic random battles and hidden encounter markers default off. EXP.SHARE
    and all three difficulty categories default OFF; Fly Cockpit and Thor
    Second Screen default off; battle HUD text defaults WHITE;
@@ -597,17 +597,17 @@ After tests pass, build the updater ZIP from the committed tree. The repository
 attributes supply the exact release exclusions:
 
 ```powershell
-git archive --format=zip --output=dist/voxel_run_bridge-0.12.11.zip v0.12.11
+git archive --format=zip --output=dist/voxel_run_bridge-0.12.12.zip v0.12.12
 ```
 
 The archive keeps `manifest.json`, `main.lua`, `LICENSE`, notices, and the
 `modules/` directory at its root. Gen1Recomp's importer mounts those paths
 unchanged; development tests and unrelated workspace files are excluded.
 
-Version 0.12.11 is configured for Gen1Recomp's built-in GitHub update checks via
+Version 0.12.12 is configured for Gen1Recomp's built-in GitHub update checks via
 `ScottExplores/gen1recomp-voxel-run-bridge`.
 
-The download is deliberately named `voxel_run_bridge-0.12.11.zip` so the
+The download is deliberately named `voxel_run_bridge-0.12.12.zip` so the
 launcher selects it first from the matching GitHub release. Its internal ID
 remains `voxel_run_bridge`, so existing installs and saved settings update in
 place rather than appearing as a second mod.

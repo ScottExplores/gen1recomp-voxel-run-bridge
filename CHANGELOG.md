@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.12.12 - 2026-08-26
+
+- **Made the raised Gen 1 ledges optional.** WORLD & WEATHER now includes a
+  default-on LEDGE DEPTH switch. OFF restores one flat voxel-ground datum while
+  preserving the original ledge artwork, collision rules and jump behavior;
+  ON restores Scott's bounded six-pixel terraces.
+- **Applied LEDGE DEPTH immediately and consistently.** Changing the setting
+  invalidates terrain, scenery, water, entity-support, camera and staged-battle
+  derivatives together, so feet and geometry cannot disagree or retain a stale
+  raised frame. The setting is persisted through the existing Scott's Tweaks
+  options bucket and appears in both BASIC and complete categorized menus.
+
 ## 0.12.11 - 2026-08-26
 
 - **Expanded Scott's moving astrophotography sky from one target to six.** The

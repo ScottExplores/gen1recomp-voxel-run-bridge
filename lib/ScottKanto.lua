@@ -27,6 +27,10 @@ local ROWS = {
   { key = "fittings", label = "CEILING LAMPS", type = "toggle", default = true },
   { key = "rock", label = "CAVE ROCK", type = "toggle", default = true },
   { key = "apron", label = "WORLD APRON", type = "toggle", default = true },
+  { key = "ledgeDepth", label = "LEDGE DEPTH", type = "toggle", default = true,
+    help = "Raises the high side of Gen 1's one-way ledges into stepped "
+      .. "terrain. OFF keeps the original ledge artwork, collision and hops "
+      .. "but returns the surrounding voxel ground to one flat level." },
   { key = "talltrees", label = "TALL TREES", type = "toggle", default = true },
   { key = "peaks", label = "MOUNTAIN PEAKS", type = "toggle", default = true },
   { key = "fastchunks", label = "FAST CHUNKS", type = "toggle", default = true },
@@ -118,6 +122,7 @@ function ScottKanto.config()
     rock = opt("rock", true) ~= false,
     backs = false,
     apron = opt("apron", true) ~= false,
+    ledgeDepth = opt("ledgeDepth", true) ~= false,
     talltrees = opt("talltrees", true) ~= false,
     peaks = opt("peaks", true) ~= false,
     fastchunks = opt("fastchunks", true) ~= false,

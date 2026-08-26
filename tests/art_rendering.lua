@@ -604,6 +604,7 @@ local BattleState = {
 }
 local OverworldState = { pushBattle = function() return "engine-push" end }
 local Renderer = { endFrame = function() return "engine-frame" end }
+local gameCore = { renderer = {} }
 
 local moduleNames = {
   "src.battle.BattleState", "src.world.OverworldController",
@@ -617,7 +618,7 @@ end
 package.preload["src.battle.BattleState"] = function() return BattleState end
 package.preload["src.world.OverworldController"] = function() return OverworldState end
 package.preload["src.render.Renderer"] = function() return Renderer end
-package.preload["src.core.Game"] = function() return { renderer = {} } end
+package.preload["src.core.Game"] = function() return gameCore end
 
 local function setting(value)
   return { get = function() return value end }
@@ -625,13 +626,19 @@ end
 local orientation = { side = "back", front = true, opponent = false, back = false }
 local hudLayer = { width = 160, height = 144 }
 function hudLayer:getDimensions() return self.width, self.height end
+local arenaFindCalls = 0
 local fakeModules = {
   ModSetting = {
     new = function(_, _, values, _, defaultIndex)
       return setting(values[defaultIndex or 1])
     end,
   },
-  BattleArena = {},
+  BattleArena = {
+    find = function()
+      arenaFindCalls = arenaFindCalls + 1
+      return {}
+    end,
+  },
   BattleCam = {},
   BattleScene = { GB_W = 160, GB_H = 144, capture = {} },
   BattleDOF = { invalidate = function() end },
@@ -689,7 +696,10 @@ local fakeModules = {
     invalidate = function() end,
   },
   Gen6Backdrop = {},
-  Voxel3D = { metalRenderer = function() return false end },
+  Voxel3D = {
+    available = function() return true end,
+    metalRenderer = function() return false end,
+  },
   ChunkMesher = {},
 }
 local fakeV = {
@@ -703,6 +713,25 @@ local fakeV = {
 
 local OverworldBattle = assert(loadfile(root .. "/lib/OverworldBattle.lua"))(fakeV)
 OverworldBattle.install()
+
+gameCore.overworld = {
+  map = { id = "ledge-depth-cache" },
+  player = { cellX = 2, cellY = 3, surfing = false },
+}
+orientation.side = "front"
+eq(OverworldBattle.wantsFront(), true,
+  "staged battle eligibility is found for the current terrain")
+eq(OverworldBattle.wantsFront(), true,
+  "staged battle eligibility is reused while geometry is unchanged")
+eq(arenaFindCalls, 1,
+  "staged battle eligibility is cached by map id")
+OverworldBattle.invalidate()
+eq(OverworldBattle.wantsFront(), true,
+  "geometry invalidation recomputes staged battle eligibility")
+eq(arenaFindCalls, 2,
+  "geometry invalidation clears the same-map staged arena cache")
+gameCore.overworld = nil
+orientation.side = "back"
 
 local shot = {
   player = { 30, 92 }, enemy = { 120, 52 },

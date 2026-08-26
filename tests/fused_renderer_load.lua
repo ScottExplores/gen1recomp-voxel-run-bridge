@@ -335,6 +335,13 @@ T.eq(schemaByKey.moonPhase and schemaByKey.moonPhase.default, "natural",
   "Moon Phase defaults to the real lunar cycle")
 T.eq(#(schemaByKey.moonPhase and schemaByKey.moonPhase.choices or {}), 3,
   "Moon Phase schema contains Natural, Full Moon, and New Moon")
+T.eq(schemaByKey.ledgeDepth and schemaByKey.ledgeDepth.default, true,
+  "Ledge Depth keeps the current raised presentation by default")
+T.eq(schemaByKey.ledgeDepth and schemaByKey.ledgeDepth.label, "LEDGE DEPTH",
+  "Ledge Depth uses the concise player-facing label")
+T.check(type(schemaByKey.ledgeDepth and schemaByKey.ledgeDepth.help) == "string"
+    and schemaByKey.ledgeDepth.help:find("collision and hops", 1, true) ~= nil,
+  "Ledge Depth explains that OFF is visual only")
 local wildPrefix = "overworld_wild_spawns:"
 T.eq(schemaByKey[wildPrefix .. "enabled"]
     and schemaByKey[wildPrefix .. "enabled"].default, true,
@@ -464,6 +471,8 @@ T.check(type(root.footer) == "string"
 
 do
   local worldBasic = buildScreen(unified.screenIds.world)
+  T.check(findLabel(worldBasic.rows, "LEDGE DEPTH") ~= nil,
+    "World BASIC exposes the everyday Ledge Depth switch")
   local daytime = findLabel(worldBasic.rows, "DAYTIME")
   local moonPhase = findLabel(worldBasic.rows, "MOON PHASE")
   T.check(daytime ~= nil and moonPhase ~= nil,
@@ -674,6 +683,32 @@ T.eq(graphics["voxel_run_bridge:running_view_bob"], nil,
   "run head bob is not mixed into View & Camera")
 T.check(world["voxel_run_bridge:gapped_land"] ~= nil,
   "Gapped Land lives in World & Weather")
+do
+  local ledgeRow = world["voxel_run_bridge:ledgeDepth"]
+  local mesher = exports.lib.require("ChunkMesher")
+  local originalInvalidate = mesher.invalidate
+  local invalidations = 0
+  mesher.invalidate = function(...)
+    invalidations = invalidations + 1
+    return originalInvalidate(...)
+  end
+  T.check(ledgeRow ~= nil, "Ledge Depth lives in World & Weather")
+  T.eq(ledgeRow and ledgeRow.value(), "ON",
+    "Ledge Depth starts with raised terrain")
+  T.eq(ledgeRow and ledgeRow.step(game, 1), true,
+    "Ledge Depth can switch the terrain presentation off")
+  T.eq(ledgeRow and ledgeRow.value(), "OFF",
+    "World & Weather reports flat ledge terrain")
+  T.eq(invalidations, 1,
+    "switching Ledge Depth off invalidates cached terrain immediately")
+  T.eq(ledgeRow and ledgeRow.step(game, 1), true,
+    "Ledge Depth can restore raised terrain")
+  T.eq(ledgeRow and ledgeRow.value(), "ON",
+    "World & Weather reports restored ledge depth")
+  T.eq(invalidations, 2,
+    "switching Ledge Depth on rebuilds cached terrain again")
+  mesher.invalidate = originalInvalidate
+end
 T.check(system["voxel_run_bridge:dual_screen"] ~= nil,
   "Thor second-screen control lives in Menus & Device")
 do

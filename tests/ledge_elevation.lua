@@ -20,10 +20,14 @@ love.timer = {
 }
 
 local profile = { heights = { ledge = 6 } }
+local ledgeDepth = true
 local V = {
   data = function(name)
     if name == "voxel_heights" then return profile end
   end,
+  mod = { options = { get = function(_, key)
+    if key == "ledgeDepth" then return ledgeDepth end
+  end } },
 }
 function V.require(name)
   if cache[name] then return cache[name] end
@@ -113,6 +117,23 @@ eq(loopField:atTile(4, 5), 0,
    "intrinsic lip basis remains on the lower terrace")
 eq(loopField:atTile(4, 5) + loopField.step, 6,
    "intrinsic lip reaches the standing terrace exactly once")
+
+-- The player-facing switch changes only this visual datum. It must take
+-- effect even if the same map object already has a cached raised snapshot,
+-- and turning it back on must rebuild the original terrace without touching
+-- gameplay collision.
+ledgeDepth = false
+eq(LedgeElevation.depthEnabled(), false,
+   "LEDGE DEPTH reads the persisted OFF choice")
+local flatLoop = LedgeElevation.map(loop, data)
+truth(flatLoop ~= loopField, "OFF replaces the cached raised snapshot")
+eq(flatLoop.ledgeCount, 0, "OFF performs no visual ledge analysis")
+eq(flatLoop:at(2, 1), 0, "OFF returns the standing side to flat ground")
+eq(flatLoop:atTile(4, 4), 0, "OFF returns the plateau tile to flat ground")
+ledgeDepth = true
+local restoredLoop = LedgeElevation.map(loop, data)
+truth(restoredLoop ~= flatLoop, "ON replaces the cached flat snapshot")
+eq(restoredLoop:at(2, 1), 6, "ON restores the raised standing side")
 
 -- Two pieces of one aligned contour separated by a one-cell walkable road.
 -- This is common in Kanto: the path is an opening in the art, not a separate

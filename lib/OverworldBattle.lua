@@ -918,6 +918,10 @@ function OverworldBattle.animationSurface(expectedBattle)
 end
 
 function OverworldBattle.invalidate()
+  -- Arena eligibility is cached by map id because the search walks the whole
+  -- grid.  Geometry options such as LEDGE DEPTH can rebuild that same map in
+  -- place, so discard the staged answer along with the rendered scene.
+  staged = { mapId = nil, ok = false }
   clearHudBandQuads()
   BattleDOF.invalidate()
   BattleHud.invalidate()

@@ -135,6 +135,10 @@ local Voxel3D = {
 }
 
 local cache, V = {}, {}
+local ledgeDepth = true
+V.mod = { options = { get = function(_, key)
+  if key == "ledgeDepth" then return ledgeDepth end
+end } }
 function V.data(name)
   if name == "voxel_heights" then
     return {
@@ -387,6 +391,32 @@ eq(Scene.groundAt(decorated, 0, 2), 6, "entity/camera middle ground")
 eq(Scene.groundAt(decorated, 0, 3), 6, "entity/camera second lip")
 eq(Scene.groundAt(decorated, 0, 4), 0, "entity/camera terrace foot")
 eq(Scene.groundAt(decorated, 0, -1), 0, "off-map seam ground remains zero")
+
+-- OFF restores the pre-depth voxel terrain while leaving the authored ledge
+-- tile itself intact. The original tile therefore still has its six-pixel
+-- visual lip and the engine's collision/hop data above is never modified.
+ledgeDepth = false
+local disabled = makeMap("LEDGE_DEPTH_DISABLED")
+local disabledVerts = Mesher.geometry(disabled, true)
+local disabledMaxY = -math.huge
+for _, v in ipairs(disabledVerts) do
+  disabledMaxY = math.max(disabledMaxY, v[2])
+end
+eq(disabledMaxY, 6,
+   "LEDGE DEPTH OFF removes raised terraces but keeps authored lip art")
+eq(Mesher.elevation(disabled):at(0, 0), 0,
+   "LEDGE DEPTH OFF gives ordinary ground a zero base")
+eq(Scene.groundAt(disabled, 0, 0), 0,
+   "entity support follows the flat ordinary ground")
+eq(Scene.groundAt(disabled, 0, 1), 6,
+   "entity support still sees the original six-pixel ledge tile")
+ledgeDepth = true
+local restoredVerts = Mesher.geometry(disabled, true)
+local restoredMaxY = -math.huge
+for _, v in ipairs(restoredVerts) do
+  restoredMaxY = math.max(restoredMaxY, v[2])
+end
+eq(restoredMaxY, 12, "LEDGE DEPTH ON restores stacked terrain")
 
 -- Buildings.stamp is the production creation point for the shared receipt.
 -- Verify that it records the bottom-left collision tile of a real door cell

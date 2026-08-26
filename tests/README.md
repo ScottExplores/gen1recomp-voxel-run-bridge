@@ -250,7 +250,9 @@ immutable caching, invalidation, and cooperative build yielding.
 `ledge_geometry.lua` carries that same snapshot through terrain, water,
 scenery, grass, flowers, authored figures, actors, and camera support. It also
 proves a building that crosses a contour stays rigid and uses its authored door
-as the floor level:
+as the floor level. Both suites lock the default-on LEDGE DEPTH option: OFF
+returns ordinary voxel ground to zero while retaining the authored six-pixel
+ledge art and gameplay data, and ON rebuilds the raised snapshot:
 
 ```powershell
 lua tests\ledge_elevation.lua

@@ -945,6 +945,17 @@ mod.events:on("mod.options_changed", function(payload)
       or payload.key == DayNight.MOON_PHASE_KEY then
     DayNight.resetAstronomyCache()
   end
+  -- LEDGE DEPTH changes the base datum consumed by terrain, scenery, water,
+  -- figures and the camera. Drop every derived mesh and the last completed
+  -- scene together so OFF/ON takes effect immediately without one stale
+  -- raised frame or a disagreement between feet and ground.
+  if payload.key == "ledgeDepth" then
+    ChunkMesher.invalidate()
+    VoxelScene.invalidate()
+    Voxel3D.invalidate()
+    VoxelLoadingVeil.invalidate()
+    OverworldBattle.invalidate()
+  end
   -- 3D-BTL switched on from the manager's page pins BATTLE LAYOUT exactly as
   -- the OPTIONS row does. The manager persists its own value; this is the one
   -- that has to follow it.

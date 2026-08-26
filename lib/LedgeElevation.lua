@@ -53,6 +53,20 @@ local COMPASS = { up = "north", down = "south",
 -- edits and profile/mod reloads.
 local cache = setmetatable({}, { __mode = "k" })
 
+-- A visual preference only. Gameplay continues to use the engine's original
+-- ledge table, collision and hop scripts either way. Reading through the mod
+-- option rather than a second private flag keeps the Mod Manager and Scott's
+-- categorized menu on one persisted value. Missing/older hosts fail open to
+-- the existing raised presentation.
+local function depthEnabled()
+  local options = V and V.mod and V.mod.options
+  if options and type(options.get) == "function" then
+    local ok, value = pcall(options.get, options, "ledgeDepth")
+    if ok and value ~= nil then return value ~= false end
+  end
+  return true
+end
+
 local function profileStep()
   if V and type(V.data) == "function" then
     local ok, profile = pcall(V.data, "voxel_heights")
@@ -598,10 +612,19 @@ function LedgeElevation.map(map, explicitData)
     return readonlySnapshot(0, 0, profileStep(), {}, nil, 0)
   end
   local data = gameData(explicitData)
+  local enabled = depthEnabled()
   local entry = cache[map]
-  if entry and entry.data == data then return entry.snapshot end
-  local snapshot = build(map, data)
-  cache[map] = { data = data, snapshot = snapshot }
+  if entry and entry.data == data and entry.enabled == enabled then
+    return entry.snapshot
+  end
+  local snapshot
+  if enabled then
+    snapshot = build(map, data)
+  else
+    local width, height = dimensions(map)
+    snapshot = readonlySnapshot(width, height, profileStep(), {}, nil, 0)
+  end
+  cache[map] = { data = data, enabled = enabled, snapshot = snapshot }
   return snapshot
 end
 
@@ -620,5 +643,6 @@ function LedgeElevation.invalidate(map)
 end
 
 LedgeElevation.FALLBACK_STEP = FALLBACK_STEP
+LedgeElevation.depthEnabled = depthEnabled
 
 return LedgeElevation
