@@ -182,9 +182,10 @@ local YAW = {
   left = -math.pi / 2,
 }
 
--- The ground height a cell stands at, so a character on a ledge stands on
--- top of it rather than sunk into it. Uses the same bottom-left collision
--- tile the engine walks on (Map:cellTile).
+-- The ground height a cell stands at: its collision-derived terrace datum
+-- plus the same bottom-left TileShape support the engine walks on. On a ledge
+-- cell the datum deliberately stays low and the intrinsic 6px ledge shape
+-- reaches the high surface, so the ledge is never counted twice.
 local function groundAt(map, cellX, cellY)
   -- Off the map, cellTile border-extends into the map's borderBlock --
   -- which on maps ringed with trees is a RAISED tile. The only entity
@@ -194,16 +195,19 @@ local function groundAt(map, cellX, cellY)
   -- this, crossing into such a map hoisted the walker tree-high for
   -- exactly one step -- the "hops like a ledge" seam bug.
   if not map:inBounds(cellX, cellY) then return 0 end
+  local elevation = type(ChunkMesher.elevation) == "function"
+                    and ChunkMesher.elevation(map) or nil
+  local base = elevation and elevation:at(cellX, cellY) or 0
   local shapes = TileShape.forMap(map)
   local s = shapes[map:cellTile(cellX, cellY)]
-  if not s then return 0 end
+  if not s then return base end
   -- a recessed class (water) still supports whatever stands on it; only
   -- raised ground lifts the model.  Stairs never do: the class height is
   -- the flight's TALL end, but the player enters at floor level and the
   -- warp fires as they step in -- lifting them onto the geometry read as
   -- climbing an invisible block
-  if s.art == "stair" then return 0 end
-  return s.h > 0 and s.h or 0
+  if s.art == "stair" then return base end
+  return base + (s.h > 0 and s.h or 0)
 end
 
 VoxelScene.YAW = YAW

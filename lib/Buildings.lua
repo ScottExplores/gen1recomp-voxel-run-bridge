@@ -1402,6 +1402,41 @@ function Buildings.stamp(S, map, quads, tx, ty, bw, bh, t)
     vote(tx + bw, ty + r)
   end
 
+  -- A collision door is the one authored point where gameplay says which
+  -- visual terrace a rigid building meets.  Retain its bottom-left 8px tile
+  -- coordinate on one shared placement receipt.  ChunkMesher accepts it only
+  -- when every door agrees, so doorless scenery and contradictory modded
+  -- buildings keep the conservative origin fallback.
+  local placement = {
+    tx = tx, ty = ty, bw = bw, bh = bh,
+    mx = tx * 8, mz = ty * 8, doorGroundSamples = {},
+  }
+  if map and type(map.cellTile) == "function" then
+    local cx0, cx1 = math.floor(tx / 2), math.floor((tx + bw - 1) / 2)
+    local cy0, cy1 = math.floor(ty / 2), math.floor((ty + bh - 1) / 2)
+    for cy = cy0, cy1 do
+      for cx = cx0, cx1 do
+        Budget.tick()
+        local footTx, footTy = cx * 2, cy * 2 + 1
+        if footTx >= tx and footTx < tx + bw
+           and footTy >= ty and footTy < ty + bh then
+          local door = false
+          if type(map.isDoorTileCell) == "function" then
+            local ok, value = pcall(map.isDoorTileCell, map, cx, cy)
+            door = ok and value and true or false
+          elseif type(map.doorTiles) == "table" then
+            door = map.doorTiles[map:cellTile(cx, cy)] and true or false
+          end
+          if door then
+            local samples = placement.doorGroundSamples
+            samples[#samples + 1] = footTx
+            samples[#samples + 1] = footTy
+          end
+        end
+      end
+    end
+  end
+
   for r = 0, bh - 1 do
     for c = 0, bw - 1 do
       local k = keyOf(tx + c, ty + r)
@@ -1421,6 +1456,10 @@ function Buildings.stamp(S, map, quads, tx, ty, bw, bh, t)
   end
 
   local mx, mz = tx * 8, ty * 8
+  if #quads == 0 then return end
+  local placements = S.buildingPlacements
+  if not placements then placements = {}; S.buildingPlacements = placements end
+  placements[#placements + 1] = placement
   local out = S.objectQuads
   for _, q in ipairs(quads) do
     out[#out + 1] = {
@@ -1436,6 +1475,7 @@ function Buildings.stamp(S, map, quads, tx, ty, bw, bh, t)
       -- neighbour-body mask read that overhang as a ring scrap -- which
       -- opened the roof rim into the sky from across the seam)
       own = true,
+      buildingPlacement = placement,
     }
   end
 end

@@ -175,8 +175,8 @@ T.eq(run.mod and run.mod.manifest.id, "voxel_run_bridge",
   "stable updater identity is retained")
 T.eq(run.mod and run.mod.manifest.name, "Scott's Tweaks",
   "new display name is loaded")
-T.eq(run.mod and run.mod.manifest.version, "0.12.8",
-  "loader selected version 0.12.8")
+T.eq(run.mod and run.mod.manifest.version, "0.12.9",
+  "loader selected version 0.12.9")
 -- The consolidated build bundles All Pokemon Catchable 151 and Dynamic Scaling, which repatch
 -- encounter tables and pokemon records. The loader warns when a mod writes to
 -- pokemon while claiming otherwise, and a link partner must know, so the flag
@@ -700,7 +700,7 @@ T.check(type(pokemonFinalExports) == "table",
   "Pokemon Final test-double exports are published")
 T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.owner, "voxel_run_bridge",
   "Pokemon Final FreeMove receives Scott's bridge marker")
-T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.12.8",
+T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.12.9",
   "Pokemon Final bridge marker carries the update version")
 T.eq(type(exported.hmWithoutBadges), "function",
   "live HM option accessor is published")

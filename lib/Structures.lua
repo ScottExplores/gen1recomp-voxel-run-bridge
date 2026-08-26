@@ -227,7 +227,8 @@ function Structures.forMap(map)
   S = { shapeAt = shapeAt, tileAt = tileAt, outdoor = Map.isOutdoor(def),
         hideBareRing = hullRingOnly or nil,
         runs = {}, skip = {}, ground = {}, doorFold = {}, objectQuads = {},
-        grassQuads = {}, flowerQuads = {}, roundStamps = {}, figures = {} }
+        buildingPlacements = {}, grassQuads = {}, flowerQuads = {},
+        roundStamps = {}, figures = {} }
   Buildings.build(S, map, pixels(tileset), perRow)
 
   -- Fold doors into their buildings. A door cell is WALKABLE (the player

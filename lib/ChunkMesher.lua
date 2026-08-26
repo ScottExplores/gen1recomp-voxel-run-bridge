@@ -55,6 +55,7 @@ local Structures = V.require("Structures")
 local Buildings = V.require("Buildings")
 local TileShape = V.require("TileShape")
 local Voxel3D = V.require("Voxel3D")
+local LedgeElevation = V.require("LedgeElevation")
 local Budget = V.require("BuildBudget")
 
 local ffi = nil
@@ -114,6 +115,31 @@ local VOLUME_TOP_SHADE = 0.85
 
 local cache = {}     -- map id -> { full = mesh|false, body = ..., grass = ... }
 local gen = {}       -- map id -> generation, bumped by invalidate/evict
+local mapRefs = {}   -- map id -> live instance, for elevation invalidation
+
+-- Terrain and every auxiliary mesh read one immutable per-map elevation
+-- snapshot.  Gameplay collision remains untouched; only the voxel world's
+-- visual datum changes.  Keep only live map references here, while the helper
+-- itself uses weak keys so unloaded maps and their snapshots leave together.
+local function elevationFor(map)
+  if type(map) == "table" and map.id ~= nil then mapRefs[map.id] = map end
+  return LedgeElevation.map(map)
+end
+
+local function invalidateElevation(mapId)
+  if mapId ~= nil then
+    local map = mapRefs[mapId]
+    if map then LedgeElevation.invalidate(map) end
+    mapRefs[mapId] = nil
+  else
+    LedgeElevation.invalidate()
+    mapRefs = {}
+  end
+end
+
+-- VoxelScene and the overworld battle use this same authority for entity
+-- support, keeping sprite cards aligned with the terrain they stand on.
+ChunkMesher.elevation = elevationFor
 
 -- Horizontal neighbours: tile step, face direction id (see Voxel3D).
 local SIDES = {
@@ -331,17 +357,96 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink)
   local waterPush = waterSink and waterSink.push or nil
   local tileset = map.tileset
   local S = Structures.forMap(map)
+  local elevation = elevationFor(map)
   local perRow = tileset.tilesPerRow or 16
   local atlasW = tileset.imageWidth or (perRow * 8)
   local atlasH = tileset.imageHeight or 48
 
+  -- Renderer coordinates are 8px tiles while gameplay ledge rules describe
+  -- 16px cells.  The snapshot supplies both views: atTile() keeps the authored
+  -- lip half low and raises only the ordinary plateau half, avoiding both the
+  -- old flat map and a doubled twelve-pixel ledge.  Memoize because AO and side
+  -- exposure query the same neighbours repeatedly during a build.
+  local rawTileBases = {}
+  local function rawBaseAtTile(tx, ty)
+    local k = keyOf(tx, ty)
+    local hit = rawTileBases[k]
+    if hit ~= nil then return hit end
+    hit = type(elevation.atTile) == "function"
+          and elevation:atTile(tx, ty)
+          or elevation:at(math.floor(tx / 2), math.floor(ty / 2))
+    rawTileBases[k] = hit
+    return hit
+  end
+
+  -- A voxelized building is one rigid object.  Its authored collision door is
+  -- the strongest evidence for which terrace its floor meets; accepting only
+  -- unanimous door samples keeps a modded multi-door drawing conservative.
+  -- Level only cells that the building already claimed, and never mutate the
+  -- immutable ledge snapshot or its gameplay collision data.
+  local buildingFloors, buildingBases = {}, {}
+  local function doorBase(placement)
+    local samples = placement and placement.doorGroundSamples
+    if type(samples) ~= "table" or #samples < 2 then return nil end
+    local answer = nil
+    for at = 1, #samples - 1, 2 do
+      Budget.tick()
+      local tx, ty = tonumber(samples[at]), tonumber(samples[at + 1])
+      if tx and ty then
+        local base = rawBaseAtTile(tx, ty)
+        if answer == nil then answer = base
+        elseif answer ~= base then return nil end
+      end
+    end
+    return answer
+  end
+
+  for _, placement in ipairs(S.buildingPlacements or {}) do
+    Budget.tick()
+    local anchored = doorBase(placement)
+    local tx, ty = tonumber(placement.tx), tonumber(placement.ty)
+    local bw, bh = tonumber(placement.bw), tonumber(placement.bh)
+    local base = anchored
+    if base == nil and tx and ty then base = rawBaseAtTile(tx, ty) end
+    base = base or 0
+    buildingBases[placement] = base
+    if anchored ~= nil and tx and ty and bw and bh then
+      for r = 0, bh - 1 do
+        for c = 0, bw - 1 do
+          Budget.tick()
+          local k = keyOf(tx + c, ty + r)
+          local shape = S.shapeAt[k]
+          if S.skip[k] and shape and shape.class == "building" then
+            buildingFloors[k] = anchored
+          end
+        end
+      end
+    end
+  end
+
+  local tileBases = {}
+  local function baseAtTile(tx, ty)
+    local k = keyOf(tx, ty)
+    local hit = tileBases[k]
+    if hit ~= nil then return hit end
+    hit = buildingFloors[k]
+    if hit == nil then hit = rawBaseAtTile(tx, ty) end
+    tileBases[k] = hit
+    return hit
+  end
+
+  local function baseAtWorld(wx, wz)
+    return baseAtTile(math.floor(wx / 8), math.floor(wz / 8))
+  end
+
   local function heightAt(tx, ty)
     local k = keyOf(tx, ty)
-    if S.skip[k] then return 0 end
+    local base = baseAtTile(tx, ty)
+    if S.skip[k] then return base end
     local run = S.runs[k]
-    if run then return run.h end
+    if run then return base + run.h end
     local s = S.shapeAt[k]
-    return s and s.h or 0
+    return base + (s and s.h or 0)
   end
 
   -- A volume normally folds the same map column onto every vertical face.
@@ -462,12 +567,14 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink)
   -- light reaches it -- which is what plants a prop on the floor instead
   -- of leaving it looking pasted over the top.
   local aoProp = { 0, 0, 0, 0 }
-  local function groundShades(c, shade)
+  local function groundShades(c, shade, groundY)
     if type(shade) == "table" then return shade end
-    local y1, y2, y3, y4 = c[1][2], c[2][2], c[3][2], c[4][2]
+    groundY = groundY or 0
+    local y1, y2 = c[1][2] - groundY, c[2][2] - groundY
+    local y3, y4 = c[3][2] - groundY, c[4][2] - groundY
     if math.min(y1, y2, y3, y4) >= AO_RISE then return shade end
     for i = 1, 4 do
-      local t = c[i][2] / AO_RISE
+      local t = (c[i][2] - groundY) / AO_RISE
       aoProp[i] = shade * (t >= 1 and 1 or (1 - AO_GROUND * (1 - t)))
     end
     return aoProp
@@ -573,8 +680,9 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink)
         -- prebuilt prism quads (appended below) carry the art
         local g = S.ground[k]
         if g then
-          topQuad(tx * 8, ty * 8, 0, g, 1)
-          -- the claimed tile is still ground at height 0, and water next
+          local base = baseAtTile(tx, ty)
+          topQuad(tx * 8, ty * 8, base, g, 1)
+          -- the claimed tile is still ground at its ledge datum, and water next
           -- door still recesses below it: without the same below-ground
           -- side bands ordinary ground emits, the two-pixel shoreline
           -- face is a slit into the sky behind the mesh -- which is
@@ -583,27 +691,32 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink)
           -- ground's own art
           for _, side in ipairs(SIDES) do
             local nh = heightAt(tx + side[1], ty + side[2])
-            if nh < 0 then
+            if nh < base then
               local d = side[3]
               local lat = LATERAL[d]
               local hl = lat and heightAt(tx + lat[1], ty + lat[2]) or 0
               local hr = lat and heightAt(tx + lat[3], ty + lat[4]) or 0
-              for band = math.floor(nh / 8), -1 do
-                local y0 = math.max(nh, band * 8)
-                local y1 = math.min(0, band * 8 + 8)
+              -- Work down from the local floor so a six-pixel terrace uses
+              -- the same six art rows as an intrinsic ledge face.
+              local y1 = base
+              while y1 > nh do
+                local y0 = math.max(nh, y1 - 8)
                 if y1 > y0 then
                   sideQuad(d, tx * 8, ty * 8, y0, y1, g,
-                           (band * 8 + 8) - y1, (band * 8 + 8) - y0,
+                           8 - (y1 - y0), 8,
                            sideShades(hl, hr, y0, y1, y0 <= nh,
                                       Voxel3D.FACE_SHADE[d]))
                 end
+                y1 = y0
               end
             end
           end
         end
       elseif s then
         local run = S.runs[k]
-        local h = run and run.h or s.h
+        local base = baseAtTile(tx, ty)
+        local localH = run and run.h or s.h
+        local h = base + localH
         local x0, z0 = tx * 8, ty * 8
 
         -- top face. A roofed volume gets a GABLE segment: the roof rises
@@ -621,7 +734,7 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink)
           local mid = run.extent / 2
           local function gableH(d)     -- d = rows north of the south eave
             local t = d <= mid and d / mid or (run.extent - d) / (run.extent - mid)
-            return run.h + run.rise * math.max(0, math.min(1, t))
+            return base + run.h + run.rise * math.max(0, math.min(1, t))
           end
           local d0 = run.front - ty                -- rows from the south edge
           local hS = gableH(d0)
@@ -632,13 +745,13 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink)
                                math.floor((1 - rel) * run.roofRows))
           local roofTile = map:tileAt(tx, run.north + idx)
           local swY, seY, neY, nwY = hS, hS, hN, hN
-          if heightAt(tx - 1, ty) < run.h then     -- west flank: hip
-            swY = math.max(run.h, hS - 8)
-            nwY = math.max(run.h, hN - 8)
+          if heightAt(tx - 1, ty) < base + run.h then -- west flank: hip
+            swY = math.max(base + run.h, hS - 8)
+            nwY = math.max(base + run.h, hN - 8)
           end
-          if heightAt(tx + 1, ty) < run.h then     -- east flank: hip
-            seY = math.max(run.h, hS - 8)
-            neY = math.max(run.h, hN - 8)
+          if heightAt(tx + 1, ty) < base + run.h then -- east flank: hip
+            seY = math.max(base + run.h, hS - 8)
+            neY = math.max(base + run.h, hN - 8)
           end
           local u0, u1, v0, v1 = uvRect(roofTile, 0, 8)
           push({ { x0, swY, z0 + 8 }, { x0 + 8, seY, z0 + 8 },
@@ -674,7 +787,7 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink)
                 break
               end
             end
-            local row = math.min(ty, front - math.floor(h / 8))
+            local row = math.min(ty, front - math.floor(localH / 8))
             if row < north then
               -- the whole run folded onto the face: top with the drawn
               -- row just above it when that row is furniture too (a
@@ -709,9 +822,26 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink)
             local lat = LATERAL[d]
             local hl = lat and heightAt(tx + lat[1], ty + lat[2]) or 0
             local hr = lat and heightAt(tx + lat[3], ty + lat[4]) or 0
-            for band = math.floor(nh / 8), math.ceil(h / 8) - 1 do
-              local y0 = math.max(nh, band * 8)
-              local y1 = math.min(h, band * 8 + 8)
+            -- The terrace datum is the column's floor, not another authored
+            -- art band.  Emit any foundation below it first, then fold the
+            -- structure in local eight-pixel courses so a 6px lift does not
+            -- change which facade row a wall or building uses.
+            local foundationTop = math.min(base, h)
+            local fy1 = foundationTop
+            while fy1 > nh do
+              local fy0 = math.max(nh, fy1 - 8)
+              sideQuad(d, x0, z0, fy0, fy1, tile,
+                       8 - (fy1 - fy0), 8,
+                       sideShades(hl, hr, fy0, fy1, fy0 <= nh,
+                                  Voxel3D.FACE_SHADE[d]))
+              fy1 = fy0
+            end
+
+            local structuralBottom = math.max(nh, base)
+            for band = math.floor((structuralBottom - base) / 8),
+                       math.ceil((h - base) / 8) - 1 do
+              local y0 = math.max(structuralBottom, base + band * 8)
+              local y1 = math.min(h, base + band * 8 + 8)
               if y1 > y0 then
                 local src, shade = tile, Voxel3D.FACE_SHADE[d]
                 if run then
@@ -758,7 +888,8 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink)
                   end
                 end
                 sideQuad(d, x0, z0, y0, y1, src,
-                         (band * 8 + 8) - y1, (band * 8 + 8) - y0,
+                         (band * 8 + 8) - (y1 - base),
+                         (band * 8 + 8) - (y0 - base),
                          sideShades(hl, hr, y0, y1, y0 <= nh, shade))
               end
             end
@@ -822,6 +953,38 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink)
     return scUV
   end
 
+  -- Rigid scenery carries one datum as a translation.  A face centered on a
+  -- 16px cell boundary is biased into the footprint it closes using its
+  -- winding, rather than borrowing the adjacent terrace by accident.
+  local function placementBase(wx, wz)
+    if wx % 16 == 0 then wx = wx - 0.001 end
+    if wz % 16 == 0 then wz = wz - 0.001 end
+    return baseAtWorld(wx, wz)
+  end
+
+  local function quadBase(q)
+    local x0 = math.min(q[1][1], q[2][1], q[3][1], q[4][1])
+    local x1 = math.max(q[1][1], q[2][1], q[3][1], q[4][1])
+    local z0 = math.min(q[1][3], q[2][3], q[3][3], q[4][3])
+    local z1 = math.max(q[1][3], q[2][3], q[3][3], q[4][3])
+    local wx, wz = (x0 + x1) / 2, (z0 + z1) / 2
+    local ax, ay, az = q[2][1] - q[1][1], q[2][2] - q[1][2],
+                       q[2][3] - q[1][3]
+    local bx, by, bz = q[3][1] - q[1][1], q[3][2] - q[1][2],
+                       q[3][3] - q[1][3]
+    local nx, nz = ay * bz - az * by, ax * by - ay * bx
+    if x0 == x1 and wx % 16 == 0 then
+      wx = wx + (nx < 0 and 0.001 or -0.001)
+    end
+    if z0 == z1 and wz % 16 == 0 then
+      wz = wz + (nz < 0 and 0.001 or -0.001)
+    end
+    return baseAtWorld(wx, wz)
+  end
+
+  local objectShift = { { 0, 0, 0 }, { 0, 0, 0 },
+                        { 0, 0, 0 }, { 0, 0, 0 } }
+
   for _, q in ipairs(S.objectQuads) do
     Budget.tick()
     local x0 = math.min(q[1][1], q[2][1], q[3][1], q[4][1])
@@ -835,7 +998,13 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink)
     -- the neighbour will ever draw that geometry
     if q.own or outwardOnEdge(q, x0, z0, x1, z1)
        or keepQuad(x0, z0, x1, z1) then
-      push({ q[1], q[2], q[3], q[4] }, quadUV(q), groundShades(q, q.shade))
+      local placement = q.buildingPlacement
+      local base = placement and buildingBases[placement] or quadBase(q)
+      for i = 1, 4 do
+        local c, out = q[i], objectShift[i]
+        out[1], out[2], out[3] = c[1], c[2] + base, c[3]
+      end
+      push(objectShift, quadUV(q), groundShades(objectShift, q.shade, base))
     end
   end
 
@@ -861,6 +1030,7 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink)
   local sc = { { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 } }
   for _, st in ipairs(S.roundStamps or {}) do
     local mx, mz = st.mx, st.mz
+    local base = placementBase(mx, mz)
     local sr = st.r or 8
     local sx0, sz0, sx1, sz1 = mx - sr, mz - sr, mx + sr, mz + sr
     local interior = sx0 > 0 and sx1 < bw and sz0 > 0 and sz1 < bh
@@ -879,7 +1049,7 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink)
         for i = 1, 4 do
           local c, s2 = q[i], sc[i]
           s2[1] = c[1] + mx
-          s2[2] = c[2] + (st.lift or 0)
+          s2[2] = c[2] + base + (st.lift or 0)
           if st.lift and st.lift > 0 then
             local bases = rawget(_G, "__ds_round_base")
             if bases then
@@ -902,7 +1072,7 @@ local function runGeometry(map, bodyOnly, masks, sink, waterSink)
           ok = keepQuad(x0, z0, x1, z1)
         end
         if ok then
-          push(sc, quadUV(q), groundShades(sc, q.shade))
+          push(sc, quadUV(q), groundShades(sc, q.shade, base))
         end
       end
     end
@@ -942,14 +1112,45 @@ function ChunkMesher.build(map, bodyOnly, masks, split)
   return sink.finish(), waterSink and waterSink.finish() or nil
 end
 
-local function quadsMesh(quads)
+local function elevationAtWorld(elevation, wx, wz)
+  if type(elevation.atWorld) == "function" then
+    return elevation:atWorld(wx, wz)
+  end
+  return elevation:at(math.floor(wx / 16), math.floor(wz / 16))
+end
+
+local function baseForWorldQuad(elevation, q)
+  if not elevation then return 0 end
+  local x0 = math.min(q[1][1], q[2][1], q[3][1], q[4][1])
+  local x1 = math.max(q[1][1], q[2][1], q[3][1], q[4][1])
+  local z0 = math.min(q[1][3], q[2][3], q[3][3], q[4][3])
+  local z1 = math.max(q[1][3], q[2][3], q[3][3], q[4][3])
+  local wx, wz = (x0 + x1) / 2, (z0 + z1) / 2
+  local ax, ay, az = q[2][1] - q[1][1], q[2][2] - q[1][2],
+                     q[2][3] - q[1][3]
+  local bx, by, bz = q[3][1] - q[1][1], q[3][2] - q[1][2],
+                     q[3][3] - q[1][3]
+  local nx, nz = ay * bz - az * by, ax * by - ay * bx
+  if x0 == x1 and wx % 16 == 0 then
+    wx = wx + (nx < 0 and 0.001 or -0.001)
+  end
+  if z0 == z1 and wz % 16 == 0 then
+    wz = wz + (nz < 0 and 0.001 or -0.001)
+  end
+  return elevationAtWorld(elevation, wx, wz)
+end
+
+local function quadsMesh(quads, elevation)
   if #quads == 0 then return nil end
   local verts, indices, n = {}, {}, 0
   for _, q in ipairs(quads) do
+    local base = baseForWorldQuad(elevation, q)
     for i = 1, 4 do
       local c = q[i]
       local uv = q.uv and q.uv[i] or { q.u, q.v }
-      verts[#verts + 1] = { c[1], c[2], c[3], uv[1], uv[2], q.shade }
+      verts[#verts + 1] = {
+        c[1], c[2] + base, c[3], uv[1], uv[2], q.shade,
+      }
     end
     Voxel3D.pushQuad(indices, n)
     n = n + 1
@@ -961,8 +1162,9 @@ end
 -- characters so the southern row of a grass cell still overdraws a
 -- walker's feet (characters stamp over terrain, Gen 1 style, so ordinary
 -- terrain could never do this).
-local function buildGrassMesh(map)
-  return quadsMesh(Structures.forMap(map).grassQuads)
+local function buildGrassMesh(map, elevation)
+  elevation = elevation or elevationFor(map)
+  return quadsMesh(Structures.forMap(map).grassQuads, elevation)
 end
 
 -- The flower billboards as their own mesh, for the same reason as the
@@ -973,8 +1175,9 @@ end
 -- stood among flowers. Unlike grass this mesh still CASTS shadows (the
 -- sun pass draws it): a handful of flowers per meadow, not thousands of
 -- tufts.
-local function buildFlowerMesh(map)
-  return quadsMesh(Structures.forMap(map).flowerQuads)
+local function buildFlowerMesh(map, elevation)
+  elevation = elevation or elevationFor(map)
+  return quadsMesh(Structures.forMap(map).flowerQuads, elevation)
 end
 
 -- Authored FIGURES (a person drawn into furniture) as one mesh each, in
@@ -988,7 +1191,8 @@ end
 -- `w` is the card's own width in its local space (its quads start at
 -- x = 0), measured here because the first-person pass yaws a card about
 -- its middle -- a card yawed about its left edge swings off its seat.
-local function buildFigureMeshes(map)
+local function buildFigureMeshes(map, elevation)
+  elevation = elevation or elevationFor(map)
   local out = {}
   for _, f in ipairs(Structures.forMap(map).figures or {}) do
     local mesh = quadsMesh(f.quads)
@@ -1000,7 +1204,10 @@ local function buildFigureMeshes(map)
           if x and x > w then w = x end
         end
       end
-      out[#out + 1] = { mesh = mesh, wx = f.wx, wz = f.wz, y = f.y, w = w }
+      local base = elevationAtWorld(elevation, f.wx + w / 2, f.wz)
+      out[#out + 1] = {
+        mesh = mesh, wx = f.wx, wz = f.wz, y = f.y + base, w = w,
+      }
     end
   end
   return out
@@ -1097,9 +1304,10 @@ local function runJob(job)
   end
   if c.grass == nil or c.flowers == nil or c.figures == nil
      or (c.stale and c.stale.aux) then
-    local okG, builtGrass = pcall(buildGrassMesh, map)
-    local okF, builtFlowers = pcall(buildFlowerMesh, map)
-    local okX, builtFigures = pcall(buildFigureMeshes, map)
+    local elevation = elevationFor(map)
+    local okG, builtGrass = pcall(buildGrassMesh, map, elevation)
+    local okF, builtFlowers = pcall(buildFlowerMesh, map, elevation)
+    local okX, builtFigures = pcall(buildFigureMeshes, map, elevation)
     local grass = (okG and builtGrass) or false
     local flowers = (okF and builtFlowers) or false
     local figures = (okX and builtFigures) or false
@@ -1263,11 +1471,16 @@ end
 function ChunkMesher.get(map, bodyOnly, masks)
   local slot = bodyOnly and "body" or "full"
   local c = entry(map.id)
-  if c.grass == nil or c.flowers == nil or (c.stale and c.stale.aux) then
-    local okG, grass = pcall(buildGrassMesh, map)
-    local okF, flowers = pcall(buildFlowerMesh, map)
+  if c.grass == nil or c.flowers == nil or c.figures == nil
+     or (c.stale and c.stale.aux) then
+    local elevation = elevationFor(map)
+    local okG, grass = pcall(buildGrassMesh, map, elevation)
+    local okF, flowers = pcall(buildFlowerMesh, map, elevation)
+    local okX, figures = pcall(buildFigureMeshes, map, elevation)
     swapSlot(c, "grass", (okG and grass) or false)
     swapSlot(c, "flowers", (okF and flowers) or false)
+    releaseFigures(c.figures)
+    c.figures = (okX and figures) or false
     if c.stale then c.stale.aux = nil end
   end
   if c[slot] == nil or (c.stale and c.stale[slot]) then
@@ -1344,6 +1557,7 @@ function ChunkMesher.refresh(mapId)
   if not (c and (c.full or c.body)) then
     return ChunkMesher.invalidate(mapId)
   end
+  invalidateElevation(mapId)
   Structures.invalidate(mapId)
   gen[mapId] = (gen[mapId] or 0) + 1
   for i = #jobs, 1, -1 do
@@ -1380,6 +1594,7 @@ function ChunkMesher.setLive(live)
       cache[id] = nil
       gen[id] = (gen[id] or 0) + 1
       Structures.invalidate(id)
+      invalidateElevation(id)
     end
   end
   for i = #jobs, 1, -1 do
@@ -1387,6 +1602,7 @@ function ChunkMesher.setLive(live)
     if not live[job.id] and not prevLive[job.id] then
       jobIndex[jobKey(job.id, job.slot)] = nil
       table.remove(jobs, i)
+      invalidateElevation(job.id)
     end
   end
   prevLive = live
@@ -1396,6 +1612,7 @@ end
 -- from invalidate() only in accepting one optional map id and is kept as the
 -- narrow event-facing seam used by main.lua.
 function ChunkMesher.evictRuntime(mapId)
+  invalidateElevation(mapId)
   local function evict(id)
     local c = cache[id]
     if c then releaseEntry(c) end
@@ -1426,6 +1643,7 @@ end
 -- the generation counter.
 function ChunkMesher.invalidate(mapId)
   Structures.invalidate(mapId)
+  invalidateElevation(mapId)
   if mapId then
     local c = cache[mapId]
     if c then releaseEntry(c) end

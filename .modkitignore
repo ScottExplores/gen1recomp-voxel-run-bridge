@@ -87,9 +87,12 @@ tests/ceiling_camera_cutaway.lua
 tests/pixel_hills.lua
 tests/seasonal_weather.lua
 tests/wilds_special_spawn_safety.lua
+tests/ledge_elevation.lua
+tests/ledge_geometry.lua
 dist/voxel_run_bridge-0.12.3.zip
 dist/voxel_run_bridge-0.12.4.zip
 dist/voxel_run_bridge-0.12.5.zip
 dist/voxel_run_bridge-0.12.6.zip
 dist/voxel_run_bridge-0.12.7.zip
 dist/voxel_run_bridge-0.12.8.zip
+dist/voxel_run_bridge-0.12.9.zip

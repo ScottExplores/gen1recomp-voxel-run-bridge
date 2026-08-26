@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.12.9 - 2026-08-26
+
+- **Gave the original Gen 1 ledges real visual depth.** Scott's Tweaks now
+  derives bounded stepped plateaus from Kanto's native one-way-ledge rules and
+  raises the existing pixel terrain, water, scenery, foliage, figures, actors,
+  and camera onto the same immutable height snapshot. Collision, ledge jumps,
+  maps, and save data remain unchanged. Buildings use one door-anchored level
+  so a Pokémon Center or gate cannot split across a terrace. This ports only
+  the MIT-licensed Gen 1 terrain-datum technique from Voxel Ascendant 2.0.2;
+  it includes no upstream art, backdrops, models, Gen 2 content, or Stadium
+  content.
+
 ## 0.12.8 - 2026-08-25
 
 - **Protected the Pokémon Tower Marowak encounter.** Until the scripted ghost

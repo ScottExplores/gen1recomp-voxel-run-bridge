@@ -25,6 +25,14 @@ installed beside Scott's Tweaks.
   caps their geometry for handheld rendering; it includes no upstream art,
   weather runtime, Dramatic Shape patch or dependency. Copyright (c) 2026
   1-Camp0-1.
+- **Voxel Ascendant 2.0.2 `LedgeElevation`**
+  ([upstream](https://github.com/Roxas2712/voxel-ascendant/tree/v2.0.2)):
+  the Gen 1 one-way-ledge analysis used to give the existing voxel terrain
+  real stepped plateaus while leaving collision and jump rules unchanged.
+  Scott's Tweaks incorporates only this terrain-datum technique and its
+  supporting code; it includes no Voxel Ascendant art, backdrops, music,
+  battle presentation, Gen 2 content or Stadium content. Copyright (c) 2026
+  DramaticShape.
 
 The following MIT terms apply to each work and copyright notice listed above:
 

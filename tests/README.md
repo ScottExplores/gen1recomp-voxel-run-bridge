@@ -229,6 +229,22 @@ lua tests\pixel_hills.lua .
 luajit tests\pixel_hills.lua .
 ```
 
+`ledge_elevation.lua` locks the original Gen 1 one-way-ledge analysis without
+a ROM. It covers bounded and stacked contours, short road openings, side
+ledges, connected-map edges, six-pixel lip bases, half-cell plateau art,
+immutable caching, invalidation, and cooperative build yielding.
+`ledge_geometry.lua` carries that same snapshot through terrain, water,
+scenery, grass, flowers, authored figures, actors, and camera support. It also
+proves a building that crosses a contour stays rigid and uses its authored door
+as the floor level:
+
+```powershell
+lua tests\ledge_elevation.lua
+luajit tests\ledge_elevation.lua
+lua tests\ledge_geometry.lua
+luajit tests\ledge_geometry.lua
+```
+
 `gapped_land.lua` is the focused, ROM-free 61-check suite for that visual
 layer. Run it from the repository root with either supported Lua runtime:
 

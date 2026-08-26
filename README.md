@@ -1,25 +1,23 @@
 # Scott's Tweaks
 
-**0.12.8 makes voxel Kanto safer, clearer in third person, and more alive after
-dark while keeping its original pixel identity.** Visible wild Pokémon can no
-longer occupy or interrupt Pokémon Tower's scripted Marowak encounter. Indoor
-third-person views open a small camera-side cross-section instead of cutting
-away half the building, and one-sided ceiling surfaces keep elevated cameras
-from looking into an opaque roof. The higher sun arc is joined by pixel lunar
-phases, phase-matched reflections and moonlight, and a subtle Milky Way that is
-most visible near the new moon. PIXEL HILLS adds an optional code-drawn
-mountain, foothill, and forest horizon. A calendar-only seasonal rain mode adds
-variety without GPS, a network connection, or a location permission. The
-native-pixel Pocket Bag, selectable Pokémon art, voxel Kanto, visible wild
-Pokémon, followers, Free Fly, and Scott's other tweaks remain one updater
-package; no Gen 2/Stadium models or terrain are imported.
+**0.12.9 gives the original Gen 1 Kanto ledges real visual depth while keeping
+their native pixel artwork.** Scott's Tweaks derives stepped plateaus from the
+game's existing one-way-ledge rules, then places terrain, water, scenery,
+foliage, figures, actors, the camera, and complete buildings on the same visual
+height map. Collision, ledge jumps, maps, and save data remain unchanged. This
+release imports no Gen 2 or Pokémon Stadium content and adds no backdrops,
+models, or replacement terrain art.
+
+The native-pixel Pocket Bag, selectable Pokémon art, voxel Kanto, visible wild
+Pokémon, followers, Free Fly, and Scott's other tweaks remain together in the
+same updater package.
 
 Scott's Tweaks is the next version of **Voxel Run Bridge**. The display name
 is broader, but its internal mod ID remains `voxel_run_bridge`. Existing
 installations therefore update in place, keep their settings, and do not
 become a duplicate mod.
 
-Version 0.12.8 keeps the existing updater identity and provides one categorized
+Version 0.12.9 keeps the existing updater identity and provides one categorized
 **START > MOD MENUS > MOD SETTINGS** home for all of its settings. Its
 features are:
 
@@ -72,6 +70,11 @@ features are:
 - **Story-safe visible wilds:** the scripted Marowak trigger on Pokémon Tower
   6F stays reserved until that story encounter is complete. A visible wild
   cannot spawn, wander, chase, or begin its own battle on the trigger cell.
+- **Real Gen 1 ledge depth:** Kanto's existing pixel ledges form bounded
+  six-pixel terraces instead of lying on one flat plane. Terrain, water,
+  foliage, characters, and rigid buildings share the same visual level while
+  the original collision and jump rules remain in charge. This is automatic
+  in Scott's built-in voxel renderer and adds no separate setting or asset.
 - **Cleaner third-person interiors:** CUTAWAY follows the camera and opens only
   a bounded nearby section while preserving the far and side room shell.
   Ceiling undersides remain visible from inside but do not become an opaque
@@ -321,7 +324,7 @@ special canopy scenery so it does not flatten places that are supposed to be
 enclosed or water-covered.
 
 The renderer is selected by its stable mod ID and then checked for the required
-capabilities rather than trusted by display name alone. Version 0.12.8 targets
+capabilities rather than trusted by display name alone. Version 0.12.9 targets
 Pokemon Final, the verified Dramatic Shape 1.8.0-1.8.2 renderer contract, and
 Battle Art Voxel Fork's published renderer modules.
 If an active voxel provider does not expose the required renderer modules,
@@ -502,14 +505,14 @@ Scott's Tweaks choice was already saved.
 ## Install or update
 
 If Voxel Run Bridge or any earlier Scott's Tweaks release is installed, open
-Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.12.8
+Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.12.9
 update. It will appear as **Scott's Tweaks** afterward without creating a
 second entry.
 
 For a first installation:
 
 1. Open **MODS -> Import mod .zip** and choose
-   `voxel_run_bridge-0.12.8.zip`.
+   `voxel_run_bridge-0.12.9.zip`.
 2. Enable **Scott's Tweaks**, then restart the game if the manager asks.
 3. Open **START > MOD MENUS > MOD SETTINGS**. The Pocket Bag, trainer
    features, Oak's starter, B running, light run bob, gapped land, badge-free
@@ -588,17 +591,17 @@ After tests pass, build the updater ZIP from the committed tree. The repository
 attributes supply the exact release exclusions:
 
 ```powershell
-git archive --format=zip --output=dist/voxel_run_bridge-0.12.8.zip v0.12.8
+git archive --format=zip --output=dist/voxel_run_bridge-0.12.9.zip v0.12.9
 ```
 
 The archive keeps `manifest.json`, `main.lua`, `LICENSE`, notices, and the
 `modules/` directory at its root. Gen1Recomp's importer mounts those paths
 unchanged; development tests and unrelated workspace files are excluded.
 
-Version 0.12.8 is configured for Gen1Recomp's built-in GitHub update checks via
+Version 0.12.9 is configured for Gen1Recomp's built-in GitHub update checks via
 `ScottExplores/gen1recomp-voxel-run-bridge`.
 
-The download is deliberately named `voxel_run_bridge-0.12.8.zip` so the
+The download is deliberately named `voxel_run_bridge-0.12.9.zip` so the
 launcher selects it first from the matching GitHub release. Its internal ID
 remains `voxel_run_bridge`, so existing installs and saved settings update in
 place rather than appearing as a second mod.
