@@ -49,6 +49,7 @@ local CATEGORY_KEYS = {
   },
   world = {
     "worldFill", "renderDistance", "water", "shadowQuality", "daytime",
+    "moonPhase",
     "ceiling", "headroom", "cutaway", "rails", "spill", "fittings",
     "rock", "apron", "talltrees", "peaks", "pools", "sconces", "bats",
     "backdrop", "horizonart", "grass", "windows", "ceildetail",
@@ -230,6 +231,23 @@ local function schemaRow(row)
     end
   else
     descriptor.value = function() return "UNAVAILABLE" end
+  end
+  -- Keep the schema stable for the loader while making the dependent choice
+  -- honest in both categorized menus. The saved choice is retained outside a
+  -- pinned NIGHT and becomes active again when NIGHT is selected.
+  if row.key == "moonPhase" then
+    local ordinaryValue, ordinaryStep = descriptor.value, descriptor.step
+    local function active()
+      local daytime = state.byKey.daytime
+      return daytime and optionValue(daytime) == "night"
+    end
+    descriptor.value = function()
+      return active() and ordinaryValue() or "NIGHT ONLY"
+    end
+    descriptor.step = function(game, direction)
+      if not active() then return false end
+      return ordinaryStep(game, direction)
+    end
   end
   return descriptor
 end

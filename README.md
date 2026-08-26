@@ -1,11 +1,13 @@
 # Scott's Tweaks
 
-**0.12.10 puts Scott's Orion Nebula photograph into Kanto's moving pixel night
-sky.** M42 is reduced to a transparent 192×128, 24-color tile, kept deliberately
-faint beyond the clouds, and placed from its real right ascension and
-declination. It rises, crosses the sky and sets with the stars; bright Moon
-phases wash it out naturally. The Moon itself now rises later each day according
-to its phase. The original Gen 1 ledge depth and all prior features remain.
+**0.12.11 places six of Scott's astrophotography targets in Kanto's moving
+pixel night sky.** Orion M42 is joined by the Horsehead and Flame Nebulae,
+Andromeda Galaxy, Dumbbell Nebula, Cygnus Loop/Veil, and Elephant's Trunk.
+Every transparent, limited-palette texture is constructed from exact 3×3 color
+blocks—not merely a softened low-resolution photograph—and follows its catalog
+position behind the clouds. Pinned NIGHT also gains NATURAL, FULL MOON, and NEW
+MOON viewing choices. The original Gen 1 ledge depth and all prior features
+remain.
 
 The native-pixel Pocket Bag, selectable Pokémon art, voxel Kanto, visible wild
 Pokémon, followers, Free Fly, and Scott's other tweaks remain together in the
@@ -16,7 +18,7 @@ is broader, but its internal mod ID remains `voxel_run_bridge`. Existing
 installations therefore update in place, keep their settings, and do not
 become a duplicate mod.
 
-Version 0.12.10 keeps the existing updater identity and provides one categorized
+Version 0.12.11 keeps the existing updater identity and provides one categorized
 **START > MOD MENUS > MOD SETTINGS** home for all of its settings. Its
 features are:
 
@@ -83,8 +85,10 @@ features are:
   it across eight in-game days. Moonrise follows that phase and occurs later
   each day. The pixel Moon, water reflection, moonlight, and night palette agree
   on that phase, while the dithered Milky Way is most apparent around a new
-  moon. Scott's pixelated M42 photograph follows its fixed catalog position
-  across the night behind the clouds and dims under a bright Moon.
+  moon. When DAYTIME is pinned to NIGHT, MOON PHASE can instead select NATURAL,
+  FULL MOON, or NEW MOON. Scott's six strict block-pixel astrophotography tiles
+  follow their fixed catalog positions across the night behind the clouds and
+  dim under a bright Moon.
 - **Private seasonal rain:** LOCAL SEASON uses only the device's month and day
   for broad northern-temperate winter, spring, summer, and autumn rain habits.
   It never requests GPS or weather data and never contacts a service.
@@ -326,7 +330,7 @@ special canopy scenery so it does not flatten places that are supposed to be
 enclosed or water-covered.
 
 The renderer is selected by its stable mod ID and then checked for the required
-capabilities rather than trusted by display name alone. Version 0.12.10 targets
+capabilities rather than trusted by display name alone. Version 0.12.11 targets
 Pokemon Final, the verified Dramatic Shape 1.8.0-1.8.2 renderer contract, and
 Battle Art Voxel Fork's published renderer modules.
 If an active voxel provider does not expose the required renderer modules,
@@ -507,14 +511,14 @@ Scott's Tweaks choice was already saved.
 ## Install or update
 
 If Voxel Run Bridge or any earlier Scott's Tweaks release is installed, open
-Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.12.10
+Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.12.11
 update. It will appear as **Scott's Tweaks** afterward without creating a
 second entry.
 
 For a first installation:
 
 1. Open **MODS -> Import mod .zip** and choose
-   `voxel_run_bridge-0.12.10.zip`.
+   `voxel_run_bridge-0.12.11.zip`.
 2. Enable **Scott's Tweaks**, then restart the game if the manager asks.
 3. Open **START > MOD MENUS > MOD SETTINGS**. The Pocket Bag, trainer
    features, Oak's starter, B running, light run bob, gapped land, badge-free
@@ -593,17 +597,17 @@ After tests pass, build the updater ZIP from the committed tree. The repository
 attributes supply the exact release exclusions:
 
 ```powershell
-git archive --format=zip --output=dist/voxel_run_bridge-0.12.10.zip v0.12.10
+git archive --format=zip --output=dist/voxel_run_bridge-0.12.11.zip v0.12.11
 ```
 
 The archive keeps `manifest.json`, `main.lua`, `LICENSE`, notices, and the
 `modules/` directory at its root. Gen1Recomp's importer mounts those paths
 unchanged; development tests and unrelated workspace files are excluded.
 
-Version 0.12.10 is configured for Gen1Recomp's built-in GitHub update checks via
+Version 0.12.11 is configured for Gen1Recomp's built-in GitHub update checks via
 `ScottExplores/gen1recomp-voxel-run-bridge`.
 
-The download is deliberately named `voxel_run_bridge-0.12.10.zip` so the
+The download is deliberately named `voxel_run_bridge-0.12.11.zip` so the
 launcher selects it first from the matching GitHub release. Its internal ID
 remains `voxel_run_bridge`, so existing installs and saved settings update in
 place rather than appearing as a second mod.
@@ -618,10 +622,13 @@ renderer code, textures, or horizon art. It does not copy the existing
 does not declare a software license. That project is credited for publicly
 demonstrating and documenting the first-person movement gap.
 
-The M42 tile is derived from Scott's supplied Orion Nebula astrophotography,
-then transformed for this project into a small transparent, limited-palette
-pixel asset. The full-resolution source photograph and intermediate generated
-images are not distributed in the updater package.
+The six deep-sky tiles are derived from Scott's supplied astrophotography, then
+transformed for this project into small transparent, limited-palette assets on
+a strict 3×3 block grid. The catalog retains each target's real right ascension
+and declination; only Elephant's Trunk receives a documented display-only
+declination compression so it can rise in the fixed north-facing diorama. The
+full-resolution source photographs and intermediate generated images are not
+distributed in the updater package.
 
 PIXEL HILLS adapts the procedural layered-ridge basis from MIT-licensed Kanto
 Dynamic Weather 1.0.3. Scott's version code-draws its own pixel-quantized

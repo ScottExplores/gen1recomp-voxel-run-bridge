@@ -124,13 +124,47 @@ local V = {
 }
 local Sky = assert(loadfile(root .. "/lib/Sky.lua"))(V)
 
-eq(#Sky.DEEP_SKY_CATALOG, 1,
-  "catalog starts with Scott's one supplied deep-sky photograph")
-eq(Sky.DEEP_SKY_CATALOG[1].id, "m42_orion_nebula",
-  "catalog identifies Orion's M42")
-eq(Sky.DEEP_SKY_CATALOG[1].path,
-  "assets/sky/astrophotography/m42_orion_nebula.png",
-  "catalog uses the packaged astrophotography path")
+local expectedCatalog = {
+  { "m42_orion_nebula", "m42_orion_nebula.png" },
+  { "b33_horsehead_flame", "b33_horsehead_flame.png" },
+  { "m31_andromeda_galaxy", "m31_andromeda_galaxy.png" },
+  { "m27_dumbbell_nebula", "m27_dumbbell_nebula.png" },
+  { "cygnus_loop_veil", "cygnus_loop_veil.png" },
+  { "ic1396a_elephants_trunk", "ic1396a_elephants_trunk.png" },
+}
+eq(#Sky.DEEP_SKY_CATALOG, #expectedCatalog,
+  "catalog contains all six of Scott's deep-sky photographs")
+local seenCatalog = {}
+for index, expected in ipairs(expectedCatalog) do
+  local entry = Sky.DEEP_SKY_CATALOG[index]
+  eq(entry.id, expected[1], "catalog row " .. index .. " has the expected id")
+  eq(entry.path, "assets/sky/astrophotography/" .. expected[2],
+    "catalog row " .. index .. " uses its packaged texture")
+  check(not seenCatalog[entry.id], "catalog ids remain unique: " .. entry.id)
+  seenCatalog[entry.id] = true
+  check(type(entry.raHours) == "number" and entry.raHours >= 0
+        and entry.raHours < 24,
+    "catalog RA is valid for " .. entry.id)
+  check(type(entry.decDegrees) == "number" and entry.decDegrees >= -90
+        and entry.decDegrees <= 90,
+    "catalog declination is valid for " .. entry.id)
+  check(type(entry.widthFraction) == "number" and entry.widthFraction > 0
+        and entry.widthFraction < 0.5,
+    "catalog presentation width is restrained for " .. entry.id)
+  check(type(entry.maxAlpha) == "number" and entry.maxAlpha > 0
+        and entry.maxAlpha <= 0.14,
+    "catalog alpha remains faint for " .. entry.id)
+  local file = io.open(root .. "/" .. entry.path, "rb")
+  check(file ~= nil, "packaged texture exists for " .. entry.id)
+  if file then
+    eq(file:read(8), "\137PNG\r\n\26\n",
+      "packaged texture is a PNG for " .. entry.id)
+    file:close()
+  end
+end
+check(Sky.DEEP_SKY_CATALOG[6].decDegrees > 50
+      and Sky.DEEP_SKY_CATALOG[6].presentationDecDegrees == 36,
+  "Elephant's Trunk retains real metadata with a visible diorama declination")
 
 -- REAL CLOCK consumes one continuous Unix-day coordinate rather than mixing a
 -- UTC date edge with the local day/night dial. One second therefore produces
@@ -154,6 +188,24 @@ near(Sky.siderealTurn(DayNight.T.night, lunar),
   "fixed NIGHT keeps the calibrated midnight sky")
 clockMode, celestialOverride = "hour", nil
 lunar = { source = "game", illuminated = 0, milkyWay = 1 }
+
+-- Every catalog target must become visible at its own meridian transit. This
+-- catches a high-declination photograph that would otherwise never rise in
+-- the fixed north-facing diorama presentation.
+phase = "night"
+for _, entry in ipairs(Sky.DEEP_SKY_CATALOG) do
+  celestialOverride = ((entry.raHours / 24) - Sky.CELESTIAL_GAME_OFFSET)
+                      / Astronomy.SIDEREAL_TURNS_PER_DAY
+  local objects = Sky.deepSky(DayNight.T.night) or {}
+  local found
+  for _, object in ipairs(objects) do
+    if object.id == entry.id then found = object break end
+  end
+  check(found ~= nil, entry.id .. " rises at its catalog transit")
+  check(found and found.direction.dy > 0,
+    entry.id .. " projects above the horizon at transit")
+end
+celestialOverride = nil
 
 -- Pure descriptor gates must not even ask the graphics layer for the image.
 phase = "day"

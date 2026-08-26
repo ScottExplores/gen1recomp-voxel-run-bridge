@@ -1,7 +1,7 @@
 {
   "id": "voxel_run_bridge",
   "name": "Scott's Tweaks",
-  "version": "0.12.10",
+  "version": "0.12.11",
   "github": "ScottExplores/gen1recomp-voxel-run-bridge",
   "api": 2,
   "entry": "main.lua",
@@ -32,5 +32,5 @@
   "experimental": false,
   "affects_link": true,
   "permissions": ["engine_internals"],
-  "description": "Scott's organized gameplay menu: selectable Crystal/Battle Art Gen 1-5 sprites, native-pixel Pocket Bag and responsive PC skins, four-card Pokegear, Buddy/All EXP.SHARE, independent trainer/boss/wild difficulty, Trade Stone, trainer forfeits and rematches, Oak's spare starter, B-button running, badge-free field moves, visible wild Pokemon, followers, Free Fly, and automatic physical-Thor dual-screen control. The built-in original-style Kanto voxel renderer adds real Gen 1 ledge depth, safe third-person rooms, pixel horizons, elevated sun travel, later-rising lunar phases, a phase-aware Milky Way, Scott's catalog-positioned pixel astrophotography, and optional local-season weather."
+  "description": "Scott's organized gameplay menu: selectable Crystal/Battle Art Gen 1-5 sprites, native-pixel Pocket Bag and responsive PC skins, four-card Pokegear, Buddy/All EXP.SHARE, independent trainer/boss/wild difficulty, Trade Stone, trainer forfeits and rematches, Oak's spare starter, B-button running, badge-free field moves, visible wild Pokemon, followers, Free Fly, and automatic physical-Thor dual-screen control. The built-in original-style Kanto voxel renderer adds real Gen 1 ledge depth, safe third-person rooms, pixel horizons, elevated sun travel, later-rising lunar phases, pinned-night Full/New Moon choices, a phase-aware Milky Way, Scott's catalog-positioned block-pixel astrophotography, and optional local-season weather."
 }

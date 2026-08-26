@@ -84,6 +84,7 @@ tests/wilds_behavior_tick_alloc.lua
 tests/modern_bag_integration.lua
 tests/astronomy.lua
 tests/deep_sky.lua
+tests/pixel_sky_assets.py
 tests/ceiling_camera_cutaway.lua
 tests/pixel_hills.lua
 tests/seasonal_weather.lua
@@ -98,3 +99,5 @@ dist/voxel_run_bridge-0.12.7.zip
 dist/voxel_run_bridge-0.12.8.zip
 dist/voxel_run_bridge-0.12.9.zip
 dist/voxel_run_bridge-0.12.10.zip
+dist/voxel_run_bridge-0.12.11.zip
+tools/

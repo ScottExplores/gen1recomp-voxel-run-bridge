@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.12.11 - 2026-08-26
+
+- **Expanded Scott's moving astrophotography sky from one target to six.** The
+  Horsehead and Flame Nebulae, Andromeda Galaxy, Dumbbell Nebula, Cygnus
+  Loop/Veil, and Elephant's Trunk now join M42 at their cataloged right
+  ascensions and declinations. They inherit the existing sidereal movement,
+  Moon washout, horizon/world occlusion, cloud cover, lazy loading, and NIGHT
+  SKY switch. Elephant's Trunk keeps its real coordinate as metadata and uses
+  one documented display-only declination compression so the fixed diorama can
+  expose it above the horizon.
+- **Made the astrophotography visibly block-pixel rather than merely small.**
+  All six shipped textures are indexed, transparent, limited to at most 24
+  palette entries, and built from mathematically uniform 3×3 color blocks with
+  hard nearest-neighbor edges. A reusable builder and automated asset validator
+  lock those properties for future photographs.
+- **Added a pinned-night Moon choice.** When DAYTIME is NIGHT, MOON PHASE offers
+  NATURAL, FULL MOON, or NEW MOON. The selected phase coherently controls the
+  Moon disc and rise position, moonlight, shadows, water reflection, night
+  palette, Milky Way, and deep-sky visibility. Other time modes continue to use
+  their natural real-clock or accelerated lunar phases.
+
 ## 0.12.10 - 2026-08-26
 
 - **Placed Scott's Orion Nebula photograph in the moving pixel sky.** The

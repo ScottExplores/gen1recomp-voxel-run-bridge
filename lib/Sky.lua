@@ -71,6 +71,55 @@ Sky.DEEP_SKY_CATALOG = {
     widthFraction = 0.34, -- deliberately larger than life, still faint
     maxAlpha = 0.14,
   },
+  {
+    id = "b33_horsehead_flame",
+    label = "HORSEHEAD + FLAME (B33 / NGC 2024)",
+    path = "assets/sky/astrophotography/b33_horsehead_flame.png",
+    raHours = 5 + 40 / 60 + 59 / 3600,
+    decDegrees = -(2 + 27 / 60 + 30 / 3600),
+    widthFraction = 0.30,
+    maxAlpha = 0.10,
+  },
+  {
+    id = "m31_andromeda_galaxy",
+    label = "ANDROMEDA GALAXY (M31)",
+    path = "assets/sky/astrophotography/m31_andromeda_galaxy.png",
+    raHours = 42 / 60 + 44.330 / 3600,
+    decDegrees = 41 + 16 / 60 + 7.50 / 3600,
+    widthFraction = 0.32,
+    maxAlpha = 0.10,
+  },
+  {
+    id = "m27_dumbbell_nebula",
+    label = "DUMBBELL NEBULA (M27)",
+    path = "assets/sky/astrophotography/m27_dumbbell_nebula.png",
+    raHours = 19 + 59 / 60 + 36.26 / 3600,
+    decDegrees = 22 + 43 / 60 + 15.6 / 3600,
+    widthFraction = 0.16,
+    maxAlpha = 0.09,
+  },
+  {
+    id = "cygnus_loop_veil",
+    label = "CYGNUS LOOP / VEIL NEBULA",
+    path = "assets/sky/astrophotography/cygnus_loop_veil.png",
+    raHours = 20 + 51 / 60,
+    decDegrees = 30 + 40 / 60,
+    widthFraction = 0.25,
+    maxAlpha = 0.085,
+  },
+  {
+    id = "ic1396a_elephants_trunk",
+    label = "ELEPHANT'S TRUNK (IC 1396A)",
+    path = "assets/sky/astrophotography/ic1396a_elephants_trunk.png",
+    raHours = 21 + 36 / 60,
+    decDegrees = 57 + 24 / 60,
+    -- The real coordinate remains metadata above. The fixed north-facing
+    -- Gen-1 diorama cannot expose +57 degrees at its mirrored presentation
+    -- latitude, so compress only the display declination toward its horizon.
+    presentationDecDegrees = 36,
+    widthFraction = 0.27,
+    maxAlpha = 0.085,
+  },
 }
 
 -- Release-day zero puts M42 on the meridian at the NIGHT pin.  A sidereal day
@@ -162,14 +211,16 @@ function Sky.deepSky(t)
 
   for i = #deepFrame, 1, -1 do deepFrame[i] = nil end
   for _, entry in ipairs(Sky.DEEP_SKY_CATALOG) do
+    local presentationDec = tonumber(entry.presentationDecDegrees)
+                            or entry.decDegrees
     local direction = Astronomy.equatorialDirection(
-      entry.raHours, entry.decDegrees, turn, Sky.CELESTIAL_LATITUDE)
+      entry.raHours, presentationDec, turn, Sky.CELESTIAL_LATITUDE)
     if direction.dy > 0 then
       entry.direction = direction
       -- A nearby catalog coordinate supplies celestial north, allowing the
       -- artwork to remain fixed to the sphere as a first-person camera turns.
       entry.upDirection = Astronomy.equatorialDirection(
-        entry.raHours, math.min(90, entry.decDegrees + 1), turn,
+        entry.raHours, math.min(90, presentationDec + 1), turn,
         Sky.CELESTIAL_LATITUDE)
       entry.alpha = entry.maxAlpha * dark * (0.25 + 0.75 * milky)
       entry.x, entry.y, entry.upX, entry.upY = nil, nil, nil, nil

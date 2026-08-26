@@ -84,17 +84,39 @@ near(Astronomy.moonDayPosition(0.75, 0.5), 0.25, 1e-9,
 check(Astronomy.snapshot("game", 0).milkyWay
       > Astronomy.snapshot("game", 4).milkyWay,
       "Milky Way is strongest near new moon")
+local pinnedFull = Astronomy.snapshotPhase("pinned", 0.5)
+near(pinnedFull.phase, 0.5, 1e-9,
+     "explicit phase snapshot preserves full moon")
+near(pinnedFull.illuminated, 1, 1e-9,
+     "explicit full moon has complete illumination")
+near(pinnedFull.moonrise, 0.5, 1e-9,
+     "explicit full moon rises at sunset")
+near(pinnedFull.milkyWay, 0.16, 1e-9,
+     "explicit full moon washes the Milky Way back")
+check(pinnedFull.source == "pinned" and pinnedFull.name == "FULL",
+      "explicit phase snapshot preserves its pinned source and name")
+local pinnedNew = Astronomy.snapshotPhase("pinned", 0)
+near(pinnedNew.illuminated, 0, 1e-9,
+     "explicit new moon has no moonlight")
+near(pinnedNew.moonrise, 0, 1e-9,
+     "explicit new moon rises with the sun")
+near(pinnedNew.milkyWay, 1, 1e-9,
+     "explicit new moon reveals the complete Milky Way")
 check(Astronomy.surfaceLight(0.7, 0, 0.25) > 0
       and Astronomy.surfaceLight(-0.7, 0, 0.25) < 0,
       "waxing quarter lights the right side of the pixel Moon")
 
-local option = "hour"
+local options = { daytime = "hour", moonPhase = "natural" }
 local saved = {}
 local settingStub = {}
-function settingStub.new()
+function settingStub.new(key, label, values, labels)
   return {
-    get = function() return option end,
-    setIndex = function() end,
+    key = key, label = label, values = values, labels = labels,
+    get = function() return options[key] end,
+    setIndex = function(_, index)
+      options[key] = values[index]
+      return options[key]
+    end,
   }
 end
 local dayV = {
@@ -138,7 +160,7 @@ DayNight.clock, DayNight.astronomyDay = 123, 0
 DayNight.restore()
 check(DayNight.astronomyDay == 4,
       "accelerated lunar day persists with the save slot")
-option = "sync"
+options.daytime = "sync"
 local timestampReads = 0
 DayNight.timestamp = function()
   timestampReads = timestampReads + 1
@@ -154,22 +176,56 @@ near(DayNight.celestialDay(), Astronomy.NEW_MOON_EPOCH / 86400, 1e-12,
      "real-clock celestial day is the cached Unix-day value")
 check(timestampReads == 1,
       "celestial coordinates reuse the lunar timestamp cache")
-option = "night"
+options.daytime = "night"
 near(DayNight.celestialDay(), Astronomy.NEW_MOON_EPOCH / 86400, 1e-12,
      "pinned views retain the current real celestial day")
 check(timestampReads == 1,
       "pinned celestial coordinates reuse the same timestamp cache")
-option = "sync"
+
+options.moonPhase = "full"
+DayNight.resetAstronomyCache()
+local forcedFull = DayNight.astronomy(DayNight.T.night)
+check(forcedFull.source == "pinned" and forcedFull.name == "FULL",
+      "NIGHT can pin a coherent full-moon snapshot")
+near(forcedFull.illuminated, 1, 1e-9,
+     "pinned full Moon drives complete moonlight")
+local forcedFullBody = DayNight.body(DayNight.T.night)
+check(forcedFullBody and forcedFullBody.moon and forcedFullBody.dy > 0.3,
+      "pinned full Moon is visible high at midnight")
+options.moonPhase = "new"
+local forcedNew = DayNight.astronomy(DayNight.T.night)
+check(forcedNew.source == "pinned" and forcedNew.name == "NEW",
+      "changing the NIGHT choice cannot reuse the full-moon cache")
+near(forcedNew.illuminated, 0, 1e-9,
+     "pinned new Moon contributes no moonlight")
+check(DayNight.body(DayNight.T.night) == nil,
+      "pinned new Moon remains below the midnight horizon")
+
+options.daytime = "sync"
+options.moonPhase = "full"
+DayNight.resetAstronomyCache()
+check(DayNight.astronomy().source == "sync",
+      "stored full-moon preference is ignored by REAL CLOCK")
+options.daytime = "hour"
+DayNight.resetAstronomyCache()
+check(DayNight.astronomy().source == "game",
+      "stored full-moon preference is ignored by accelerated days")
+options.daytime = "sync"
+options.moonPhase = "natural"
+local refreshStart = timestampReads
 for _ = 1, 20 do DayNight.astronomy() end
+local refreshBaseline = timestampReads
+check(refreshBaseline == refreshStart + 1,
+      "returning to REAL CLOCK refreshes one cached device timestamp")
 DayNight.update(59)
 DayNight.astronomy()
-check(timestampReads == 1,
+check(timestampReads == refreshBaseline,
       "same-minute sky consumers reuse the device timestamp")
 DayNight.update(1)
 DayNight.astronomy()
-check(timestampReads == 2,
+check(timestampReads == refreshBaseline + 1,
       "device timestamp refreshes after one minute")
-option = "hour"
+options.daytime = "hour"
 
 -- The daily Moon arc follows the same simple astronomical rise schedule as
 -- the phase snapshot. These calls provide the exact phase so the geometry

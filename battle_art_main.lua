@@ -626,6 +626,10 @@ local SETTINGS = {
     .. "GAME 20 MIN and GAME 1 HOUR run a complete accelerated day with the "
     .. "sky, shadows and light following. DAY, NIGHT, DUSK and DAWN pin one "
     .. "part of the cycle." },
+  { DayNight.moonPhaseSetting,
+    "Used only when DAYTIME is pinned to NIGHT. NATURAL follows the current "
+    .. "lunar cycle; FULL MOON gives a brighter sky and washes faint deep-sky "
+    .. "objects back; NEW MOON removes the visible disc and reveals them." },
   -- ------- 1.66 UI backplates (see lib/UiBackplates.lua) -------
   { UiBackplates.spriteLight,
     "SHADED lets the mons receive the world's day tint and cast shadows; "
@@ -936,6 +940,10 @@ mod.events:on("mod.options_changed", function(payload)
   if not (payload and payload.mod == mod.id) then return end
   for _, entry in ipairs(SETTINGS) do
     if payload.key == entry[1].key then entry[1]:sync(payload.value) end
+  end
+  if payload.key == DayNight.KEY
+      or payload.key == DayNight.MOON_PHASE_KEY then
+    DayNight.resetAstronomyCache()
   end
   -- 3D-BTL switched on from the manager's page pins BATTLE LAYOUT exactly as
   -- the OPTIONS row does. The manager persists its own value; this is the one

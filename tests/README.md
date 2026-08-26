@@ -175,26 +175,29 @@ lua tests\dynamic_scaling_engine_compat.lua <engine-root>
 luajit tests\dynamic_scaling_engine_compat.lua <engine-root>
 ```
 
-`astronomy.lua` is the 85-check contract for the shared sky clock. It covers a
+`astronomy.lua` is the 102-check contract for the shared sky clock. It covers a
 known real-world new-moon epoch, synodic wrapping, the persistent eight-day
 in-game accelerated cycle, throttled device-clock reads, raised celestial
-elevation, phase illumination, pixel Moon masks, Milky Way visibility, and
-the matching water reflection:
+elevation, phase illumination, the NIGHT-only Full/New Moon override, pixel
+Moon masks, Milky Way visibility, and the matching water reflection:
 
 ```powershell
 lua tests\astronomy.lua
 luajit tests\astronomy.lua
 ```
 
-`deep_sky.lua` is the 41-check ROM-free contract for Scott's fixed M42
-photograph. It locks daytime and NIGHT SKY gates, reference-night sidereal
-transit, moon-phase
-visibility, lazy `V.path` loading, nearest/clamped sampling, placement behind
-the pixel Moon, and release/reload behavior across renderer invalidation:
+`deep_sky.lua` is the 106-check ROM-free contract for Scott's six fixed
+astrophotography targets. It locks unique catalog coordinates, daytime and
+NIGHT SKY gates, reference-night sidereal transit, moon-phase visibility,
+lazy `V.path` loading, nearest/clamped sampling, placement behind the pixel
+Moon, and release/reload behavior across renderer invalidation. The companion
+asset validator proves every PNG uses binary transparency, a limited palette,
+and exact 3-by-3 color blocks rather than ordinary low-resolution filtering:
 
 ```powershell
 lua tests\deep_sky.lua .
 luajit tests\deep_sky.lua .
+python tests\pixel_sky_assets.py .
 ```
 
 `seasonal_weather.lua` is the 35-check privacy and determinism contract for

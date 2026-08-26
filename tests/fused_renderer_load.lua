@@ -141,6 +141,12 @@ T.eq(DayNight.setting and DayNight.setting.labels[6], "GAME 20 MIN",
   "short game cycle is labeled explicitly")
 T.eq(DayNight.setting and DayNight.setting.labels[7], "GAME 1 HOUR",
   "one-hour game cycle is labeled explicitly")
+T.eq(DayNight.moonPhaseSetting and DayNight.moonPhaseSetting.values[1],
+  "natural", "Moon Phase keeps the natural lunar cycle by default")
+T.eq(DayNight.moonPhaseSetting and DayNight.moonPhaseSetting.labels[2],
+  "FULL MOON", "pinned night exposes a full-Moon choice")
+T.eq(DayNight.moonPhaseSetting and DayNight.moonPhaseSetting.labels[3],
+  "NEW MOON", "pinned night exposes a new-Moon choice")
 
 local vend = exports.vendored
 T.check(type(vend) == "table", "vendor host reported status")
@@ -325,6 +331,10 @@ T.eq(schemaByKey.simple_menu and schemaByKey.simple_menu.default, true,
   "BASIC is the single default visibility mode")
 T.eq(schemaByKey.simple_menu and schemaByKey.simple_menu.label,
   "OPTIONS SHOWN", "canonical visibility flag uses the unified UI name")
+T.eq(schemaByKey.moonPhase and schemaByKey.moonPhase.default, "natural",
+  "Moon Phase defaults to the real lunar cycle")
+T.eq(#(schemaByKey.moonPhase and schemaByKey.moonPhase.choices or {}), 3,
+  "Moon Phase schema contains Natural, Full Moon, and New Moon")
 local wildPrefix = "overworld_wild_spawns:"
 T.eq(schemaByKey[wildPrefix .. "enabled"]
     and schemaByKey[wildPrefix .. "enabled"].default, true,
@@ -451,6 +461,39 @@ T.eq(root.title, "MOD SETTINGS", "unified root has a visible title")
 T.check(type(root.footer) == "string"
     and root.footer:find("MOD SETTINGS", 1, true) ~= nil,
   "unified root footer preserves its title")
+
+do
+  local worldBasic = buildScreen(unified.screenIds.world)
+  local daytime = findLabel(worldBasic.rows, "DAYTIME")
+  local moonPhase = findLabel(worldBasic.rows, "MOON PHASE")
+  T.check(daytime ~= nil and moonPhase ~= nil,
+    "World BASIC keeps time and its dependent Moon choice together")
+  T.eq(moonPhase and moonPhase.value(), "NIGHT ONLY",
+    "Moon Phase explains why it is inactive outside pinned NIGHT")
+  local beforeInactiveMoonWrites = writes
+  T.eq(moonPhase and moonPhase.step(game, 1), false,
+    "Moon Phase cannot change while DAYTIME follows the clock")
+  T.eq(writes, beforeInactiveMoonWrites,
+    "inactive Moon Phase performs no options write")
+  T.eq(daytime and daytime.step(game, 1), true,
+    "DAYTIME can move from REAL CLOCK to DAY")
+  T.eq(daytime and daytime.step(game, 1), true,
+    "DAYTIME can move from DAY to NIGHT")
+  T.eq(moonPhase and moonPhase.value(), "NATURAL",
+    "Moon Phase activates when DAYTIME reaches NIGHT")
+  T.eq(moonPhase and moonPhase.step(game, 1), true,
+    "NIGHT can select a fixed full Moon")
+  T.eq(moonPhase and moonPhase.value(), "FULL MOON",
+    "World screen reports the fixed full Moon")
+  T.eq(moonPhase and moonPhase.step(game, 1), true,
+    "NIGHT can select a fixed new Moon")
+  T.eq(moonPhase and moonPhase.value(), "NEW MOON",
+    "World screen reports the fixed new Moon")
+  T.eq(daytime and daytime.step(game, -2), true,
+    "DAYTIME can return directly from NIGHT to REAL CLOCK")
+  T.eq(moonPhase and moonPhase.value(), "NIGHT ONLY",
+    "leaving NIGHT hides but preserves the Moon preference")
+end
 
 local wildBasic = buildScreen(unified.screenIds.wilds)
 local encounter = findLabel(wildBasic.rows, "ENCOUNTER MODE")

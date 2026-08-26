@@ -80,6 +80,12 @@ DayNight.setting = ModSetting.new(DayNight.KEY, DayNight.LABEL,
                                     "dawn", "cycle", "hour" },
                                   { "REAL CLOCK", "DAY", "NIGHT", "DUSK",
                                     "DAWN", "GAME 20 MIN", "GAME 1 HOUR" })
+DayNight.MOON_PHASE_KEY = "moonPhase"
+DayNight.MOON_PHASE_LABEL = "MOON PHASE"
+DayNight.moonPhaseSetting = ModSetting.new(
+  DayNight.MOON_PHASE_KEY, DayNight.MOON_PHASE_LABEL,
+  { "natural", "full", "new" },
+  { "NATURAL", "FULL MOON", "NEW MOON" })
 
 -- The one writer for the FULL pin. While VOXEL sits on FULL the DAYTIME
 -- row is off the menu with the rest of the rows the preset owns, and the
@@ -499,6 +505,23 @@ function DayNight.astronomy(t)
         "game", key / 1024, DayNight.MOON_PHASE_DAYS)
     end
     return astronomyCache.value
+  end
+  -- A pinned NIGHT can be used as a predictable viewing mode for Scott's
+  -- astrophotography. FULL and NEW override only lunar state; the catalog and
+  -- stars retain the pin's ordinary seasonal/sidereal position. All other
+  -- DAYTIME modes ignore this stored preference and keep their natural phase.
+  if m == "night" then
+    local choice = DayNight.moonPhaseSetting:get()
+    local forcedPhase = choice == "full" and 0.5
+                     or choice == "new" and 0.0 or nil
+    if forcedPhase ~= nil then
+      if astronomyCache.source ~= "pinned" or astronomyCache.key ~= choice then
+        astronomyCache.source, astronomyCache.key = "pinned", choice
+        astronomyCache.days = nil
+        astronomyCache.value = Astronomy.snapshotPhase("pinned", forcedPhase)
+      end
+      return astronomyCache.value
+    end
   end
   -- The lunar phase cannot visibly move from frame to frame.  Read the host
   -- clock at most once a minute, then keep the existing five-minute snapshot

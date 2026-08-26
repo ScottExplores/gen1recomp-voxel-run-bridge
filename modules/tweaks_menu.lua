@@ -470,7 +470,7 @@ return function(mod, context)
 
   local function worldRows()
     local rows = {}
-    addAll(rows, baRows({ "worldFill", "daytime", "water",
+    addAll(rows, baRows({ "worldFill", "daytime", "moonPhase", "water",
       "shadowQuality" }), true)
     add(rows, mark(toggle("gapped_land", "GAPPED LAND"), false))
     add(rows, mark(baPipelineRow("lavveil", "LAVENDER VEIL"), false))

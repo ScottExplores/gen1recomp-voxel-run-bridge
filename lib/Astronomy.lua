@@ -114,11 +114,9 @@ function Astronomy.moonriseDelay(cycleDays)
   return 1 / cycleDays
 end
 
-function Astronomy.snapshot(source, value, cycleDays)
-  source = source == "game" and "game" or "sync"
-  local phase = source == "game"
-    and Astronomy.gamePhase(value, cycleDays)
-    or Astronomy.realPhase(value)
+function Astronomy.snapshotPhase(source, phase)
+  source = source or "fixed"
+  phase = wrap01(phase)
   local lit = Astronomy.illumination(phase)
   return {
     source = source,
@@ -134,6 +132,14 @@ function Astronomy.snapshot(source, value, cycleDays)
     waxing = phase > 0 and phase < 0.5,
     name = Astronomy.phaseName(phase),
   }
+end
+
+function Astronomy.snapshot(source, value, cycleDays)
+  source = source == "game" and "game" or "sync"
+  local phase = source == "game"
+    and Astronomy.gamePhase(value, cycleDays)
+    or Astronomy.realPhase(value)
+  return Astronomy.snapshotPhase(source, phase)
 end
 
 -- Light at a point on the visible lunar sphere. nx/ny are disc-local values
