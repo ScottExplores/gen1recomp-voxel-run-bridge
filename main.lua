@@ -5,9 +5,11 @@
 -- related quality-of-life rules.
 
 local Runtime = require("src.mods.Runtime")
-local Game = require("src.core.Game")
-local FieldDefaults = require("src.world.FieldDefaults")
-local Map = require("src.world.Map")
+-- Kanto's singleton and map helpers are loaded only after generation routing.
+-- Gold/Silver/Crystal use Game2 and their own world facade, so requiring these
+-- modules before the branch would make a unified package depend on Gen2Compat
+-- aliases it does not otherwise need.
+local Game, FieldDefaults, Map
 
 local unpackValues = table.unpack or unpack
 
@@ -50,7 +52,19 @@ local GAPPED_LAND_CELL = 64
 -- Native terrain and Flora's detailed apron occupy roughly y=-2..-37.
 -- Keep the broad procedural ground below both so it only fills the void.
 local GAPPED_LAND_Y = -40
-local RELEASE_VERSION = "0.12.12"
+local RELEASE_VERSION = "0.13.0"
+
+-- One package, two runtime profiles. These bundled mods advertise and carry
+-- real Gen 2 code; every other vendor remains on the historical Gen 1 path.
+-- Keeping the allow-list here makes it impossible for a later Kanto-only
+-- addition to begin executing on Gold merely because it was added to MODS.
+local GEN2_VENDOR_IDS = {
+  "overworld_wild_spawns",
+  "free_fly",
+  "choose_lead",
+  "unique_menu_icons",
+  "crystal_animated_sprites_with_shiny_visuals",
+}
 
 local OPTION_DEFAULTS = {
   hm_without_badges = true,
@@ -73,6 +87,12 @@ local OPTION_DEFAULTS = {
   -- 1X; the gentler new-install default is half of that (0.5X).
   running_bob_intensity = 0.125,
   dual_screen = false,
+  gen2_voxel_world = true,
+  gen2_camera_mode = "diorama",
+  gen2_camera_slider = true,
+  daytime = "sync",
+  moonPhase = "natural",
+  ledgeDepth = true,
 }
 
 local TRADE_EVOLUTIONS = {
@@ -209,6 +229,35 @@ local function loadOwn(mod, relative)
   return result
 end
 
+local function activeGeneration()
+  local ok, GameVersion = pcall(require, "src.core.GameVersion")
+  if ok and type(GameVersion) == "table"
+      and type(GameVersion.generation) == "function" then
+    local okGeneration, generation = pcall(GameVersion.generation)
+    if okGeneration and tonumber(generation) == 2 then return 2 end
+  end
+  -- The official modkit can inject `generation = 2` without changing the
+  -- process-global GameVersion (there is no ROM in a headless run). Under
+  -- that seam the loader still serves its documented Gen2Compat BattleState:
+  -- Gold's screen has `new`, while the Gen 1 BattleState intentionally builds
+  -- through newWild/newTrainer and has no `new`. Crystal's upstream sprite
+  -- provider uses the same warning-free capability probe.
+  local okBattle, BattleState = pcall(require, "src.battle.BattleState")
+  if okBattle and type(BattleState) == "table"
+      and type(BattleState.new) == "function" then
+    return 2
+  end
+  -- Engines before the Gen 2 runtime do not expose generation(). They are
+  -- necessarily Gen 1, so preserving the original path is the safe fallback.
+  return 1
+end
+
+local function loadGen1EngineModules()
+  Game = Game or require("src.core.Game")
+  FieldDefaults = FieldDefaults or require("src.world.FieldDefaults")
+  Map = Map or require("src.world.Map")
+end
+
 local function installFeatureModules(mod)
   if type(mod.read) ~= "function" then return end
 
@@ -296,6 +345,91 @@ local function installFeatureModules(mod)
     end
   end
   install("modules/tweaks_menu.lua", "tweaksMenu")
+end
+
+-- Gold/Silver/Crystal already own their native PACK, Pokegear, trainer
+-- scripts and starter story. Only install Scott-authored modules whose public
+-- seams are shared by both engines. In particular, this never loads
+-- option_screen.lua (Gen 1 OptionRows), gen2_ui.lua (the Kanto imitation), or
+-- either Kanto story module.
+local function installGen2FeatureModules(mod)
+  local Settings, settingsErr = loadOwn(mod, "modules/settings.lua")
+  if type(Settings) ~= "table" or type(Settings.new) ~= "function" then
+    mod.exports.moduleErrors = mod.exports.moduleErrors or {}
+    mod.exports.moduleErrors.settings = tostring(settingsErr or "invalid module")
+    if mod.log and mod.log.warn then
+      mod.log:warn("Scott's Tweaks Gen 2 settings unavailable: %s",
+        tostring(settingsErr or "invalid settings module"))
+    end
+    return
+  end
+
+  local settings = Settings.new(mod, OPTION_DEFAULTS)
+  local context = {
+    releaseVersion = RELEASE_VERSION,
+    defaults = OPTION_DEFAULTS,
+    settings = settings,
+    generation = 2,
+    loadOwn = function(relative) return loadOwn(mod, relative) end,
+    findMod = function(id) return findMod(mod, id) end,
+  }
+  mod.exports.settings = {
+    get = function(key, fallback) return settings:get(key, fallback) end,
+    set = function(game, key, value) return settings:set(game, key, value) end,
+    defaults = OPTION_DEFAULTS,
+  }
+
+  local function install(relative, exportKey)
+    local installer, loadErr = loadOwn(mod, relative)
+    if type(installer) ~= "function" then
+      mod.exports.moduleErrors = mod.exports.moduleErrors or {}
+      mod.exports.moduleErrors[exportKey] = tostring(loadErr or "invalid installer")
+      return nil
+    end
+    local ok, result = xpcall(function()
+      return installer(mod, context)
+    end, traceback)
+    if not ok then
+      mod.exports.moduleErrors = mod.exports.moduleErrors or {}
+      mod.exports.moduleErrors[exportKey] = tostring(result)
+      if mod.log and mod.log.warn then
+        mod.log:warn("%s failed safely on Gen 2: %s", exportKey,
+          tostring(result))
+      end
+      return nil
+    end
+    return result
+  end
+
+  install("modules/migrations.lua", "migrations")
+  install("modules/running.lua", "running")
+
+  -- The presenter recognizes Gen 2's native Start/Pack/Pokegear/dialogue
+  -- screens and uses their own complete UI canvas on the lower display. It
+  -- deliberately falls through during Gen 2 battles and cinematics, where a
+  -- Kanto Battle Stage substitute would be less correct than the stock view.
+  local Thor, thorLoadErr = loadOwn(mod, "modules/thor_dual_screen.lua")
+  if type(Thor) ~= "table" or type(Thor.install) ~= "function" then
+    mod.exports.moduleErrors = mod.exports.moduleErrors or {}
+    mod.exports.moduleErrors.thorDualScreen = tostring(
+      thorLoadErr or "invalid Thor presenter module")
+    if mod.log and mod.log.warn then
+      mod.log:warn("thorDualScreen unavailable on Gen 2: %s",
+        tostring(thorLoadErr or "invalid Thor presenter module"))
+    end
+  else
+    local okThor, thorResult = xpcall(function()
+      return Thor.install(mod, { optionKey = "dual_screen", generation = 2 })
+    end, traceback)
+    if not okThor then
+      mod.exports.moduleErrors = mod.exports.moduleErrors or {}
+      mod.exports.moduleErrors.thorDualScreen = tostring(thorResult)
+      if mod.log and mod.log.warn then
+        mod.log:warn("thorDualScreen failed safely on Gen 2: %s",
+          tostring(thorResult))
+      end
+    end
+  end
 end
 
 local function finiteNumber(value, fallback)
@@ -564,9 +698,13 @@ local function hostedHandle(mod, host)
   return proxy
 end
 
-local function installVendoredMods(mod, host)
+local function installVendoredMods(mod, host, selected)
   if not host then return end
-  host:installAll()
+  if selected ~= nil and type(host.installSelected) == "function" then
+    host:installSelected(selected)
+  else
+    host:installAll()
+  end
   mod.exports.vendorHost = host
   mod.exports.vendored = host:status()
 end
@@ -574,7 +712,10 @@ end
 local function findOwnVoxel(mod)
   local lib = mod.exports and mod.exports.lib
   if type(lib) == "table" and type(lib.require) == "function" then
-    return "BATTLE_ART_VOXEL_FORK", mod, lib
+    local runtime = mod.exports and mod.exports.runtime
+    local id = runtime and runtime.generation == 2
+      and "SCOTTS_GEN2_VOXEL" or "BATTLE_ART_VOXEL_FORK"
+    return id, mod, lib
   end
   return nil
 end
@@ -805,6 +946,159 @@ local function defineOptions(mod, vendorHost)
   append(mod.exports and mod.exports.battleArtOptionSchema, "Battle Art")
   if vendorHost and type(vendorHost.mergedSchema) == "function" then
     append(vendorHost:mergedSchema(), "bundled mod")
+  end
+  mod.options:define(schema)
+  mod.exports.optionSchema = schema
+end
+
+-- Gen 2 receives the same useful controls without Kanto-only promises. Its
+-- native Pack and Pokegear stay native; Badge-free Kanto HMs, Trade Stone,
+-- Oak's spare starter, trainer rematches/forfeit, Modern Bag, Gapped Land and
+-- the Gen 1 menu wrapper therefore never appear as misleading choices.
+local function defineGen2Options(mod, vendorHost)
+  local schema = {
+    {
+      key = "gen2_voxel_world",
+      type = "toggle",
+      label = "GEN 2 VOXEL WORLD",
+      default = true,
+      help = "Give Gold, Silver and Crystal terrain original-style depth. Stadium models, Stadium battles and extra ROM imports stay off.",
+    },
+    {
+      key = "gen2_camera_mode",
+      type = "choice",
+      label = "GEN 2 VIEW",
+      default = "diorama",
+      choices = {
+        { "DIORAMA", "diorama" },
+        { "THIRD PERSON", "third" },
+        { "FIRST PERSON", "first" },
+      },
+      help = "Choose the starting view for the Gen 2 terrain renderer.",
+    },
+    {
+      key = "gen2_camera_slider",
+      type = "toggle",
+      label = "VIEW SHORTCUT",
+      default = true,
+      help = "Allow the renderer's normal view control to switch between Diorama, Third Person and First Person.",
+    },
+    {
+      key = "ledgeDepth",
+      type = "toggle",
+      label = "LEDGE DEPTH",
+      default = true,
+      help = "Give Gen 2 jump ledges a shallow raised lip. OFF keeps the original collision and jump rules while flattening only that added visual height.",
+    },
+    {
+      key = "daytime",
+      type = "choice",
+      label = "DAYTIME",
+      default = "sync",
+      choices = {
+        { "REAL CLOCK", "sync" }, { "DAY", "day" },
+        { "NIGHT", "night" }, { "DUSK", "dusk" },
+        { "DAWN", "dawn" }, { "GAME 20 MIN", "cycle" },
+        { "GAME 1 HOUR", "hour" },
+      },
+      help = "Follow the device clock, pin a time of day, or run a complete accelerated day/night cycle.",
+    },
+    {
+      key = "moonPhase",
+      type = "choice",
+      label = "MOON PHASE",
+      default = "natural",
+      choices = {
+        { "NATURAL", "natural" }, { "FULL MOON", "full" },
+        { "NEW MOON", "new" },
+      },
+      help = "Choose the natural lunar cycle or pin Full/New Moon for a fixed NIGHT sky. Other time modes continue to use the natural phase.",
+    },
+    {
+      key = FREE_FLY_OPTION,
+      type = "toggle",
+      label = "FREE FLY NOW",
+      default = true,
+      help = "Let the bundled Gen 2 Free Fly use its own supported takeoff rules without changing story progress.",
+    },
+    {
+      key = FREE_FLY_COCKPIT_OPTION,
+      type = "toggle",
+      label = "FLY COCKPIT",
+      default = false,
+      help = "Show the flying Pokemon in first-person when the active Gen 2 voxel renderer provides a compatible cockpit.",
+    },
+    {
+      key = EXPERIENCE_MODE_OPTION,
+      type = "choice",
+      label = "EXP. SHARE",
+      default = "vanilla",
+      choices = {
+        { "OFF", "vanilla" },
+        { "BUDDY", "buddy" },
+        { "ALL", "all" },
+      },
+      help = "OFF keeps native Gen 2 EXP. BUDDY shares between the active Pokemon and its next healthy party mate. ALL shares across every healthy party Pokemon.",
+    },
+    {
+      key = "running_enabled",
+      type = "toggle",
+      label = "B-BUTTON RUN",
+      default = true,
+      help = "Hold B while walking to run. Bikes, surfing, scripts and locked movement keep their normal speed.",
+    },
+    {
+      key = "running_speed",
+      type = "choice",
+      label = "RUN SPEED",
+      default = 1.5,
+      choices = { { "1.25X", 1.25 }, { "1.5X", 1.5 }, { "2X", 2 },
+                  { "2.5X", 2.5 }, { "3X", 3 }, { "4X", 4 } },
+      help = "Choose the held-B walking multiplier.",
+    },
+    {
+      key = "running_view_bob",
+      type = "toggle",
+      label = "RUN HEAD BOB",
+      default = true,
+      help = "Add light first-person camera motion when the Gen 2 voxel renderer exposes the shared camera API.",
+    },
+    {
+      key = "running_bob_intensity",
+      type = "choice",
+      label = "BOB INTENSITY",
+      default = 0.125,
+      choices = {
+        { "0.25X", 0.0625 }, { "0.4X", 0.1 }, { "0.5X", 0.125 },
+        { "0.6X", 0.15 }, { "0.75X", 0.1875 }, { "1X", 0.25 },
+        { "1.5X", 0.375 }, { "2X", 0.5 }, { "3X", 0.75 }, { "4X", 1 },
+      },
+      help = "Scale the first-person running camera motion.",
+    },
+    {
+      key = "dual_screen",
+      type = "toggle",
+      label = "THOR 2ND SCREEN",
+      default = false,
+      help = "Use the AYN Thor companion display for native Gen 2 menus and dialogue. Gen 2 battles stay in the stock combined view.",
+    },
+  }
+
+  local seen = {}
+  for _, row in ipairs(schema) do seen[row.key] = true end
+  local function append(rows, source)
+    for _, row in ipairs(rows or {}) do
+      assert(type(row) == "table" and type(row.key) == "string",
+        tostring(source) .. " Gen 2 option row needs a key")
+      assert(not seen[row.key],
+        "duplicate canonical Gen 2 option key " .. tostring(row.key))
+      seen[row.key] = true
+      schema[#schema + 1] = row
+    end
+  end
+  append(mod.exports and mod.exports.gen2VoxelOptionSchema, "Gen 2 voxel")
+  if vendorHost and type(vendorHost.mergedSchema) == "function" then
+    append(vendorHost:mergedSchema(), "bundled")
   end
   mod.options:define(schema)
   mod.exports.optionSchema = schema
@@ -1556,8 +1850,13 @@ local function installInventoryFeatures(mod)
   })
 end
 
-local function installExperienceModes(mod)
-  local Bag = require("src.inventory.Bag")
+local function installExperienceModes(mod, generation)
+  generation = tonumber(generation) or 1
+  -- Gen 2 has its own inventory/Pack implementation and already carries the
+  -- native EXP.SHARE item. Scott's BUDDY/ALL modes are battle distribution
+  -- rules there, not a second synthetic key item. Gen 1 retains the original
+  -- unlock-and-bag behavior byte for byte.
+  local Bag = generation == 1 and require("src.inventory.Bag") or nil
 
   -- v0.12.3 exposed four overlapping choices. Keep every saved value valid,
   -- but present one simpler OFF/BUDDY/ALL control from this release onward:
@@ -1582,10 +1881,11 @@ local function installExperienceModes(mod)
 
   local state = {
     mode = selectedMode(),
-    item = EXP_SHARE_ID,
-    itemUnlocked = false,
+    item = generation == 1 and EXP_SHARE_ID or "EXP_SHARE",
+    itemUnlocked = generation == 2,
     pending = false,
-    reason = "not_requested",
+    reason = generation == 2 and "native_gen2_inventory" or "not_requested",
+    generation = generation,
   }
   mod.exports.experience = state
 
@@ -1600,6 +1900,15 @@ local function installExperienceModes(mod)
     if not sharing(state.mode) then
       state.reason = "sharing_off"
       return false
+    end
+    if generation == 2 then
+      -- Do not grant, remove or emulate Gen 2's real held EXP.SHARE. The
+      -- public battle.exp_award seam below supplies the selected distribution
+      -- directly and leaves the Pack/save's native item ownership untouched.
+      state.itemUnlocked = true
+      state.pending = false
+      state.reason = "native_gen2_inventory_untouched"
+      return true
     end
     if not (save and save.inventory and data and data.items
         and data.items[EXP_SHARE_ID]) then
@@ -1733,14 +2042,19 @@ local function installExperienceModes(mod)
     end
   end, 1000)
 
+  local lifecycleGame
   local function lifecycle(payload)
     state.mode = selectedMode()
     if not sharing(state.mode) then
       return
     end
     local game = payload and payload.game
-    local save = payload and payload.save or (game and game.save) or Game.save
-    local data = game and game.data or Game.data
+    if game then lifecycleGame = game end
+    game = game or lifecycleGame
+    local gen1Game = generation == 1 and Game or nil
+    local save = payload and payload.save or (game and game.save)
+      or (gen1Game and gen1Game.save)
+    local data = game and game.data or (gen1Game and gen1Game.data)
     ensureShareItem(save, data)
   end
 
@@ -1753,7 +2067,7 @@ local function installExperienceModes(mod)
       if payload and payload.mod == mod.id
           and payload.key == EXPERIENCE_MODE_OPTION then
         state.mode = normalizedMode(payload.value)
-        lifecycle({ game = Game, save = Game.save })
+        lifecycle({ game = lifecycleGame or (generation == 1 and Game or nil) })
       end
     end)
   end
@@ -2339,12 +2653,17 @@ local function installFreeFlyImmediateFlight(mod)
 
   if mod.events and type(mod.events.on) == "function" then
     mod.events:on("mods.loaded", function(payload)
-      apply(payload and payload.loader or Game.mods)
+      apply((payload and payload.loader) or activeLoader
+        or (Game and Game.mods))
     end)
     mod.events:on("mod.options_changed", function(payload)
       if not payload then return end
       if payload.mod == mod.id and payload.key == FREE_FLY_OPTION then
-        if payload.value == true then apply(Game.mods) else restore() end
+        if payload.value == true then
+          apply(activeLoader or (Game and Game.mods))
+        else
+          restore()
+        end
       elseif state.active and ((not activeHosted
             and payload.mod == FREE_FLY_ID
             and payload.key == FREE_FLY_BADGES_KEY)
@@ -2365,7 +2684,10 @@ local function installFreeFlyImmediateFlight(mod)
     end)
   end
 
-  apply(Game.mods)
+  -- Gen 1 owns a process singleton and can apply immediately. Gen 2 supplies
+  -- the real loader through mods.loaded, avoiding a dependency on that Kanto
+  -- singleton during a Gold/Silver/Crystal boot.
+  if Game and Game.mods then apply(Game.mods) end
 
   mod.exports.freeFlyBadgeBypass = function()
     return state.active, state.reason, state.version
@@ -2544,7 +2866,138 @@ local function resolvedFrames(player, onBike)
   return base, math.max(1, math.floor(value))
 end
 
+local function installGen2Voxel(mod, vendorHost)
+  local installer, loadErr = loadOwn(mod, "modules/gen2_voxel.lua")
+  if type(installer) == "table" and type(installer.install) == "function" then
+    local module = installer
+    installer = function(target, context)
+      return module.install(target, context)
+    end
+  end
+  if type(installer) ~= "function" then
+    local status = {
+      active = false,
+      generation = 2,
+      reason = "gen2_voxel_module_unavailable",
+      detail = tostring(loadErr or "invalid installer"),
+    }
+    mod.exports.gen2Voxel = status
+    return status
+  end
+
+  local context = {
+    generation = 2,
+    releaseVersion = RELEASE_VERSION,
+    vendorHost = vendorHost,
+    loadOwn = function(relative) return loadOwn(mod, relative) end,
+    findMod = function(id) return findMod(mod, id) end,
+  }
+  local ok, result = xpcall(function()
+    return installer(mod, context)
+  end, traceback)
+  if not ok then
+    local status = {
+      active = false,
+      generation = 2,
+      reason = "gen2_voxel_install_failed",
+      detail = tostring(result),
+    }
+    mod.exports.gen2Voxel = status
+    mod.exports.moduleErrors = mod.exports.moduleErrors or {}
+    mod.exports.moduleErrors.gen2Voxel = tostring(result)
+    if mod.log and mod.log.warn then
+      mod.log:warn("Gen 2 voxel renderer failed safely: %s", tostring(result))
+    end
+    return status
+  end
+  if type(result) == "table" then
+    mod.exports.gen2Voxel = result
+  elseif type(mod.exports.gen2Voxel) ~= "table" then
+    mod.exports.gen2Voxel = {
+      active = result ~= false,
+      generation = 2,
+      reason = result == false and "installer_declined" or "installed",
+    }
+  end
+  local feature = mod.exports.gen2Voxel
+  if type(feature) == "table" and feature.installed == true
+      and type(feature.lib) == "table"
+      and type(feature.lib.require) == "function" then
+    -- Preserve the companion contract already used by Wilds, Free Fly and
+    -- Scott's running camera. The provider is Gen 2 terrain, not Battle Art,
+    -- but the legacy alias is intentionally private to this bundled host.
+    mod.exports.lib = feature.lib
+    mod.exports.fusedRenderer = {
+      installed = true,
+      provider = "SCOTTS_GEN2_VOXEL",
+      generation = 2,
+      terrainOnly = true,
+    }
+  end
+  return mod.exports.gen2Voxel
+end
+
+local function installGen2(mod)
+  mod.exports.runtime = {
+    generation = 2,
+    profile = "gen2",
+    onePackage = true,
+  }
+
+  -- Integrity remains generation-neutral and must run before the first
+  -- bundled file is executed.
+  do
+    local check = loadOwn(mod, "modules/integrity.lua")
+    if type(check) == "function" then pcall(check, mod) end
+  end
+
+  local vendorHost = newVendorHost(mod)
+  installGen2Voxel(mod, vendorHost)
+  installVendoredMods(mod, vendorHost, GEN2_VENDOR_IDS)
+  defineGen2Options(mod, vendorHost)
+  installGen2FeatureModules(mod)
+
+  -- Cross-generation public battle/render seams. These do not install the
+  -- synthetic Gen 1 bag item, Kanto menus or field/story changes.
+  installExperienceModes(mod, 2)
+  installCaughtMarker(mod)
+  installFreeFlyImmediateFlight(mod)
+  installFreeFlyCockpitControl(mod)
+
+  local loaded = mod.exports.vendored and mod.exports.vendored.loaded or {}
+  mod.exports.compatibility = {
+    generation = 2,
+    profile = "gold_silver_crystal",
+    onePackage = true,
+    nativePackAndPokegear = true,
+    vendors = loaded,
+    skipped = {
+      "battle_art_gen1", "modern_bag_ui", "catchable151",
+      "dynamic_scaling_gen1", "trainer_forfeit_and_rematches",
+      "oak_spare_starter", "badge_free_kanto_hms", "trade_stone",
+      "gapped_land_gen1", "pokemon_final_compatibility",
+    },
+    thorDualScreen = mod.exports.thorDualScreen,
+  }
+  mod.exports.status = {
+    active = true,
+    generation = 2,
+    mode = "native_gen2_profile",
+    voxel = mod.exports.gen2Voxel,
+  }
+  mod.log:info("Gen 2 profile loaded from the unified Scott's Tweaks package")
+  return mod.exports.status
+end
+
 return function(mod)
+  -- This is the only branch that decides which generation's source executes.
+  -- It is deliberately the first action in the installer: a Gold/Silver/
+  -- Crystal boot never touches Battle Art or any Kanto-only feature installer.
+  if activeGeneration() == 2 then
+    return installGen2(mod)
+  end
+  loadGen1EngineModules()
+
   -- The fused renderer registers render pipelines and must be up before any
   -- option definition or feature module consults it.
   -- Integrity first: a half-copied install must say so in the log and the

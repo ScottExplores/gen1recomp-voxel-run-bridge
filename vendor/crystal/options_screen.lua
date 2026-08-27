@@ -12,7 +12,18 @@
 -- row by main.lua).  The dedicated screen is Gen 1-only -- it is drawn
 -- with Gen 1's OptionRows, which the Gen 2 adapter does not serve.
 
-local okOptionRows, OptionRows = pcall(require, "src.ui.OptionRows")
+-- Do not even probe Gen 1's OptionRows on a Gen 2 boot. The mod loader quite
+-- correctly records a cross-generation require even when pcall catches it,
+-- and Gold never calls the dedicated submenu below anyway. BattleState.new is
+-- the warning-free Gen2Compat capability used by the parent module: Gold's
+-- screen has it, while Gen 1 builds through newWild/newTrainer.
+local BattleState = require("src.battle.BattleState")
+local isGen2 = type(BattleState) == "table"
+  and type(BattleState.new) == "function"
+local okOptionRows, OptionRows = false, nil
+if not isGen2 then
+  okOptionRows, OptionRows = pcall(require, "src.ui.OptionRows")
+end
 
 local CrystalOptions = {}
 CrystalOptions.__index = CrystalOptions

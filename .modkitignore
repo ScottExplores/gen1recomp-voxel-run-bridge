@@ -91,6 +91,9 @@ tests/seasonal_weather.lua
 tests/wilds_special_spawn_safety.lua
 tests/ledge_elevation.lua
 tests/ledge_geometry.lua
+tests/gen2_full_load.lua
+tests/gen2_voxel_adapter.lua
+tests/gen2_voxel_headless.lua
 dist/voxel_run_bridge-0.12.3.zip
 dist/voxel_run_bridge-0.12.4.zip
 dist/voxel_run_bridge-0.12.5.zip

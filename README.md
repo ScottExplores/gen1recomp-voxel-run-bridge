@@ -1,24 +1,29 @@
 # Scott's Tweaks
 
-**0.12.12 makes Scott's raised Gen 1 ledges optional.** The new default-on
-**LEDGE DEPTH** setting lives in WORLD & WEATHER. Switch it OFF to return the
-surrounding voxel terrain to one flat level while keeping the game's original
-ledge artwork, collision and jumps unchanged; switch it ON to restore the
-bounded six-pixel terraces. The six moving block-pixel astrophotography targets,
-pinned-night Moon choices, and all prior features remain.
+**0.13.0 is one Scott's Tweaks install for both generations.** The same updater
+ZIP now auto-detects Red/Blue/Yellow or Gold/Silver/Crystal and loads only the
+matching implementation. Gold, Silver and Crystal gain original 2D sprite-card
+voxel terrain, Diorama/Third Person/First Person views, visible wild Pokémon and
+followers, B-button running, Free Fly, Buddy/All EXP sharing, selectable sprite
+art, the Moon/night-sky controls, Scott's moving block-pixel astrophotography,
+optional ledge depth, and safe AYN Thor menu/dialogue routing.
 
-The native-pixel Pocket Bag, selectable Pokémon art, voxel Kanto, visible wild
-Pokémon, followers, Free Fly, and Scott's other tweaks remain together in the
-same updater package.
+Gen 2 keeps its real native Pack, Pokégear, story, inventory, battle system and
+menus. Scott's Gen 1 Pack imitation, Trade Stone, Oak spare starter, Kanto
+trainer rematches/forfeit, badge-free Kanto HMs and Kanto battle presentation
+remain Gen 1-only rather than being forced over Gold's different engine. This
+package includes no Stadium Pokémon/player models, Stadium battles or UI, ROM
+importer module/data, OpenXR/VR module or assets, or Kanto excursion.
 
 Scott's Tweaks is the next version of **Voxel Run Bridge**. The display name
 is broader, but its internal mod ID remains `voxel_run_bridge`. Existing
 installations therefore update in place, keep their settings, and do not
 become a duplicate mod.
 
-Version 0.12.12 keeps the existing updater identity and provides one categorized
-**START > MOD MENUS > MOD SETTINGS** home for all of its settings. Its
-features are:
+Version 0.13.0 keeps the existing updater identity. Red/Blue/Yellow retain the
+categorized **START > MOD MENUS > MOD SETTINGS** home; Gold/Silver/Crystal keep
+their native OPTION screen and expose Scott's generation-appropriate controls
+through **MODS > Scott's Tweaks**. The Gen 1 features are:
 
 - **Responsive Bag and PC:** press D-pad Left or Right through ALL, ITEMS,
   MEDICINE, POKé BALLS, TM/HM, and KEY ITEMS. The Pocket skin uses an original
@@ -115,6 +120,35 @@ features are:
 These features never fabricate badges or rewrite story flags. Oak's starter
 uses Gen1Recomp's normal gift flow, so receiving it intentionally updates the
 party and Pokédex just like another legitimate gift Pokémon.
+
+## Gold, Silver, and Crystal profile
+
+The release ZIP contains one generation router, not two separately installed
+mods. On a Gen 2 boot it loads the Gold/Silver/Crystal world adapter and only
+the bundled components that explicitly support Gen 2: visible wilds/followers,
+Free Fly, Choose Lead, Unique Menu Icons, and Crystal animated sprite art.
+Kanto-only source remains packaged for Red/Blue/Yellow but is never executed by
+the Gen 2 profile.
+
+Gen 2 terrain uses the cartridge's own map art and original 2D character and
+Pokémon sprite cards. **GEN 2 VIEW** selects Diorama, Third Person, or First
+Person; **LEDGE DEPTH** changes only the added visual lip and never collision or
+jump rules. **DAYTIME** supports the real clock, fixed times, a 20-minute game
+day, or a one-hour game day. A fixed NIGHT can use Natural, Full, or New Moon,
+and Scott's six block-pixel astrophotography targets keep their cataloged
+movement and Moon washout.
+
+On an AYN Thor, the generation-aware presenter routes native Gen 2 Start, Pack,
+Pokégear, and dialogue frames to the lower display while retaining a clean
+overworld above. Gen 2 battles and cinematics deliberately use the stock
+combined screen because the current engine exposes them as one finished scene;
+the presenter does not substitute Kanto's split battle stage.
+
+The Gen 2 voxel source automatically stands aside if the separate
+`STADIUM2_OVERWORLD_MODELS` mod is enabled. Scott's package itself contains no
+Stadium models, Stadium battle/UI system, ROM importer module/data, OpenXR/VR
+module or assets, or extra Kanto region. No separate Voxel Run Bridge ZIP is
+required for either generation.
 
 ## One organized settings menu
 
@@ -329,7 +363,7 @@ special canopy scenery so it does not flatten places that are supposed to be
 enclosed or water-covered.
 
 The renderer is selected by its stable mod ID and then checked for the required
-capabilities rather than trusted by display name alone. Version 0.12.12 targets
+capabilities rather than trusted by display name alone. Version 0.13.0 targets
 Pokemon Final, the verified Dramatic Shape 1.8.0-1.8.2 renderer contract, and
 Battle Art Voxel Fork's published renderer modules.
 If an active voxel provider does not expose the required renderer modules,
@@ -510,28 +544,29 @@ Scott's Tweaks choice was already saved.
 ## Install or update
 
 If Voxel Run Bridge or any earlier Scott's Tweaks release is installed, open
-Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.12.12
+Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.13.0
 update. It will appear as **Scott's Tweaks** afterward without creating a
-second entry.
+second entry. The same installed entry can then be enabled for Red, Blue,
+Yellow, Gold, Silver, and Crystal.
 
 For a first installation:
 
 1. Open **MODS -> Import mod .zip** and choose
-   `voxel_run_bridge-0.12.12.zip`.
+   `voxel_run_bridge-0.13.0.zip`.
 2. Enable **Scott's Tweaks**, then restart the game if the manager asks.
-3. Open **START > MOD MENUS > MOD SETTINGS**. The Pocket Bag, trainer
-   features, Oak's starter, B running, light run bob, gapped land, ledge depth,
-   badge-free HMs, Free Fly Now, visible wild Pokemon, and one follower default
-   on.
-   Classic random battles and hidden encounter markers default off. EXP.SHARE
-   and all three difficulty categories default OFF; Fly Cockpit and Thor
-   Second Screen default off; battle HUD text defaults WHITE;
-   Pack + Pokegear defaults on; run speed defaults to 1.5X and
-   bob to 0.5X.
+3. In Red/Blue/Yellow, open **START > MOD MENUS > MOD SETTINGS**. In
+   Gold/Silver/Crystal, open **MODS > Scott's Tweaks**. Gen 1 defaults the
+   Pocket Bag, trainer features, Oak's starter, B running, light run bob,
+   gapped land, ledge depth, badge-free HMs, Free Fly Now, visible wild
+   Pokémon, and one follower on. Gen 2 defaults its voxel world, ledge depth,
+   B running, Free Fly Now, visible wild Pokémon, and follower support on while
+   retaining the native Pack and Pokégear.
+   EXP.SHARE and the difficulty choices default OFF; Fly Cockpit and Thor
+   Second Screen default off; run speed defaults to 1.5X and bob to 0.5X.
 4. Use the bundled Free Fly for free-roaming flight; no separate mod is needed.
-5. For 1ST/3RD running, enable one supported voxel provider; no separate
-   running mod is required.
-6. If an older save retained PACK as OFF, open **START > MOD MENUS > MOD
+5. Gen 2's voxel provider is included. On Gen 1, enable one supported voxel
+   provider for 1ST/3RD running. No separate running bridge is required.
+6. On Gen 1, if an older save retained PACK as OFF, open **START > MOD MENUS > MOD
    SETTINGS > MENUS & DEVICE** and switch **PACK + POKéGEAR** ON. No imported
    file, Gold ROM, or app replacement is required.
 
@@ -589,7 +624,9 @@ normal grid behavior is outside this adapter's scope.
 Use the `dev` branch of
 [Gen1Recomp](https://github.com/bryanthaboi/gen1recomp) as the SDK. Run the
 focused Loader and compatibility suites in `tests/` under both Lua 5.1 and
-LuaJIT. The fused content bundle intentionally contains full encounter and art
+LuaJIT. The Gen 2 release gate additionally runs `gen2_voxel_adapter.lua`,
+`gen2_voxel_headless.lua`, and `gen2_full_load.lua` against the current engine
+for Gold, Silver, and Crystal. The fused content bundle intentionally contains full encounter and art
 registries that the modkit's synthetic `fixture` base cannot resolve, so its
 strict validator/packer is not the release gate for this repository.
 
@@ -597,17 +634,17 @@ After tests pass, build the updater ZIP from the committed tree. The repository
 attributes supply the exact release exclusions:
 
 ```powershell
-git archive --format=zip --output=dist/voxel_run_bridge-0.12.12.zip v0.12.12
+git archive --format=zip --output=dist/voxel_run_bridge-0.13.0.zip v0.13.0
 ```
 
-The archive keeps `manifest.json`, `main.lua`, `LICENSE`, notices, and the
-`modules/` directory at its root. Gen1Recomp's importer mounts those paths
+The archive keeps `manifest.json`, `main.lua`, `LICENSE`, notices, `modules/`,
+and the generation-specific `vendor/` source at its root. Gen1Recomp's importer mounts those paths
 unchanged; development tests and unrelated workspace files are excluded.
 
-Version 0.12.12 is configured for Gen1Recomp's built-in GitHub update checks via
+Version 0.13.0 is configured for Gen1Recomp's built-in GitHub update checks via
 `ScottExplores/gen1recomp-voxel-run-bridge`.
 
-The download is deliberately named `voxel_run_bridge-0.12.12.zip` so the
+The download is deliberately named `voxel_run_bridge-0.13.0.zip` so the
 launcher selects it first from the matching GitHub release. Its internal ID
 remains `voxel_run_bridge`, so existing installs and saved settings update in
 place rather than appearing as a second mod.
@@ -649,6 +686,16 @@ the adapted source and in the notices file. The upstream reference-derived PNG
 is not distributed; Scott's six-state five-compartment backpack and tiny blue
 dither tile are newly generated project assets with their prompts and logical-
 pixel production cleanup recorded beside the files.
+
+The Gen 2 terrain/camera adapter is derived from
+[`randyadr/Gen2-3D-Sprites`](https://github.com/randyadr/Gen2-3D-Sprites) at
+commit `a13895aa15ffab4683276cfadf7f9a3d523a5755`. Only the
+Gold/Silver/Crystal terrain, original 2D sprite-card renderer, cameras, and
+procedural sky/water dependencies are carried. The upstream MIT and CC BY-NC
+4.0 notices are preserved under `vendor/gen2_voxel/`; that component is for
+noncommercial use. Stadium models/battles/UI, ROM importer modules/data,
+OpenXR/VR modules/assets, model assets, and the optional Kanto excursion are
+deliberately excluded.
 
 No ROM, extracted graphics, save data, or other game content is included or
 requested by Scott's Tweaks.

@@ -361,6 +361,37 @@ Loader entry safely refreshes the screen factory.
 luajit tests\gen2_ui.lua <mod-root>
 ```
 
+`gen2_voxel_adapter.lua` and `gen2_voxel_headless.lua` lock the unified
+Gold/Silver/Crystal terrain route without a ROM. They verify generation-aware
+settings, terrain-only ownership, all three camera modes, optional ledge depth,
+the accelerated and device-synced sky clocks, Full/New Moon overrides, Scott's
+six block-pixel deep-sky assets, and the explicit exclusion of Stadium models,
+battles, UI, VR, ROM importers, and the Kanto excursion. The headless suite also
+loads the adapted terrain against the current official Gen1Recomp source:
+
+```powershell
+lua tests\gen2_voxel_adapter.lua <mod-root>
+luajit tests\gen2_voxel_adapter.lua <mod-root>
+lua tests\gen2_voxel_headless.lua <mod-root> <current-engine-root>
+luajit tests\gen2_voxel_headless.lua <mod-root> <current-engine-root>
+```
+
+`gen2_full_load.lua` is the production-loader gate for the single-package
+manifest. Run it in a fresh process for each game so generation state cannot
+leak between Gold, Silver, and Crystal. It proves the normal API-2 loader
+accepts `games: ["gen1", "gen2"]`, selects the same `voxel_run_bridge` ID,
+installs only the generation-safe hosted features, preserves native Pack and
+Pokegear, and routes physical-Thor overworld menus/dialogue to the lower
+display. Gen 2 battles deliberately retain the engine's stock combined scene
+because the engine exposes one finished battle frame rather than separate
+upper/lower render layers:
+
+```powershell
+luajit tests\gen2_full_load.lua <mod-root> <current-engine-root> gold
+luajit tests\gen2_full_load.lua <mod-root> <current-engine-root> silver
+luajit tests\gen2_full_load.lua <mod-root> <current-engine-root> crystal
+```
+
 `voxel_full_load.lua` loads Scott's Tweaks with Pokemon Final and a real
 `movement.speed` producer, then proves held-B speed reaches `FreeMove` exactly
 once and its constants are restored. An extracted Free Fly directory is an

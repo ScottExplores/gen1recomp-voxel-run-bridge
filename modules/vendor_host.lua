@@ -396,7 +396,31 @@ function VendorHost:install(entry)
   return true
 end
 
-function VendorHost:installAll()
+local function selectedIds(ids)
+  if ids == nil then return nil end
+  local selected = {}
+  for key, value in pairs(ids) do
+    if type(key) == "number" then
+      selected[tostring(value)] = true
+    elseif value == true then
+      selected[tostring(key)] = true
+    end
+  end
+  return selected
+end
+
+-- Install only the named bundled components. This is the generation router's
+-- narrow seam: one Scott's Tweaks package can carry every source file while a
+-- Gen 2 boot executes only components that explicitly support Gold/Silver/
+-- Crystal. Omitted components are intentionally absent, not failures, so the
+-- Mod Manager does not present Kanto-only code as a broken Gen 2 feature.
+--
+-- `ids` accepts either { "mod_a", "mod_b" } or
+-- { mod_a = true, mod_b = true }. With nil it retains installAll's historical
+-- behavior, which keeps the Gen 1 path exactly as it was.
+function VendorHost:installSelected(ids)
+  local selected = selectedIds(ids)
+  self.selection = selected
   -- When another voxel renderer owns the map -- the fused Battle Art stood
   -- down -- the bundled Crystal must stand down with it. Crystal wraps the
   -- renderer's sprite pipeline, and an EXTERNAL renderer cannot see a bundled
@@ -405,12 +429,19 @@ function VendorHost:installAll()
   -- drawing. A standalone Crystal beside a standalone renderer pairs through
   -- the engine as before.
   local fused = self.mod.exports and self.mod.exports.fusedRenderer
-  local externalRenderer = type(fused) == "table" and fused.installed == false
-    and fused.reason == "external_voxel"
+  local gen2Voxel = self.mod.exports and self.mod.exports.gen2Voxel
+  local externalRenderer =
+    (type(fused) == "table" and fused.installed == false
+      and fused.reason == "external_voxel")
+    or (type(gen2Voxel) == "table" and gen2Voxel.installed == false
+      and gen2Voxel.reason == "external_gen2_voxel")
   for _, entry in ipairs(VendorHost.MODS) do
+    local wanted = selected == nil or selected[entry.id] == true
     -- A separately installed, enabled copy always wins: the player chose it,
     -- and two copies of one mod must never both run.
-    if self:_standaloneWillRun(entry.id) then
+    if not wanted then
+      -- Deliberately skipped for this generation/profile.
+    elseif self:_standaloneWillRun(entry.id) then
       self.failures[entry.id] = "standalone copy is installed"
     elseif externalRenderer
         and entry.id == "crystal_animated_sprites_with_shiny_visuals" then
@@ -420,6 +451,10 @@ function VendorHost:installAll()
     end
   end
   return self
+end
+
+function VendorHost:installAll()
+  return self:installSelected(nil)
 end
 
 -- Write one or more bundled-mod options through the ordinary save path and,
@@ -580,6 +615,14 @@ function VendorHost:status()
     env = { setfenv = (setfenv ~= nil), package = (package ~= nil),
             preload = (package ~= nil and package.preload ~= nil),
             preloaded = self.preloaded } }
+  if self.selection ~= nil then
+    out.selected = {}
+    for _, entry in ipairs(VendorHost.MODS) do
+      if self.selection[entry.id] then
+        out.selected[#out.selected + 1] = entry.id
+      end
+    end
+  end
   for _, id in ipairs(self.order) do out.loaded[#out.loaded + 1] = id end
   for id, why in pairs(self.failures) do out.failed[id] = why end
   return out

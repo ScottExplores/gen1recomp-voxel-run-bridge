@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.13.0 - 2026-08-26
+
+- **Made one Scott's Tweaks install serve both generations.** The unchanged
+  `voxel_run_bridge` updater identity now advertises `gen1` and `gen2` and
+  dispatches before generation-specific source executes. Red/Blue/Yellow keep
+  their existing profile; Gold/Silver/Crystal load a dedicated profile from
+  the same ZIP.
+- **Added original-style Gen 2 voxel terrain.** Gold, Silver, and Crystal gain
+  Diorama, Third Person, and First Person views built around native map art and
+  upright original 2D sprite cards. Stadium Pokémon/player models, Stadium
+  battles/UI, ROM importers, VR files, and the optional Kanto excursion are
+  hard-disabled and excluded from the package.
+- **Kept the real Gen 2 interface intact.** Gold/Silver/Crystal continue using
+  their native Pack, Pokégear, story, inventory, and battle screens. Scott's
+  Gen 1 Pack imitation, Trade Stone, Oak spare starter, Kanto HM bypass,
+  trainer forfeit/rematches, and Kanto battle stage never load on that branch.
+- **Carried the portable gameplay features across.** The Gen 2 profile enables
+  the compatible visible-wild/follower runtime, Free Fly, Choose Lead, Unique
+  Menu Icons, Crystal animated sprite provider, B-button running and head bob,
+  caught marker, and OFF/BUDDY/ALL EXP distribution without granting or
+  replacing Gold's real EXP.SHARE item.
+- **Carried Scott's sky across without replacing the newer free-camera path.**
+  REAL CLOCK/fixed/20-minute/one-hour daytime modes, natural/full/new Moon,
+  later lunar rise, Milky Way washout, and all six catalog-positioned strict
+  block-pixel astrophotography targets now render in the Gen 2 voxel sky too.
+- **Added a Gen 2 LEDGE DEPTH switch.** ON uses the authored shallow visual
+  jump-lip depth; OFF flattens only that added ledge height. Gen 2 collision,
+  jump behavior, ordinary walls, and save state remain native. Changes
+  invalidate the relevant terrain caches immediately.
+- **Made the AYN Thor presenter generation-aware.** Native Gen 2 Start, Pack,
+  Pokégear, menu, dialogue, and choice frames can use the lower display while
+  a clean overworld remains above. Gen 2 battles and cinematics safely return
+  to the stock combined presentation because the current engine exposes them
+  as one finished scene rather than Kanto's separable Battle Stage.
+- **Added real Gen 2 release gates.** The new adapter, headless provider, and
+  production-loader suites exercise the current official engine; Gold,
+  Silver, and Crystal each run through the same packaged source. Dormant
+  Kanto-only modules are asserted absent, and all existing Gen 1 and Thor
+  regressions remain in place under Lua and LuaJIT.
+- **Preserved upstream terms and provenance.** The terrain/camera subset is
+  adapted from `randyadr/Gen2-3D-Sprites` 0.4.33 at commit
+  `a13895aa15ffab4683276cfadf7f9a3d523a5755`. Its supplied MIT and CC BY-NC
+  4.0 notices ship beside the source; the Gen 2 terrain component is therefore
+  noncommercial.
+
 ## 0.12.12 - 2026-08-26
 
 - **Made the raised Gen 1 ledges optional.** WORLD & WEATHER now includes a

@@ -92,6 +92,33 @@ end
 
 for _, profile in ipairs(engineRoots) do verifyEngineContract(profile) end
 
+local function verifyGen2EngineContract(root)
+  local game2 = assert(read(root .. "/src/core/Game2.lua"),
+    "live Gen 2 Game2.lua missing")
+  local screens = assert(read(root .. "/src/ui/Screens.lua"),
+    "live Gen 2 Screens.lua missing")
+  local start = assert(read(root .. "/src/ui/gen2/StartMenu.lua"),
+    "live Gen 2 StartMenu.lua missing")
+  check(game2:find("worldCanvas = scene, uiCanvas = scene", 1, true),
+    "Gen 2 compose contract publishes one combined scene")
+  check(game2:find("sceneCanvas = scene, generation = 2", 1, true),
+    "Gen 2 compose contract identifies its generation")
+  check(game2:find('secondScreen = require("src.render.SecondScreen")',
+    1, true), "Gen 2 compose contract publishes SecondScreen")
+  check(screens:find('local id = "Gen2" .. name', 1, true),
+    "Gen 2 screen registry uses the documented Gen2 prefix")
+  check(start:find("self.list = Chrome.List.new", 1, true),
+    "Gen 2 Start owns native Chrome.List geometry")
+  check(start:find('id = "pack", label = "PACK"', 1, true),
+    "Gen 2 Start keeps the native PACK row")
+  check(start:find('id = "pokegear"', 1, true),
+    "Gen 2 Start keeps the native POKéGEAR row")
+end
+
+if argv[4] and argv[4] ~= "" then
+  verifyGen2EngineContract(tostring(argv[4]):gsub("\\", "/"))
+end
+
 local Hooks = {}
 Hooks.__index = Hooks
 function Hooks.new()
@@ -535,6 +562,189 @@ eq(moveRegion.y, 64, "move controls begin at the TYPE/PP panel")
 eq(moveRegion.height, 80, "TYPE/PP and move list remain one joined cluster")
 eq(Thor.battlePanelRegion("messages", 304, 144), nil,
   "wide and unknown battle layouts retain their complete surface")
+
+-- Gold/Silver/Crystal publish one window-sized scene canvas under both the
+-- world and UI keys.  Scott's presenter keeps a clean overworld snapshot on
+-- top, maps the native 160x144 PACK/POKéGEAR/menu frame to the lower panel,
+-- and leaves the engine's combined battle/cinema scenes on the primary screen.
+local gen2Fixture = makeFixture()
+local gen2Stack = { states = {} }
+function gen2Stack:top() return self.states[#self.states] end
+gen2Fixture.mod.game = {
+  save = { generation = 2, version = "gold" },
+  stack = gen2Stack,
+}
+local gen2SplitCalls = {}
+gen2Fixture.mod.exports.battleStage = {
+  apiVersion = 3,
+  state = function() return { battle = {}, staged = true } end,
+  animationSurface = function() return nil end,
+  setSplitPresentation = function(on)
+    gen2SplitCalls[#gen2SplitCalls + 1] = on == true
+    return true
+  end,
+}
+installFixture(gen2Fixture, loadThor())
+eq(gen2Fixture.controller.status().gameGeneration, 2,
+  "Gen 2 presenter status is correct before the first compose frame")
+local gen2Viewport
+gen2Fixture.hooks:wrap("render.hud", function(nextFn, game, viewport)
+  gen2Viewport = viewport
+  return nextFn(game, viewport)
+end, 0, "gen2-viewport-probe")
+
+local gen2Scene = gen2Fixture.graphics.external(800, 480, "gen2-scene")
+local function gen2Context(worldActive)
+  return {
+    renderer = {},
+    worldCanvas = gen2Scene, uiCanvas = gen2Scene, sceneCanvas = gen2Scene,
+    worldOverride = nil, worldActive = worldActive == true,
+    zones = {}, worldZones = nil,
+    ww = 800, wh = 480, pw = 800, ph = 480,
+    ox = 160, oy = 24, vpw = 480, vph = 432,
+    scale = 3, uiw = 160, uih = 144,
+    dpiX = 1, dpiY = 1, generation = 2,
+    secondScreen = gen2Fixture.bridge,
+  }
+end
+
+local gen2Live = gen2Context(true)
+eq(gen2Fixture.frame(gen2Live).handled, true,
+  "Gen 2 clean overworld owns the physical Thor composition")
+eq(#gen2SplitCalls, 0,
+  "Gen 2 never asks the Gen 1 Battle Stage for a fake split")
+local gen2Primary = gen2Fixture.graphics.screenDraws[1]
+  and gen2Fixture.graphics.screenDraws[1].source
+check(gen2Primary ~= nil,
+  "Gen 2 clean overworld seeds a reusable primary snapshot")
+local gen2Lower = gen2Fixture.bridge.pushes[1].source
+eq(findDraw(gen2Lower.draws, gen2Scene), nil,
+  "Gen 2 idle lower panel does not mirror the complete overworld")
+eq(gen2Viewport.generation, 2,
+  "Gen 2 lower HUD viewport publishes the live game generation")
+eq(gen2Viewport._scottsTweaksThorNativeGen2, false,
+  "Gen 2 idle viewport is not mislabeled as a native menu")
+eq(gen2Fixture.controller.status().gameGeneration, 2,
+  "public Thor status distinguishes the Gen 2 game generation")
+
+local nativeStart = {
+  screenId = "Gen2StartMenu",
+  items = { {}, {}, {}, {}, {}, {}, {}, {} },
+  -- Deliberately include Gen 1-shaped fields: the screen id remains
+  -- authoritative and protects the native Chrome.List layout from mutation.
+  tx = 10, ty = 0, tw = 10, th = 91,
+  rowStep = 7, maxVisible = 77, scroll = 5,
+  list = { rows = 8, marker = "native-pack-pokegear" },
+}
+gen2Stack.states = { nativeStart }
+gen2Fixture.events:emit("screen.pushed", { state = nativeStart })
+eq(nativeStart.maxVisible, 77,
+  "Gen 2 Start keeps its native visible-row contract")
+eq(nativeStart.th, 91,
+  "Gen 2 Start is never resized as the Gen 1 menu")
+eq(nativeStart.scroll, 5,
+  "Gen 2 Start keeps Chrome.List scrolling untouched")
+eq(nativeStart.list.marker, "native-pack-pokegear",
+  "Gen 2 native PACK/POKéGEAR menu identity is preserved")
+gen2Fixture.clock.value = 0.04
+eq(gen2Fixture.frame(gen2Live).handled, true,
+  "Gen 2 native Start menu routes to the lower display")
+gen2Lower = gen2Fixture.bridge.pushes[#gen2Fixture.bridge.pushes].source
+local nativeStartDraw = assert(findDraw(gen2Lower.draws, gen2Scene),
+  "Gen 2 native Start scene draw missing")
+near(nativeStartDraw.sx, 2 / 3,
+  "Gen 2 scene is resampled from the engine's 3x fit to crisp 2x")
+near(nativeStartDraw.sy, 2 / 3,
+  "Gen 2 native menu keeps square pixels")
+near(nativeStartDraw.x, 40 - 160 * (2 / 3),
+  "Gen 2 lower crop maps the engine's public UI origin")
+near(nativeStartDraw.y, 36 - 24 * (2 / 3),
+  "Gen 2 lower crop maps the engine's public vertical origin")
+eq(gen2Viewport._scottsTweaksThorNativeGen2, true,
+  "native Gen 2 menu viewport is identified for downstream HUDs")
+eq(gen2Fixture.graphics.screenDraws[1].source, gen2Primary,
+  "Gen 2 Start leaves the clean overworld snapshot above")
+
+local gen2Dialogue = {
+  isTextBox = true,
+  boxTx = 0, boxTy = 12, boxTw = 20, boxTh = 6,
+}
+gen2Stack.states = { gen2Dialogue }
+gen2Fixture.clock.value = 0.08
+eq(gen2Fixture.frame(gen2Live).handled, true,
+  "Gen 2 native dialogue keeps the Thor split active")
+gen2Lower = gen2Fixture.bridge.pushes[#gen2Fixture.bridge.pushes].source
+local gen2DialogueDraw = assert(findDraw(gen2Lower.draws, gen2Scene),
+  "Gen 2 native dialogue crop missing")
+near(gen2DialogueDraw.y, -180 - 24 * (2 / 3),
+  "Gen 2 dialogue is moved from y=96 to the hinge-side margin")
+eq(gen2Viewport._scottsTweaksThorPanel.kind, "overworld_dialogue",
+  "Gen 2 shared TextBox shape uses the ordinary dialogue route")
+
+local gen2Choice = {
+  onChoose = function() end, index = 1,
+  tx = 14, ty = 7, tw = 6, th = 5,
+}
+gen2Stack.states = { gen2Dialogue, gen2Choice }
+gen2Fixture.clock.value = 0.12
+eq(gen2Fixture.frame(gen2Live).handled, true,
+  "Gen 2 TextBox-backed choice keeps native prompt routing")
+gen2Lower = gen2Fixture.bridge.pushes[#gen2Fixture.bridge.pushes].source
+local gen2SceneDraws = 0
+for _, draw in ipairs(gen2Lower.draws) do
+  if draw.source == gen2Scene then gen2SceneDraws = gen2SceneDraws + 1 end
+end
+eq(gen2SceneDraws, 2,
+  "Gen 2 choice independently crops its native question and answer")
+eq(gen2Viewport._scottsTweaksThorPanel.kind, "dialogue_choice",
+  "Gen 2 native yes/no prompt keeps the stacked-choice contract")
+
+local nativePack = { screenId = "Gen2PackMenu", pocket = "items" }
+gen2Stack.states = { nativePack }
+gen2Fixture.clock.value = 0.16
+eq(gen2Fixture.frame(gen2Context(false)).handled, true,
+  "Gen 2 native PACK page routes as a complete lower-screen frame")
+gen2Lower = gen2Fixture.bridge.pushes[#gen2Fixture.bridge.pushes].source
+check(findDraw(gen2Lower.draws, gen2Scene) ~= nil,
+  "Gen 2 PACK uses the native engine scene rather than replacement artwork")
+eq(nativePack.pocket, "items",
+  "Gen 2 PACK state is not rewritten by the presenter")
+
+local gen2Battle = { screenId = "Gen2BattleState" }
+gen2Stack.states = { gen2Battle, nativePack }
+local pushesBeforeGen2Battle = #gen2Fixture.bridge.pushes
+gen2Fixture.clock.value = 0.20
+eq(gen2Fixture.frame(gen2Context(false)).handled, false,
+  "Gen 2 battle stack falls through to the stock single-screen renderer")
+eq(#gen2Fixture.bridge.pushes, pushesBeforeGen2Battle,
+  "Gen 2 battle fallback never pushes a misleading duplicate lower frame")
+eq(gen2Fixture.bridge.enables[#gen2Fixture.bridge.enables], false,
+  "Gen 2 battle fallback releases the native companion presentation")
+eq(gen2Fixture.controller.status().compatibilityFallback,
+  "gen2_battle_uses_stock_single_screen",
+  "Gen 2 battle fallback is visible through public status")
+eq(#gen2SplitCalls, 0,
+  "Gen 2 battle overlays still never touch the Gen 1 split provider")
+
+gen2Stack.states = {}
+gen2Fixture.clock.value = 0.24
+eq(gen2Fixture.frame(gen2Live).handled, true,
+  "Gen 2 returns to dual-screen presentation after battle")
+eq(gen2Fixture.bridge.enables[#gen2Fixture.bridge.enables], true,
+  "Gen 2 re-enables the lower panel after stock battle presentation")
+eq(gen2Fixture.controller.status().compatibilityFallback, nil,
+  "Gen 2 supported frame clears the temporary fallback reason")
+
+gen2Stack.states = { { screenId = "Gen2TitleState" } }
+gen2Fixture.clock.value = 0.28
+eq(gen2Fixture.frame(gen2Context(false)).handled, false,
+  "Gen 2 title/cinema stays on the stock primary presentation")
+eq(gen2Fixture.controller.status().compatibilityFallback,
+  "gen2_primary_scene_uses_stock_single_screen",
+  "Gen 2 primary-scene fallback is reported without faulting")
+eq(gen2Fixture.controller.status().faulted, false,
+  "Gen 2 compatibility fallback never poisons later gameplay")
+gen2Fixture.controller.release()
 
 -- Android's native Presentation does not exist until setEnabled(true) posts
 -- to its UI thread.  A saved ON option must issue that request before asking
@@ -1466,7 +1676,7 @@ local function realLoaderRegression(engineRoot)
   local files = {
     [prefix .. "manifest.json"] = [[{
       "id":"voxel_run_bridge","name":"Scott's Tweaks Thor Loader Test",
-      "version":"0.12.12","api":2,"entry":"main.lua",
+      "version":"0.13.0","api":2,"entry":"main.lua",
       "profile":"content","priority":200,"dependencies":[],
       "optional_dependencies":[],"conflicts":[],"games":["gen1"],
       "permissions":["engine_internals"]
@@ -1764,7 +1974,7 @@ local function realFusedFreeFlyRegression(engineRoot)
   local files = {
     [prefix .. "manifest.json"] = [[{
       "id":"voxel_run_bridge","name":"Scott's Tweaks Fused Flight Test",
-      "version":"0.12.12","api":2,"entry":"main.lua",
+      "version":"0.13.0","api":2,"entry":"main.lua",
       "profile":"content","priority":200,"dependencies":[],
       "optional_dependencies":[],"conflicts":[],"games":["gen1"],
       "permissions":["engine_internals"]

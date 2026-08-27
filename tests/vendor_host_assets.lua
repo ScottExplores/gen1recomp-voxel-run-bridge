@@ -143,6 +143,42 @@ local fusedRendererHandle = host:_find("BATTLE_ART_VOXEL_FORK")
 eq(fusedRendererHandle and fusedRendererHandle.exports, hostMod.exports,
   "installed renderer alias resolves the host root exports")
 
+-- The unified Gen 2 route stands its terrain down when the separate upstream
+-- renderer owns the world. Crystal's bundled sprite coordinator must stand
+-- down with it; otherwise two coordinators can leave every sprite card blank.
+local externalGen2Root = {
+  id = "voxel_run_bridge",
+  path = HOST_ROOT,
+  exports = {
+    gen2Voxel = {
+      installed = false,
+      reason = "external_gen2_voxel",
+      externalId = "STADIUM2_OVERWORLD_MODELS",
+    },
+  },
+  find = function() return nil end,
+}
+local externalGen2Host = VendorHost.new(externalGen2Root)
+local installedGen2 = {}
+externalGen2Host._standaloneWillRun = function() return false end
+externalGen2Host.install = function(self, candidate)
+  installedGen2[candidate.id] = true
+  self.loaded[candidate.id] = { id = candidate.id }
+  self.order[#self.order + 1] = candidate.id
+  return true
+end
+externalGen2Host:installSelected({
+  "overworld_wild_spawns",
+  "crystal_animated_sprites_with_shiny_visuals",
+})
+eq(installedGen2.overworld_wild_spawns, true,
+  "external Gen 2 terrain does not suppress independent visible wilds")
+eq(installedGen2.crystal_animated_sprites_with_shiny_visuals, nil,
+  "external Gen 2 terrain suppresses the bundled Crystal coordinator")
+check(type(externalGen2Host.failures[
+    "crystal_animated_sprites_with_shiny_visuals"]) == "string",
+  "Gen 2 stand-down reason is reported")
+
 eq(wild.path, HOST_ROOT .. "/vendor/wilds", "vendor mod.path is rooted")
 eq(wild:read("main.lua"), fileBodies["vendor/wilds/main.lua"],
   "vendor read reaches its own file")

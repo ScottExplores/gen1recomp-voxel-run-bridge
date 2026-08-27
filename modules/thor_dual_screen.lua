@@ -177,6 +177,30 @@ local function integerContain(sourceWidth, sourceHeight,
   }
 end
 
+-- Gen 2's compose seam carries one window-sized scene under both uiCanvas and
+-- worldCanvas.  Its ox/oy/scale fields locate the native 160x144 surface
+-- inside that scene.  Convert that public mapping into the logical UI origin
+-- stageLower expects; no Game2 or screen implementation access is required.
+local function gen2SceneMap(ctx, uiWidth, uiHeight, generation)
+  if type(ctx) ~= "table" or tonumber(generation or ctx.generation) ~= 2
+      or not ctx.uiCanvas then return nil end
+  local sourceScale = positive(ctx.scale)
+  if not sourceScale then
+    local vpw, vph = positive(ctx.vpw), positive(ctx.vph)
+    sourceScale = vpw and positive(uiWidth) and vpw / uiWidth
+      or vph and positive(uiHeight) and vph / uiHeight or nil
+  end
+  if not sourceScale then return nil end
+  local sourceX, sourceY = tonumber(ctx.ox), tonumber(ctx.oy)
+  if not finite(sourceX) or not finite(sourceY) then
+    local sceneWidth, sceneHeight = dimensions(ctx.uiCanvas)
+    if not (sceneWidth and sceneHeight) then return nil end
+    sourceX = (sceneWidth - uiWidth * sourceScale) * 0.5
+    sourceY = (sceneHeight - uiHeight * sourceScale) * 0.5
+  end
+  return { x = sourceX, y = sourceY, scale = sourceScale }
+end
+
 local function battlePanelRegion(phase, uiWidth, uiHeight)
   if tonumber(uiWidth) ~= 160 or tonumber(uiHeight) ~= 144 then return nil end
   local region = BATTLE_PANEL_REGIONS[phase]
@@ -299,6 +323,84 @@ local function stackStates(mod)
     and stack.states or nil
 end
 
+-- Gen 2 publishes the generation directly on render.compose.  Older Gen 1
+-- releases predate that field, so retain the live save as the narrow fallback
+-- and finally the historical Gen 1 default.  This value describes the game;
+-- runtime.generation below independently describes presenter/F5 ownership.
+local function gameGeneration(mod, ctx)
+  local value = type(ctx) == "table" and tonumber(ctx.generation) or nil
+  if value ~= 1 and value ~= 2 then
+    local game = liveGame(mod)
+    local save = game and game.save
+    value = save and tonumber(save.generation) or nil
+  end
+  return value == 2 and 2 or 1
+end
+
+local function isGen2StartMenu(state)
+  return type(state) == "table" and state.screenId == "Gen2StartMenu"
+end
+
+local function isGen2BattleState(state)
+  if type(state) ~= "table" then return false end
+  return state.screenId == "Gen2BattleState"
+    or state.screenId == "Gen2BattleTransition"
+end
+
+local GEN2_SINGLE_SCREEN_STATES = {
+  -- Boot/cinema screens are primary-screen experiences, not companion menus.
+  Gen2CopyrightSplash = true,
+  Gen2GameFreakPresents = true,
+  Gen2GoldSilverIntro = true,
+  Gen2CrystalSplash = true,
+  Gen2CrystalIntro = true,
+  Gen2TitleState = true,
+  Gen2MainMenu = true,
+  Gen2OakSpeech = true,
+  Gen2GenderSelect = true,
+  Gen2InitClock = true,
+  Gen2NamePick = true,
+  -- These own the animated primary scene.  The remaining Gen2* states are
+  -- native gameplay menus/pages and are safe to route as a complete GB frame.
+  Gen2EvolutionAnim = true,
+  Gen2EggHatchAnim = true,
+  Gen2MagnetTrainRide = true,
+  Gen2TradeAnim = true,
+  Gen2HallOfFame = true,
+  Gen2Credits = true,
+}
+
+local function gen2SingleScreenState(state)
+  if isGen2BattleState(state) then return true end
+  return type(state) == "table"
+    and GEN2_SINGLE_SCREEN_STATES[state.screenId] == true
+end
+
+-- Battle submenus (PACK, PARTY, a TextBox or a ChoiceBox) sit above the live
+-- Gen2BattleState.  The current Gen 2 compositor intentionally exposes one
+-- combined scene rather than independent battle-picture/UI surfaces, so the
+-- presenter must stand aside for the complete battle stack instead of
+-- pretending that a safe split exists.
+local function gen2BattleActive(mod)
+  local states = stackStates(mod)
+  if type(states) == "table" then
+    for index = #states, 1, -1 do
+      if isGen2BattleState(states[index]) then return true end
+    end
+  end
+  return isGen2BattleState(topState(mod))
+end
+
+local function gen2SingleScreenActive(mod)
+  local states = stackStates(mod)
+  if type(states) == "table" then
+    for index = #states, 1, -1 do
+      if gen2SingleScreenState(states[index]) then return true end
+    end
+  end
+  return gen2SingleScreenState(topState(mod))
+end
+
 local function startMenuHasSideArt(state)
   local game = type(state) == "table" and state.game or nil
   local save, overworld = game and game.save, game and game.overworld
@@ -368,6 +470,7 @@ local function validWorldOverlay(provider)
 end
 
 local function stageApi(mod)
+  if gameGeneration(mod) == 2 then return nil end
   -- In Scott's Tweaks, Battle Art is fused into this same loader entry and
   -- publishes its compatibility seam directly on the root mod exports. A
   -- standalone BATTLE_ART_VOXEL_FORK handle exists only in older/separate
@@ -546,6 +649,11 @@ end
 local function startMenuPanel(mod, uiWidth, uiHeight)
   if tonumber(uiWidth) ~= 160 or tonumber(uiHeight) ~= 144 then return nil end
   local state = topState(mod)
+  -- Gold/Silver/Crystal already author the correct native PACK/POKéGEAR Start
+  -- page as a full 160x144 composition.  It has Chrome.List geometry rather
+  -- than Gen 1's tx/ty/tw/th fields and must never be resized or cropped as if
+  -- it were the Kanto menu.
+  if isGen2StartMenu(state) then return nil end
   if not state or state.screenId ~= "StartMenu"
       or startMenuHasSideArt(state) then return nil end
   local record = privateRecord(state, START_MENU_LAYOUT_KEY)
@@ -604,6 +712,8 @@ local function cloneStatus(runtime, mod, optionKey)
     controllerOnly = true,
     touchPolling = false,
     battleSplit = runtime.splitRequested == true,
+    gameGeneration = runtime.gameGeneration,
+    compatibilityFallback = runtime.compatibilityFallback,
   }
 end
 
@@ -627,6 +737,9 @@ function ThorDualScreen.install(mod, opts)
     bridgeRecord = nil,
     bridgeRequested = nil,
     generation = 1,
+    gameGeneration = tonumber(opts.generation) == 2 and 2
+      or gameGeneration(mod),
+    compatibilityFallback = nil,
     retired = false,
     delegated = false,
     topCanvas = nil,
@@ -655,6 +768,13 @@ function ThorDualScreen.install(mod, opts)
 
   local function requestBattleSplit(on)
     on = on == true
+    -- Gen 2's public compose payload is a single finished scene.  Scott's
+    -- Gen 1 Battle Stage cannot separate that scene, even if an old standalone
+    -- Battle Art handle happens to be installed beside this package.
+    if runtime.gameGeneration == 2 then
+      runtime.splitRequested = nil
+      return false
+    end
     if runtime.splitRequested == on then return true end
     local accepted = setSplitPresentation(mod, on)
     if accepted then
@@ -693,6 +813,10 @@ function ThorDualScreen.install(mod, opts)
   end
 
   local function configureStartMenu(state, ready)
+    -- Gen 2's native StartMenu already uses all eight available rows and owns
+    -- Chrome.List scrolling.  Leaving every field untouched is what preserves
+    -- its PACK and POKéGEAR artwork and keeps this module reload-safe.
+    if isGen2StartMenu(state) then return false end
     if type(state) ~= "table" or state.screenId ~= "StartMenu"
         or startMenuHasSideArt(state)
         or type(state.items) ~= "table" or #state.items == 0
@@ -980,6 +1104,15 @@ function ThorDualScreen.install(mod, opts)
   end
 
   local function updateTop(ctx)
+    -- Gold/Silver/Crystal draw their world and stack into one public scene.
+    -- Once any native UI state is present, keep the last clean overworld frame
+    -- above and route the finished native scene below.  Overworld scripts are
+    -- paused while these states own the stack, so this is also temporally
+    -- faithful; more importantly, it never captures PACK/POKéGEAR/dialogue
+    -- back onto the primary panel.
+    if runtime.gameGeneration == 2 and topState(mod) ~= nil then
+      return runtime.topValid == true
+    end
     local source, sourceKind
     if ctx.worldOverride and dimensions(ctx.worldOverride) then
       source, sourceKind = ctx.worldOverride, "worldOverride"
@@ -1037,6 +1170,13 @@ function ThorDualScreen.install(mod, opts)
       uiWidth, uiHeight = dimensions(ctx.uiCanvas)
     end
     uiWidth, uiHeight = uiWidth or 160, uiHeight or 144
+    local sceneMap = gen2SceneMap(ctx, uiWidth, uiHeight,
+      runtime.gameGeneration)
+    local gen2State = runtime.gameGeneration == 2 and topState(mod) or nil
+    -- An empty Gen 2 stack is the live overworld.  The combined scene is
+    -- already shown above, so leave the lower surface clear for render.hud
+    -- contributors instead of mirroring the complete world onto both panels.
+    local suppressScene = sceneMap ~= nil and gen2State == nil
     local transform = integerContain(uiWidth, uiHeight,
       ThorDualScreen.OUTPUT_WIDTH, ThorDualScreen.OUTPUT_HEIGHT)
     local panel = stackedChoicePanel(mod, uiWidth, uiHeight)
@@ -1117,7 +1257,21 @@ function ThorDualScreen.install(mod, opts)
           local regionDrawY = destinationY - region.y * transform.scaleY
           local regionWidth = region.width * transform.scaleX
           local regionHeight = region.height * transform.scaleY
-          if ctx.renderer and type(ctx.renderer.blitCanvas) == "function" then
+          if sceneMap then
+            local sceneScaleX = transform.scaleX / sceneMap.scale
+            local sceneScaleY = transform.scaleY / sceneMap.scale
+            if type(graphics.setScissor) == "function" then
+              graphics.setScissor(destinationX, destinationY,
+                regionWidth, regionHeight)
+            end
+            graphics.draw(ctx.uiCanvas,
+              regionDrawX - sceneMap.x * sceneScaleX,
+              regionDrawY - sceneMap.y * sceneScaleY,
+              0, sceneScaleX, sceneScaleY)
+            if type(graphics.setScissor) == "function" then
+              graphics.setScissor()
+            end
+          elseif ctx.renderer and type(ctx.renderer.blitCanvas) == "function" then
             local drew, drawError = pcall(ctx.renderer.blitCanvas, ctx.renderer,
               ctx.uiCanvas, transform.scaleX, transform.scaleY,
               ctx.zones, transform.scaleX, transform.scaleY,
@@ -1140,7 +1294,7 @@ function ThorDualScreen.install(mod, opts)
         drawRegion(panel.choice,
           boxX + boxWidth - panel.choice.width * transform.scaleX,
           boxY + panel.dialogue.height * transform.scaleY)
-      elseif ctx.uiCanvas and ctx.renderer
+      elseif ctx.uiCanvas and not sceneMap and ctx.renderer
           and type(ctx.renderer.blitCanvas) == "function" then
         local drew, drawError = pcall(ctx.renderer.blitCanvas, ctx.renderer,
           ctx.uiCanvas, transform.scaleX, transform.scaleY,
@@ -1149,12 +1303,27 @@ function ThorDualScreen.install(mod, opts)
           boxX, boxY, boxWidth, boxHeight, 1, 1)
         if not drew then error(drawError, 0) end
       elseif ctx.uiCanvas then
-        if panel and type(graphics.setScissor) == "function" then
-          graphics.setScissor(boxX, boxY, boxWidth, boxHeight)
+        local clipX, clipY, clipWidth, clipHeight = boxX, boxY,
+          boxWidth, boxHeight
+        if sceneMap and not panel then
+          clipX, clipY = transform.x, transform.y
+          clipWidth, clipHeight = transform.width, transform.height
         end
-        graphics.draw(ctx.uiCanvas, drawX, drawY, 0,
-          transform.scaleX, transform.scaleY)
-        if panel and type(graphics.setScissor) == "function" then
+        if (panel or sceneMap) and type(graphics.setScissor) == "function" then
+          graphics.setScissor(clipX, clipY, clipWidth, clipHeight)
+        end
+        if not suppressScene and sceneMap then
+          local sceneScaleX = transform.scaleX / sceneMap.scale
+          local sceneScaleY = transform.scaleY / sceneMap.scale
+          graphics.draw(ctx.uiCanvas,
+            drawX - sceneMap.x * sceneScaleX,
+            drawY - sceneMap.y * sceneScaleY,
+            0, sceneScaleX, sceneScaleY)
+        elseif not suppressScene then
+          graphics.draw(ctx.uiCanvas, drawX, drawY, 0,
+            transform.scaleX, transform.scaleY)
+        end
+        if (panel or sceneMap) and type(graphics.setScissor) == "function" then
           graphics.setScissor()
         end
       end
@@ -1170,7 +1339,7 @@ function ThorDualScreen.install(mod, opts)
       scale = transform.scaleX,
       dpiX = 1,
       dpiY = 1,
-      generation = 1,
+      generation = runtime.gameGeneration,
       safeX = 0,
       safeY = 0,
       safeWidth = ThorDualScreen.OUTPUT_WIDTH,
@@ -1190,6 +1359,7 @@ function ThorDualScreen.install(mod, opts)
         width = transform.width, height = transform.height,
       },
       _scottsTweaksThorLower = true,
+      _scottsTweaksThorNativeGen2 = sceneMap ~= nil and gen2State ~= nil,
       _scottsTweaksThorPanel = panel and {
         phase = panel.phase,
         kind = panel.kind,
@@ -1318,6 +1488,8 @@ function ThorDualScreen.install(mod, opts)
     runtime.pending = nil
     runtime.active = false
     ctx = type(ctx) == "table" and ctx or {}
+    runtime.gameGeneration = gameGeneration(mod, ctx)
+    runtime.compatibilityFallback = nil
     if externalPresenterActive(mod) then
       -- Ownership is sticky for this entry/boot.  If the legacy presenter is
       -- removed during a developer hot reload we still do not race its old
@@ -1371,6 +1543,29 @@ function ThorDualScreen.install(mod, opts)
     if runtime.faulted then
       requestBattleSplit(false)
       return downstream
+    end
+
+    if runtime.gameGeneration == 2 then
+      local state = topState(mod)
+      local fallback
+      if gen2BattleActive(mod) then
+        fallback = "gen2_battle_uses_stock_single_screen"
+      elseif gen2SingleScreenActive(mod) then
+        fallback = "gen2_primary_scene_uses_stock_single_screen"
+      elseif state ~= nil and not runtime.topValid then
+        -- Never manufacture a primary world from a combined scene that
+        -- already contains PACK/POKéGEAR/dialogue.  One clean overworld frame
+        -- is enough to arm native-menu routing on the next opening.
+        fallback = "gen2_waiting_for_clean_world"
+      elseif state == nil and ctx.worldActive ~= true then
+        fallback = "gen2_non_world_screen"
+      end
+      if fallback then
+        runtime.compatibilityFallback = fallback
+        requestBattleSplit(false)
+        requestBridge(false)
+        return downstream
+      end
     end
     -- Android creates its Presentation only after setEnabled(true).  Asking
     -- available() first deadlocked a cold boot: false prevented the enable

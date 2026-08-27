@@ -1,7 +1,7 @@
 {
   "id": "voxel_run_bridge",
   "name": "Scott's Tweaks",
-  "version": "0.12.12",
+  "version": "0.13.0",
   "github": "ScottExplores/gen1recomp-voxel-run-bridge",
   "api": 2,
   "entry": "main.lua",
@@ -28,9 +28,9 @@
   ],
   "conflicts": [],
   "incompatible": [],
-  "games": ["gen1"],
+  "games": ["gen1", "gen2"],
   "experimental": false,
   "affects_link": true,
   "permissions": ["engine_internals"],
-  "description": "Scott's organized gameplay menu: selectable Crystal/Battle Art Gen 1-5 sprites, native-pixel Pocket Bag and responsive PC skins, four-card Pokegear, Buddy/All EXP.SHARE, independent trainer/boss/wild difficulty, Trade Stone, trainer forfeits and rematches, Oak's spare starter, B-button running, badge-free field moves, visible wild Pokemon, followers, Free Fly, and automatic physical-Thor dual-screen control. The built-in original-style Kanto voxel renderer adds optional real Gen 1 ledge depth, safe third-person rooms, pixel horizons, elevated sun travel, later-rising lunar phases, pinned-night Full/New Moon choices, a phase-aware Milky Way, Scott's catalog-positioned block-pixel astrophotography, and optional local-season weather."
+  "description": "One Scott's Tweaks install for Red, Blue, Yellow, Gold, Silver and Crystal. It keeps each generation's native menus while adding original-style voxel terrain and camera views, visible wild Pokemon and followers, B-button running, Free Fly, Buddy/All EXP sharing, sprite options, physical-Thor dual-screen support, optional ledge depth, lunar phases and Scott's moving block-pixel night-sky photography. Kanto-only story and inventory tweaks remain safely limited to Gen 1; no Stadium models, battles, UI or ROM imports are included."
 }

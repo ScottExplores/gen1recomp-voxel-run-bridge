@@ -54,8 +54,32 @@ The following MIT terms apply to each work and copyright notice listed above:
 > FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 > IN THE SOFTWARE.
 
-Scott's Tweaks itself remains licensed under the repository's root
-[`LICENSE`](LICENSE).
+Scott's Tweaks' original code remains licensed under the repository's root
+[`LICENSE`](LICENSE); separately noticed vendor components retain their own
+terms.
+
+---
+
+## Gen 2 voxel terrain and cameras (0.13.0)
+
+The Gold/Silver/Crystal terrain adapter under `vendor/gen2_voxel/` is adapted
+from [`randyadr/Gen2-3D-Sprites`](https://github.com/randyadr/Gen2-3D-Sprites)
+at commit `a13895aa15ffab4683276cfadf7f9a3d523a5755` (upstream 0.4.33).
+Its complete supplied attribution text is preserved verbatim in
+`vendor/gen2_voxel/LICENSE-UPSTREAM.txt`.
+
+The upstream notice identifies Dramatic Shape-derived portions as MIT licensed
+and the upstream author's own code as Creative Commons Attribution-
+NonCommercial 4.0. The latter makes this bundled component noncommercial. See
+<https://creativecommons.org/licenses/by-nc/4.0/> for the license terms.
+
+Scott's Tweaks includes only the Gen 2 voxel terrain, height data, original 2D
+sprite-card world presentation, Diorama/Third Person/First Person cameras, and
+their sky/water dependencies. It does **not** include Stadium Pokémon or player
+models, Stadium battle/UI systems, ROM importers, OpenXR/VR files, model assets,
+or the optional Pokémon Yellow Kanto excursion. Small `Battle*`/`Pokedex`
+modules in the directory are inert compatibility stubs authored for this
+terrain-only integration, not imported Stadium systems.
 
 ---
 
