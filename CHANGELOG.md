@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.13.1 - 2026-08-26
+
+- **Kept the real Gen 2 inventory and device UI authoritative.** Gold, Silver,
+  and Crystal continue using the engine's native Pack pockets, Pokégear cards,
+  and PC storage. Scott's Kanto Pack/Pokégear imitation and Modern Bag/PC skin
+  remain completely dormant on the Gen 2 branch.
+- **Added an honest Gen 2-only Thor menu switch.** **GEN 2 MENU SPLIT** defaults
+  OFF, retaining the stock main-display placement. Turning it ON while **THOR
+  2ND SCREEN** is enabled moves the same untouched native Start, Pack, Pokégear,
+  and PC menu stack to the lower display. Dialogue still uses the lower display;
+  battles and cinematics still fall back to the stock combined presentation.
+- **Made nested menu routing coherent.** Party, held-item, mail, decoration, and
+  PC child pages opened from a native Gen 2 menu follow their root menu's chosen
+  display instead of jumping between screens.
+
 ## 0.13.0 - 2026-08-26
 
 - **Made one Scott's Tweaks install serve both generations.** The unchanged

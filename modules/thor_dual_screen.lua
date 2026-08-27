@@ -347,6 +347,42 @@ local function isGen2BattleState(state)
     or state.screenId == "Gen2BattleTransition"
 end
 
+-- Gold/Silver/Crystal already own these complete native menu families. The
+-- optional Thor menu split changes only which physical panel presents them;
+-- it never replaces PACK, POKeGEAR, item-PC, mail or storage behavior. Roots
+-- and their direct entry points are named so a nested Party/Held Item/TextBox
+-- remains on the stock primary presentation until its owning menu closes.
+local GEN2_NATIVE_MENU_ROOT_STATES = {
+  Gen2StartMenu = true,
+  Gen2PackMenu = true,
+  Gen2Pokegear = true,
+  Gen2CenterPcMenu = true,
+  Gen2PcMenu = true,
+  Gen2ItemPcMenu = true,
+  Gen2BoxMenu = true,
+  Gen2MailboxMenu = true,
+  Gen2MailRead = true,
+  Gen2MailCompose = true,
+  Gen2MailMenu = true,
+  Gen2HeldItemMenu = true,
+  Gen2DecorationMenu = true,
+}
+
+local function isGen2NativeMenuRoot(state)
+  return type(state) == "table"
+    and GEN2_NATIVE_MENU_ROOT_STATES[state.screenId] == true
+end
+
+local function gen2NativeMenuStackActive(mod)
+  local states = stackStates(mod)
+  if type(states) == "table" then
+    for index = #states, 1, -1 do
+      if isGen2NativeMenuRoot(states[index]) then return true end
+    end
+  end
+  return isGen2NativeMenuRoot(topState(mod))
+end
+
 local GEN2_SINGLE_SCREEN_STATES = {
   -- Boot/cinema screens are primary-screen experiences, not companion menus.
   Gen2CopyrightSplash = true,
@@ -684,10 +720,14 @@ local function setSplitPresentation(mod, active)
   return ok and accepted == true
 end
 
-local function cloneStatus(runtime, mod, optionKey)
+local function cloneStatus(runtime, mod, optionKey, gen2MenuSplitOptionKey)
   local desired = optionEnabled(mod, optionKey)
   local external = externalPresenterActive(mod)
   local delegated = runtime.delegated == true or external
+  local gen2MenuSplit
+  if runtime.gameGeneration == 2 then
+    gen2MenuSplit = optionEnabled(mod, gen2MenuSplitOptionKey)
+  end
   return {
     apiVersion = ThorDualScreen.API_VERSION,
     optionKey = optionKey,
@@ -713,6 +753,8 @@ local function cloneStatus(runtime, mod, optionKey)
     touchPolling = false,
     battleSplit = runtime.splitRequested == true,
     gameGeneration = runtime.gameGeneration,
+    gen2MenuSplitOptionKey = gen2MenuSplitOptionKey,
+    gen2MenuSplit = gen2MenuSplit,
     compatibilityFallback = runtime.compatibilityFallback,
   }
 end
@@ -722,6 +764,9 @@ function ThorDualScreen.install(mod, opts)
   opts = type(opts) == "table" and opts or {}
   local optionKey = type(opts.optionKey) == "string" and opts.optionKey ~= ""
     and opts.optionKey or "dual_screen"
+  local gen2MenuSplitOptionKey = type(opts.gen2MenuSplitOptionKey) == "string"
+      and opts.gen2MenuSplitOptionKey ~= ""
+    and opts.gen2MenuSplitOptionKey or "gen2_menu_split"
   local graphics = opts.graphics or (love and love.graphics)
   local timer = opts.timer or (love and love.timer)
   local now = type(opts.now) == "function" and opts.now or function()
@@ -1552,6 +1597,14 @@ function ThorDualScreen.install(mod, opts)
         fallback = "gen2_battle_uses_stock_single_screen"
       elseif gen2SingleScreenActive(mod) then
         fallback = "gen2_primary_scene_uses_stock_single_screen"
+      elseif not optionEnabled(mod, gen2MenuSplitOptionKey)
+          and gen2NativeMenuStackActive(mod) then
+        -- This is an explicit presentation choice, not an unsupported screen:
+        -- retain the engine's complete native menu on the primary panel and
+        -- release Thor's lower Presentation for the duration of that stack.
+        -- Ordinary overworld TextBox/ChoiceBox states are intentionally not
+        -- roots, so their hinge-side lower-screen routing remains available.
+        fallback = "gen2_native_menus_use_stock_single_screen"
       elseif state ~= nil and not runtime.topValid then
         -- Never manufacture a primary world from a combined scene that
         -- already contains PACK/POKéGEAR/dialogue.  One clean overworld frame
@@ -1742,16 +1795,39 @@ function ThorDualScreen.install(mod, opts)
   hookRecord.callbacks.quit = quitHook
 
   local function optionChanged(payload)
-    if runtime.retired or type(payload) ~= "table" or payload.mod ~= mod.id
-        or payload.key ~= optionKey then return end
-    if enabledValue(payload.value) then
-      runtime.faulted = false
-      runtime.lastError = nil
-      runtime.warned = {}
-      requestBridge(true)
-    else
-      requestBridge(false)
-      releaseCanvases()
+    if runtime.retired or type(payload) ~= "table"
+        or payload.mod ~= mod.id then return end
+    if payload.key == optionKey then
+      if enabledValue(payload.value) then
+        runtime.faulted = false
+        runtime.lastError = nil
+        runtime.warned = {}
+        requestBridge(true)
+      else
+        requestBridge(false)
+        releaseCanvases()
+      end
+      return
+    end
+    if payload.key == gen2MenuSplitOptionKey
+        and runtime.gameGeneration == 2 then
+      if enabledValue(payload.value) then
+        runtime.compatibilityFallback = nil
+        if optionEnabled(mod, optionKey) and not runtime.faulted then
+          requestBridge(true)
+        end
+      elseif gen2NativeMenuStackActive(mod) then
+        -- Do not leave the last menu image parked on Android's Presentation
+        -- between the option event and the next compose frame. Preserve the
+        -- clean top snapshot so turning the switch back on can resume without
+        -- closing and reopening the native menu.
+        runtime.pending = nil
+        runtime.active = false
+        runtime.compatibilityFallback =
+          "gen2_native_menus_use_stock_single_screen"
+        requestBattleSplit(false)
+        requestBridge(false)
+      end
     end
   end
 
@@ -1826,10 +1902,15 @@ function ThorDualScreen.install(mod, opts)
     getMode = function()
       return optionEnabled(mod, optionKey) and "on" or "off"
     end,
+    getGen2MenuSplit = function()
+      return optionEnabled(mod, gen2MenuSplitOptionKey)
+    end,
     secondDisplayAttached = function()
       return bridgeAvailable(runtime.bridge)
     end,
-    getStatus = function() return cloneStatus(runtime, mod, optionKey) end,
+    getStatus = function()
+      return cloneStatus(runtime, mod, optionKey, gen2MenuSplitOptionKey)
+    end,
   }
   mod.exports = type(mod.exports) == "table" and mod.exports or {}
   mod.exports.thorDualScreen = public

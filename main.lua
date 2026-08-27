@@ -52,7 +52,7 @@ local GAPPED_LAND_CELL = 64
 -- Native terrain and Flora's detailed apron occupy roughly y=-2..-37.
 -- Keep the broad procedural ground below both so it only fills the void.
 local GAPPED_LAND_Y = -40
-local RELEASE_VERSION = "0.13.0"
+local RELEASE_VERSION = "0.13.1"
 
 -- One package, two runtime profiles. These bundled mods advertise and carry
 -- real Gen 2 code; every other vendor remains on the historical Gen 1 path.
@@ -70,6 +70,7 @@ local OPTION_DEFAULTS = {
   hm_without_badges = true,
   free_fly_without_badges = true,
   free_fly_cockpit = false,
+  gen2_menu_split = false,
   gapped_land = true,
   bag_pockets = true,
   gen2_menus = true,
@@ -419,7 +420,11 @@ local function installGen2FeatureModules(mod)
     end
   else
     local okThor, thorResult = xpcall(function()
-      return Thor.install(mod, { optionKey = "dual_screen", generation = 2 })
+      return Thor.install(mod, {
+        optionKey = "dual_screen",
+        generation = 2,
+        gen2MenuSplitOptionKey = "gen2_menu_split",
+      })
     end, traceback)
     if not okThor then
       mod.exports.moduleErrors = mod.exports.moduleErrors or {}
@@ -1081,6 +1086,13 @@ local function defineGen2Options(mod, vendorHost)
       label = "THOR 2ND SCREEN",
       default = false,
       help = "Use the AYN Thor companion display for native Gen 2 menus and dialogue. Gen 2 battles stay in the stock combined view.",
+    },
+    {
+      key = "gen2_menu_split",
+      type = "toggle",
+      label = "GEN 2 MENU SPLIT",
+      default = false,
+      help = "Keep Gold, Silver and Crystal's native Pack, Pokegear and PC unchanged. ON moves those native menu frames to the Thor lower display only when THOR 2ND SCREEN is also ON.",
     },
   }
 

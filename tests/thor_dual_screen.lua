@@ -474,6 +474,7 @@ end
 local function installFixture(fixture, Thor)
   local controller = Thor.install(fixture.mod, {
     optionKey = "dual_screen", graphics = fixture.graphics,
+    gen2MenuSplitOptionKey = "gen2_menu_split",
     now = function() return fixture.clock.value end,
   })
   fixture.controller = controller
@@ -565,8 +566,10 @@ eq(Thor.battlePanelRegion("messages", 304, 144), nil,
 
 -- Gold/Silver/Crystal publish one window-sized scene canvas under both the
 -- world and UI keys.  Scott's presenter keeps a clean overworld snapshot on
--- top, maps the native 160x144 PACK/POKéGEAR/menu frame to the lower panel,
--- and leaves the engine's combined battle/cinema scenes on the primary screen.
+-- top. Native menu splitting is opt-in: OFF keeps PACK/POKéGEAR/PC stacks in
+-- the stock primary layout while dialogue can still use the lower panel; ON
+-- maps the same untouched 160x144 native menu frame below. Combined battle
+-- and cinema scenes always remain on the primary screen.
 local gen2Fixture = makeFixture()
 local gen2Stack = { states = {} }
 function gen2Stack:top() return self.states[#self.states] end
@@ -587,6 +590,12 @@ gen2Fixture.mod.exports.battleStage = {
 installFixture(gen2Fixture, loadThor())
 eq(gen2Fixture.controller.status().gameGeneration, 2,
   "Gen 2 presenter status is correct before the first compose frame")
+eq(gen2Fixture.controller.status().gen2MenuSplitOptionKey, "gen2_menu_split",
+  "Gen 2 presenter publishes its native-menu split option key")
+eq(gen2Fixture.controller.status().gen2MenuSplit, false,
+  "missing Gen 2 menu-split setting defaults safely OFF")
+eq(gen2Fixture.controller.exports.getGen2MenuSplit(), false,
+  "public Gen 2 menu-split getter reports the default OFF state")
 local gen2Viewport
 gen2Fixture.hooks:wrap("render.hud", function(nextFn, game, viewport)
   gen2Viewport = viewport
@@ -647,8 +656,70 @@ eq(nativeStart.scroll, 5,
 eq(nativeStart.list.marker, "native-pack-pokegear",
   "Gen 2 native PACK/POKéGEAR menu identity is preserved")
 gen2Fixture.clock.value = 0.04
+local pushesBeforeNativeStart = #gen2Fixture.bridge.pushes
+eq(gen2Fixture.frame(gen2Live).handled, false,
+  "Gen 2 native Start stays in the stock layout while menu split is OFF")
+eq(#gen2Fixture.bridge.pushes, pushesBeforeNativeStart,
+  "OFF never publishes a duplicate native Start frame below")
+eq(gen2Fixture.bridge.enables[#gen2Fixture.bridge.enables], false,
+  "OFF releases the lower Presentation during a native menu stack")
+eq(gen2Fixture.controller.status().compatibilityFallback,
+  "gen2_native_menus_use_stock_single_screen",
+  "native menu opt-out is reported as a non-fault compatibility fallback")
+eq(gen2Fixture.controller.status().faulted, false,
+  "native menu opt-out never faults the presenter")
+
+-- Dialogue is not part of the native menu-root family. It remains routed to
+-- the hinge-side lower panel even with the new menu switch left OFF.
+local gen2Dialogue = {
+  isTextBox = true,
+  boxTx = 0, boxTy = 12, boxTw = 20, boxTh = 6,
+}
+gen2Stack.states = { gen2Dialogue }
+gen2Fixture.clock.value = 0.08
 eq(gen2Fixture.frame(gen2Live).handled, true,
-  "Gen 2 native Start menu routes to the lower display")
+  "Gen 2 dialogue keeps the Thor split while native menu split is OFF")
+gen2Lower = gen2Fixture.bridge.pushes[#gen2Fixture.bridge.pushes].source
+local gen2DialogueDraw = assert(findDraw(gen2Lower.draws, gen2Scene),
+  "Gen 2 native dialogue crop missing")
+near(gen2DialogueDraw.y, -180 - 24 * (2 / 3),
+  "Gen 2 dialogue is moved from y=96 to the hinge-side margin")
+eq(gen2Viewport._scottsTweaksThorPanel.kind, "overworld_dialogue",
+  "Gen 2 shared TextBox shape uses the ordinary dialogue route")
+
+local gen2Choice = {
+  onChoose = function() end, index = 1,
+  tx = 14, ty = 7, tw = 6, th = 5,
+}
+gen2Stack.states = { gen2Dialogue, gen2Choice }
+gen2Fixture.clock.value = 0.12
+eq(gen2Fixture.frame(gen2Live).handled, true,
+  "Gen 2 choice keeps native prompt routing while menu split is OFF")
+gen2Lower = gen2Fixture.bridge.pushes[#gen2Fixture.bridge.pushes].source
+local gen2SceneDraws = 0
+for _, draw in ipairs(gen2Lower.draws) do
+  if draw.source == gen2Scene then gen2SceneDraws = gen2SceneDraws + 1 end
+end
+eq(gen2SceneDraws, 2,
+  "Gen 2 choice independently crops its native question and answer")
+eq(gen2Viewport._scottsTweaksThorPanel.kind, "dialogue_choice",
+  "Gen 2 native yes/no prompt keeps the stacked-choice contract")
+
+-- Turn the option on without closing/reopening Start. The option event should
+-- arm the bridge immediately, then the next compose reuses the clean world
+-- snapshot and moves the untouched native scene below.
+gen2Stack.states = { nativeStart }
+gen2Fixture.mod.options.values.gen2_menu_split = true
+gen2Fixture.events:emit("mod.options_changed", {
+  mod = gen2Fixture.mod.id, key = "gen2_menu_split", value = true,
+})
+eq(gen2Fixture.bridge.enables[#gen2Fixture.bridge.enables], true,
+  "turning Gen 2 menu split ON arms the attached lower panel immediately")
+eq(gen2Fixture.controller.exports.getGen2MenuSplit(), true,
+  "public getter reflects a live Gen 2 menu-split change")
+gen2Fixture.clock.value = 0.14
+eq(gen2Fixture.frame(gen2Live).handled, true,
+  "live ON routes the already-open native Start menu below")
 gen2Lower = gen2Fixture.bridge.pushes[#gen2Fixture.bridge.pushes].source
 local nativeStartDraw = assert(findDraw(gen2Lower.draws, gen2Scene),
   "Gen 2 native Start scene draw missing")
@@ -665,40 +736,6 @@ eq(gen2Viewport._scottsTweaksThorNativeGen2, true,
 eq(gen2Fixture.graphics.screenDraws[1].source, gen2Primary,
   "Gen 2 Start leaves the clean overworld snapshot above")
 
-local gen2Dialogue = {
-  isTextBox = true,
-  boxTx = 0, boxTy = 12, boxTw = 20, boxTh = 6,
-}
-gen2Stack.states = { gen2Dialogue }
-gen2Fixture.clock.value = 0.08
-eq(gen2Fixture.frame(gen2Live).handled, true,
-  "Gen 2 native dialogue keeps the Thor split active")
-gen2Lower = gen2Fixture.bridge.pushes[#gen2Fixture.bridge.pushes].source
-local gen2DialogueDraw = assert(findDraw(gen2Lower.draws, gen2Scene),
-  "Gen 2 native dialogue crop missing")
-near(gen2DialogueDraw.y, -180 - 24 * (2 / 3),
-  "Gen 2 dialogue is moved from y=96 to the hinge-side margin")
-eq(gen2Viewport._scottsTweaksThorPanel.kind, "overworld_dialogue",
-  "Gen 2 shared TextBox shape uses the ordinary dialogue route")
-
-local gen2Choice = {
-  onChoose = function() end, index = 1,
-  tx = 14, ty = 7, tw = 6, th = 5,
-}
-gen2Stack.states = { gen2Dialogue, gen2Choice }
-gen2Fixture.clock.value = 0.12
-eq(gen2Fixture.frame(gen2Live).handled, true,
-  "Gen 2 TextBox-backed choice keeps native prompt routing")
-gen2Lower = gen2Fixture.bridge.pushes[#gen2Fixture.bridge.pushes].source
-local gen2SceneDraws = 0
-for _, draw in ipairs(gen2Lower.draws) do
-  if draw.source == gen2Scene then gen2SceneDraws = gen2SceneDraws + 1 end
-end
-eq(gen2SceneDraws, 2,
-  "Gen 2 choice independently crops its native question and answer")
-eq(gen2Viewport._scottsTweaksThorPanel.kind, "dialogue_choice",
-  "Gen 2 native yes/no prompt keeps the stacked-choice contract")
-
 local nativePack = { screenId = "Gen2PackMenu", pocket = "items" }
 gen2Stack.states = { nativePack }
 gen2Fixture.clock.value = 0.16
@@ -709,6 +746,36 @@ check(findDraw(gen2Lower.draws, gen2Scene) ~= nil,
   "Gen 2 PACK uses the native engine scene rather than replacement artwork")
 eq(nativePack.pocket, "items",
   "Gen 2 PACK state is not rewritten by the presenter")
+
+-- The root may sit below a native child screen. OFF must inspect the complete
+-- stack so a Party/Held Item page opened from PACK does not jump panels.
+local nestedParty = { screenId = "Gen2PartyMenu", source = "pack" }
+gen2Stack.states = { nativeStart, nativePack, nestedParty }
+local pushesBeforeNestedOff = #gen2Fixture.bridge.pushes
+gen2Fixture.mod.options.values.gen2_menu_split = false
+gen2Fixture.events:emit("mod.options_changed", {
+  mod = gen2Fixture.mod.id, key = "gen2_menu_split", value = false,
+})
+eq(gen2Fixture.bridge.enables[#gen2Fixture.bridge.enables], false,
+  "live OFF releases a native menu stack without waiting for it to close")
+gen2Fixture.clock.value = 0.18
+eq(gen2Fixture.frame(gen2Context(false)).handled, false,
+  "nested PACK child stays in the stock layout while menu split is OFF")
+eq(#gen2Fixture.bridge.pushes, pushesBeforeNestedOff,
+  "nested native menu opt-out never pushes a stale lower frame")
+eq(gen2Fixture.controller.status().compatibilityFallback,
+  "gen2_native_menus_use_stock_single_screen",
+  "nested native menu root is detected across the complete stack")
+gen2Fixture.mod.options.values.gen2_menu_split = true
+gen2Fixture.events:emit("mod.options_changed", {
+  mod = gen2Fixture.mod.id, key = "gen2_menu_split", value = true,
+})
+gen2Fixture.clock.value = 0.19
+eq(gen2Fixture.frame(gen2Context(false)).handled, true,
+  "live ON resumes the still-open nested native menu stack")
+gen2Lower = gen2Fixture.bridge.pushes[#gen2Fixture.bridge.pushes].source
+check(findDraw(gen2Lower.draws, gen2Scene) ~= nil,
+  "resumed nested menu uses the untouched native engine scene")
 
 local gen2Battle = { screenId = "Gen2BattleState" }
 gen2Stack.states = { gen2Battle, nativePack }
@@ -1676,7 +1743,7 @@ local function realLoaderRegression(engineRoot)
   local files = {
     [prefix .. "manifest.json"] = [[{
       "id":"voxel_run_bridge","name":"Scott's Tweaks Thor Loader Test",
-      "version":"0.13.0","api":2,"entry":"main.lua",
+      "version":"0.13.1","api":2,"entry":"main.lua",
       "profile":"content","priority":200,"dependencies":[],
       "optional_dependencies":[],"conflicts":[],"games":["gen1"],
       "permissions":["engine_internals"]
@@ -1974,7 +2041,7 @@ local function realFusedFreeFlyRegression(engineRoot)
   local files = {
     [prefix .. "manifest.json"] = [[{
       "id":"voxel_run_bridge","name":"Scott's Tweaks Fused Flight Test",
-      "version":"0.13.0","api":2,"entry":"main.lua",
+      "version":"0.13.1","api":2,"entry":"main.lua",
       "profile":"content","priority":200,"dependencies":[],
       "optional_dependencies":[],"conflicts":[],"games":["gen1"],
       "permissions":["engine_internals"]

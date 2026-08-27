@@ -320,9 +320,11 @@ TextBox/battle questions with a narrow-answer paper band, scaling, fault
 recovery, legacy `gen1recomp_ds` delegation, same-facade identity, and two real
 API-2 Loader entries. Its real-Loader matrix also proves that 0.1.75's missing
 `mod.game` facade uses only the narrow `src.core.Game` compatibility fallback,
-while 0.1.83+ uses the public facade for dialogue and Start-menu state. Select
-each fixture as the live Loader once; every invocation contains 388 checks and
-runs under both LuaJIT and Lua 5.1:
+while 0.1.83+ uses the public facade for dialogue and Start-menu state. The
+core 0.1.88/0.1.96 presenter harness contains 359 checks; adding the current
+Gen 2 engine Loader tail brings the LuaJIT gate to 450. Select each historical
+fixture as the live Loader once and run the supported paths under both LuaJIT
+and Lua 5.1:
 
 ```powershell
 luajit tests\thor_dual_screen.lua <mod-root> <engine-.88> <engine-.96> <engine-.75>
@@ -380,11 +382,12 @@ luajit tests\gen2_voxel_headless.lua <mod-root> <current-engine-root>
 manifest. Run it in a fresh process for each game so generation state cannot
 leak between Gold, Silver, and Crystal. It proves the normal API-2 loader
 accepts `games: ["gen1", "gen2"]`, selects the same `voxel_run_bridge` ID,
-installs only the generation-safe hosted features, preserves native Pack and
-Pokegear, and routes physical-Thor overworld menus/dialogue to the lower
-display. Gen 2 battles deliberately retain the engine's stock combined scene
-because the engine exposes one finished battle frame rather than separate
-upper/lower render layers:
+installs only the generation-safe hosted features, and preserves native Pack,
+Pokegear, and PC. Physical-Thor dialogue routes to the lower display; native
+menu stacks remain in the stock layout by default and route lower only when
+the separate Gen 2 menu-split option is enabled. Gen 2 battles deliberately
+retain the engine's stock combined scene because the engine exposes one
+finished battle frame rather than separate upper/lower render layers:
 
 ```powershell
 luajit tests\gen2_full_load.lua <mod-root> <current-engine-root> gold

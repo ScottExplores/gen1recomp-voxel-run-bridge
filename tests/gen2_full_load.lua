@@ -148,11 +148,13 @@ for _, key in ipairs({
   "free_fly_without_badges", "free_fly_cockpit", "experience_mode",
   "running_enabled", "running_speed", "running_view_bob",
   "running_bob_intensity", "dual_screen", "daytime", "moonPhase",
-  "ledgeDepth",
+  "ledgeDepth", "gen2_menu_split",
 }) do
   T.check(type(schemaByKey[key]) == "table",
     "Gen 2 schema contains " .. key)
 end
+T.eq(schemaByKey.gen2_menu_split.default, false,
+  "Gen 2 native menu split defaults off")
 for _, key in ipairs({
   "bag_pockets", "gen2_menus", "hm_without_badges", "gapped_land",
   "trainer_forfeit_enabled", "trainer_rematches", "oak_spare_starter",

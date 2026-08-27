@@ -1,6 +1,6 @@
 # Scott's Tweaks
 
-**0.13.0 is one Scott's Tweaks install for both generations.** The same updater
+**0.13.1 is one Scott's Tweaks install for both generations.** The same updater
 ZIP now auto-detects Red/Blue/Yellow or Gold/Silver/Crystal and loads only the
 matching implementation. Gold, Silver and Crystal gain original 2D sprite-card
 voxel terrain, Diorama/Third Person/First Person views, visible wild Pokémon and
@@ -20,7 +20,7 @@ is broader, but its internal mod ID remains `voxel_run_bridge`. Existing
 installations therefore update in place, keep their settings, and do not
 become a duplicate mod.
 
-Version 0.13.0 keeps the existing updater identity. Red/Blue/Yellow retain the
+Version 0.13.1 keeps the existing updater identity. Red/Blue/Yellow retain the
 categorized **START > MOD MENUS > MOD SETTINGS** home; Gold/Silver/Crystal keep
 their native OPTION screen and expose Scott's generation-appropriate controls
 through **MODS > Scott's Tweaks**. The Gen 1 features are:
@@ -138,11 +138,15 @@ day, or a one-hour game day. A fixed NIGHT can use Natural, Full, or New Moon,
 and Scott's six block-pixel astrophotography targets keep their cataloged
 movement and Moon washout.
 
-On an AYN Thor, the generation-aware presenter routes native Gen 2 Start, Pack,
-Pokégear, and dialogue frames to the lower display while retaining a clean
-overworld above. Gen 2 battles and cinematics deliberately use the stock
-combined screen because the current engine exposes them as one finished scene;
-the presenter does not substitute Kanto's split battle stage.
+On an AYN Thor, **THOR 2ND SCREEN** enables the companion display. The Gen
+2-only **GEN 2 MENU SPLIT** switch then decides where the real native Start,
+Pack, Pokégear, and PC menu stack appears. It defaults OFF, leaving those menus
+in Gold/Silver/Crystal's stock main-display layout; ON moves the same unmodified
+menus to the lower display while retaining a clean overworld above. Native
+dialogue continues to use the lower display whenever THOR 2ND SCREEN is on.
+Gen 2 battles and cinematics deliberately use the stock combined screen because
+the current engine exposes them as one finished scene; the presenter does not
+substitute Kanto's split battle stage.
 
 The Gen 2 voxel source automatically stands aside if the separate
 `STADIUM2_OVERWORLD_MODELS` mod is enabled. Scott's package itself contains no
@@ -363,7 +367,7 @@ special canopy scenery so it does not flatten places that are supposed to be
 enclosed or water-covered.
 
 The renderer is selected by its stable mod ID and then checked for the required
-capabilities rather than trusted by display name alone. Version 0.13.0 targets
+capabilities rather than trusted by display name alone. Version 0.13.1 targets
 Pokemon Final, the verified Dramatic Shape 1.8.0-1.8.2 renderer contract, and
 Battle Art Voxel Fork's published renderer modules.
 If an active voxel provider does not expose the required renderer modules,
@@ -544,7 +548,7 @@ Scott's Tweaks choice was already saved.
 ## Install or update
 
 If Voxel Run Bridge or any earlier Scott's Tweaks release is installed, open
-Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.13.0
+Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.13.1
 update. It will appear as **Scott's Tweaks** afterward without creating a
 second entry. The same installed entry can then be enabled for Red, Blue,
 Yellow, Gold, Silver, and Crystal.
@@ -552,7 +556,7 @@ Yellow, Gold, Silver, and Crystal.
 For a first installation:
 
 1. Open **MODS -> Import mod .zip** and choose
-   `voxel_run_bridge-0.13.0.zip`.
+   `voxel_run_bridge-0.13.1.zip`.
 2. Enable **Scott's Tweaks**, then restart the game if the manager asks.
 3. In Red/Blue/Yellow, open **START > MOD MENUS > MOD SETTINGS**. In
    Gold/Silver/Crystal, open **MODS > Scott's Tweaks**. Gen 1 defaults the
@@ -561,8 +565,9 @@ For a first installation:
    Pokémon, and one follower on. Gen 2 defaults its voxel world, ledge depth,
    B running, Free Fly Now, visible wild Pokémon, and follower support on while
    retaining the native Pack and Pokégear.
-   EXP.SHARE and the difficulty choices default OFF; Fly Cockpit and Thor
-   Second Screen default off; run speed defaults to 1.5X and bob to 0.5X.
+   EXP.SHARE and the difficulty choices default OFF; Fly Cockpit, Thor Second
+   Screen, and the Gen 2 native-menu split default off; run speed defaults to
+   1.5X and bob to 0.5X.
 4. Use the bundled Free Fly for free-roaming flight; no separate mod is needed.
 5. Gen 2's voxel provider is included. On Gen 1, enable one supported voxel
    provider for 1ST/3RD running. No separate running bridge is required.
@@ -634,17 +639,17 @@ After tests pass, build the updater ZIP from the committed tree. The repository
 attributes supply the exact release exclusions:
 
 ```powershell
-git archive --format=zip --output=dist/voxel_run_bridge-0.13.0.zip v0.13.0
+git archive --format=zip --output=dist/voxel_run_bridge-0.13.1.zip v0.13.1
 ```
 
 The archive keeps `manifest.json`, `main.lua`, `LICENSE`, notices, `modules/`,
 and the generation-specific `vendor/` source at its root. Gen1Recomp's importer mounts those paths
 unchanged; development tests and unrelated workspace files are excluded.
 
-Version 0.13.0 is configured for Gen1Recomp's built-in GitHub update checks via
+Version 0.13.1 is configured for Gen1Recomp's built-in GitHub update checks via
 `ScottExplores/gen1recomp-voxel-run-bridge`.
 
-The download is deliberately named `voxel_run_bridge-0.13.0.zip` so the
+The download is deliberately named `voxel_run_bridge-0.13.1.zip` so the
 launcher selects it first from the matching GitHub release. Its internal ID
 remains `voxel_run_bridge`, so existing installs and saved settings update in
 place rather than appearing as a second mod.

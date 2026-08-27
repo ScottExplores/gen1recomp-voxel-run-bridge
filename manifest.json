@@ -1,7 +1,7 @@
 {
   "id": "voxel_run_bridge",
   "name": "Scott's Tweaks",
-  "version": "0.13.0",
+  "version": "0.13.1",
   "github": "ScottExplores/gen1recomp-voxel-run-bridge",
   "api": 2,
   "entry": "main.lua",
@@ -32,5 +32,5 @@
   "experimental": false,
   "affects_link": true,
   "permissions": ["engine_internals"],
-  "description": "One Scott's Tweaks install for Red, Blue, Yellow, Gold, Silver and Crystal. It keeps each generation's native menus while adding original-style voxel terrain and camera views, visible wild Pokemon and followers, B-button running, Free Fly, Buddy/All EXP sharing, sprite options, physical-Thor dual-screen support, optional ledge depth, lunar phases and Scott's moving block-pixel night-sky photography. Kanto-only story and inventory tweaks remain safely limited to Gen 1; no Stadium models, battles, UI or ROM imports are included."
+  "description": "One Scott's Tweaks install for Red, Blue, Yellow, Gold, Silver and Crystal. It keeps each generation's native menus while adding original-style voxel terrain and camera views, visible wild Pokemon and followers, B-button running, Free Fly, Buddy/All EXP sharing, sprite options, physical-Thor dual-screen support, optional ledge depth, lunar phases and Scott's moving block-pixel night-sky photography. Gen 2 can optionally place its untouched native menus on the Thor lower display; Kanto-only story and inventory tweaks remain safely limited to Gen 1. No Stadium models, battles, UI or ROM imports are included."
 }
