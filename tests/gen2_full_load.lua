@@ -64,6 +64,21 @@ for _, relative in ipairs(relativeFiles) do
 end
 T.check(count > 80, "complete unified package was staged")
 
+-- Global mod preferences survive switching from Kanto to Johto. The saved
+-- Kanto-only early option must not affect a Gen 2 boot or silently override
+-- the player's existing custom Free Fly switches.
+modFiles["options.lua"] = require("src.core.SaveSerializer").encode({
+  mods = { voxel_run_bridge = true },
+  modOptions = { voxel_run_bridge = {
+    classic_rules = false,
+    early_flight = true,
+    free_fly_without_badges = true,
+    ["free_fly:quickstart"] = true,
+    ["free_fly:badges"] = true,
+    ["free_fly:gates"] = false,
+  } },
+})
+
 local priorVersion = GameVersion.get()
 GameVersion.set(gameVersion)
 local okLoad, runOrError = pcall(function()
@@ -91,6 +106,21 @@ T.eq(exports.runtime and exports.runtime.onePackage, true,
   "Gen 2 profile reports the single-package design")
 T.eq(exports.status and exports.status.mode, "native_gen2_profile",
   "Gen 2 status names the native profile")
+local vendorHost = exports.vendorHost
+T.check(type(vendorHost) == "table", "Gen 2 publishes its vendor option owner")
+T.eq(vendorHost and vendorHost:readOption("free_fly", "scotts_early_fly"), false,
+  "saved Kanto early-flight preference remains dormant in Gen 2")
+T.eq(vendorHost and vendorHost:readOption("free_fly", "quickstart"), true,
+  "saved Kanto early-flight preference never suppresses Gen 2's chosen gift")
+T.eq(vendorHost and vendorHost:readOption("free_fly", "gates"), false,
+  "saved Kanto early-flight preference never changes Gen 2's chosen story gates")
+T.eq(run.loader.modOptions.voxel_run_bridge.early_flight, true,
+  "Gen 2 never deletes the saved Kanto early-flight preference")
+local badgeBypassActive = exports.freeFlyBadgeBypass and exports.freeFlyBadgeBypass()
+T.eq(badgeBypassActive, true,
+  "saved Kanto early-flight preference does not disable chosen Gen 2 FREE FLY NOW")
+T.eq(vendorHost and vendorHost:readOption("free_fly", "badges"), false,
+  "chosen Gen 2 FREE FLY NOW still controls its existing badge overlay")
 
 local loaded = {}
 for _, id in ipairs((exports.vendored and exports.vendored.loaded) or {}) do
@@ -157,7 +187,7 @@ T.eq(schemaByKey.gen2_menu_split.default, false,
   "Gen 2 native menu split defaults off")
 for _, key in ipairs({
   "bag_pockets", "gen2_menus", "hm_without_badges", "gapped_land",
-  "trainer_forfeit_enabled", "trainer_rematches", "oak_spare_starter",
+  "trainer_forfeit_enabled", "trainer_rematches", "oak_spare_starter", "early_flight",
 }) do
   T.eq(schemaByKey[key], nil, "Gen 2 schema omits Kanto-only " .. key)
 end

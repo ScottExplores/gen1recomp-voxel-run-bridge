@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.14.0 - 2026-10-03
+
+- Added opt-in **CLASSIC RULES**, a restart-required profile keeping classic
+  step encounters, EXP, trainer teams and badge gates. It suppresses Scott's
+  extra starter, paid forfeit/rematches, Trade Stone and bundled catchable-151
+  content without erasing custom preferences or prior save rewards. Camera,
+  graphics, running and optional ledge hops stay independent.
+- Added opt-in **EARLY FLY (BROCK)** for Red/Blue/Yellow: after the earned
+  BOULDERBADGE, a healthy HM02-compatible party partner can FREEFLY without
+  teaching FLY. No Pokemon, item, move or badge is granted. It works with
+  Classic Rules as an explicit travel exception; story and water badge checks
+  remain on, and the upstream free gift is suppressed while it is enabled.
+- Added **LEDGE HOPS** ON/OFF and hardened the existing first-person/manual
+  jump: no jumps during flight, battles, locks, scripts or transitions; no
+  hopping through occupied cells or live collision vetoes. Only authored low
+  ledges qualify, not arbitrary walls. OFF keeps the in-place cosmetic hop
+  and the engine's native one-way ledge behavior.
+- Fixed Free Fly field eligibility accidentally borrowing a different party
+  member's FLY eligibility and revalidated stale party-menu flight choices.
+- Disabled gift birds are removed when their option changes, and accepting a
+  previously opened gift conversation rechecks the current rule before any
+  Pokemon/move grant. This closes the live early-flight gift loophole.
+- Fixed legacy option imports after thrown/false storage failures: saved/live
+  options and completion markers roll back together and retry on game.ready.
+- Preserved selectable trainer/boss/wild level tiers, trainer-team modes,
+  encounter modes, spawn amounts and the existing custom features. Classic
+  Rules and earned early flight both default OFF; saved choices are not reset.
+- Kept the saved Gen 1 early-flight preference dormant in Gen 2, where that
+  option is intentionally absent; it no longer changes Johto flight settings.
+- Added an actual updater-archive check for identity/version, complete runtime
+  sentinels, attribution files, and ROM/save/cache/development-file exclusions.
+  See docs/NOSTALGIA_REVIEW.md for automated checks and live-testing limits.
+
 ## 0.13.1 - 2026-08-26
 
 - **Kept the real Gen 2 inventory and device UI authoritative.** Gold, Silver,

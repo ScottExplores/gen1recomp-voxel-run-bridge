@@ -107,3 +107,11 @@ dist/voxel_run_bridge-0.12.12.zip
 dist/voxel_run_bridge-0.13.0.zip
 dist/voxel_run_bridge-0.13.1.zip
 tools/
+tests/classic_rules.lua
+tests/classic_rules_integration.lua
+tests/early_flight.lua
+tests/scott_jump_button.lua
+dist/voxel_run_bridge-0.14.0.zip
+docs/NOSTALGIA_REVIEW.md
+vendor/crystal/assets/overworld/player/unused.zip
+vendor/crystal/assets/trainers/player/unused.zip

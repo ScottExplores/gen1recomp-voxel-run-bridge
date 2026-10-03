@@ -454,4 +454,35 @@ check(not ownershipHost:_standaloneWillRun("absent"),
 package.loaded["src.core.Game"] = oldGameLoaded
 package.preload["src.core.Game"] = oldGamePreload
 
+-- A saved Red/Blue/Yellow early-flight preference can outlive a game switch.
+-- The unified Gen 2 runtime must not apply that invisible Kanto-only option.
+local freeFly = host:handleFor(entry("free_fly"))
+freeFly.options:define({
+  { key = "quickstart", type = "toggle", default = true },
+  { key = "badges", type = "toggle", default = true },
+  { key = "gates", type = "toggle", default = true },
+})
+optionValues.early_flight = true
+optionValues["free_fly:quickstart"] = true
+optionValues["free_fly:badges"] = false
+optionValues["free_fly:gates"] = false
+eq(freeFly.options:get("scotts_early_fly"), true, "Gen 1 earned early travel remains enabled")
+eq(freeFly.options:get("quickstart"), false, "Gen 1 earned early travel suppresses the free gift")
+eq(freeFly.options:get("badges"), true, "Gen 1 earned early travel protects water badges")
+eq(freeFly.options:get("gates"), true, "Gen 1 earned early travel protects story gates")
+hostMod.exports.runtime = { generation = 2, profile = "gen2" }
+eq(freeFly.options:get("scotts_early_fly"), false, "saved Gen 1 early travel is dormant on Gen 2")
+eq(freeFly.options:get("quickstart"), true, "Gen 2 retains saved free-gift preference")
+eq(freeFly.options:get("badges"), false, "Gen 2 retains saved badge-check preference")
+eq(freeFly.options:get("gates"), false, "Gen 2 retains saved story-gate preference")
+optionValues["free_fly:quickstart"] = false
+optionValues["free_fly:badges"] = true
+optionValues["free_fly:gates"] = true
+eq(freeFly.options:get("quickstart"), false, "Gen 2 also retains saved gift OFF")
+eq(freeFly.options:get("badges"), true, "Gen 2 also retains saved badges ON")
+eq(freeFly.options:get("gates"), true, "Gen 2 also retains saved gates ON")
+eq(optionValues.early_flight, true, "cross-generation guard never deletes the Gen 1 preference")
+hostMod.exports.runtime = { generation = 1, profile = "gen1" }
+eq(freeFly.options:get("scotts_early_fly"), true, "returning to Gen 1 restores earned early travel")
+
 io.stdout:write(("vendor host asset facade: %d checks passed\n"):format(checks))

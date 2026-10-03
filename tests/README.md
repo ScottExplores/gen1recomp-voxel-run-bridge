@@ -1,5 +1,26 @@
 # Tests
 
+## Classic rules, jumping and earned early flight (0.14.0)
+
+These tests never import a ROM or use a real save. The integration tests use
+the official engine's production Loader and synthetic data; they do not
+replace a rendered/controller playthrough. With a current engine checkout
+and the same file list used by `run_fused.ps1`:
+
+```powershell
+luajit tests/classic_rules.lua .
+luajit tests/scott_jump_button.lua .
+luajit tests/early_flight.lua . <engine-root>
+luajit tests/classic_rules_integration.lua . <engine-root> <file-list> classic
+luajit tests/classic_rules_integration.lua . <engine-root> <file-list> custom
+luajit tests/classic_rules_integration.lua . <engine-root> <file-list> classic_early
+```
+
+These cover coherent profile changes, preserved custom preferences/rewards,
+collision/script/battle/flight jump guards, actual Free Fly eligibility and
+stale menu actions, unchanged FLY definitions, earned first-badge unlocks
+without move/item/party grants, and water/story gate checks.
+
 `art_rendering.lua` locks the sprite repairs that are easy to miss on a
 desktop display: Crystal's authored transparency survives a developer F5,
 opponent/player-back orientation controls stay independent, and both Wilds

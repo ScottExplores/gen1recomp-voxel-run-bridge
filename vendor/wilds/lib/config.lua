@@ -886,6 +886,10 @@ end
 -- Classic step-based random encounters (grass / cave / water / indoor).
 -- Independent of visible overworld Pokémon and Water Mons.
 function Config.randomEncountersEnabled(mod)
+  if mod and mod.options and type(mod.options.override) == "function" then
+    local effective = mod.options:override("random_encounters", nil)
+    if effective ~= nil then return effective == true end
+  end
   local raw, present = Config.peekSavedOption(mod, "random_encounters")
   if present then
     return raw == true

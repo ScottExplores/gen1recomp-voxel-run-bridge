@@ -15,3 +15,9 @@ tools/ export-ignore
 .luarc.json export-ignore
 .github/ export-ignore
 vendor/dynamic_scaling/main.lua.bak export-ignore
+vendor/*/tests/ export-ignore
+vendor/*/docs/ export-ignore
+vendor/*/.github/ export-ignore
+vendor/*/.modkit/ export-ignore
+vendor/crystal/assets/overworld/player/unused.zip export-ignore
+vendor/crystal/assets/trainers/player/unused.zip export-ignore

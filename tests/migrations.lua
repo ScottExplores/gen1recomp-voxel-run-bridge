@@ -296,6 +296,160 @@ eq(liveBucket4.dual_screen, false,
 eq(#emitted4, eventsBeforeFailure,
   "explicit persistence failure emits no live option event")
 
+-- Batched legacy imports must have the same transactional persistence
+-- behavior as an organized-menu edit. In particular, a failed first attempt
+-- must not mark a feature complete and prevent game.ready from retrying it.
+for _, failureMode in ipairs({ "throw", "false" }) do
+  local listeners5, attempts5, warnings5, events5 = {}, 0, {}, {}
+  local completed5 = { trainer = true }
+  local imported5 = { "trainer_memory" }
+  local own5 = {
+    legacy_import_v2 = completed5, legacy_imported_keys = imported5,
+    preserved = "existing save data",
+  }
+  local saved5 = { experience_mode = "party", running_speed = 2 }
+  local live5 = { experience_mode = "lead", running_speed = 1.5 }
+  local allSaved5 = { voxel_run_bridge = saved5 }
+  local allLive5 = { voxel_run_bridge = live5 }
+  local oldOak5 = { claimed = true }
+  local oldShoes5 = { enabled = false, viewBob = false, speed = 1.25 }
+  local modData5 = {
+    voxel_run_bridge = own5, oak_spare_starter = oldOak5,
+    running_shoes = oldShoes5,
+  }
+  local options5 = { modOptions = allSaved5 }
+  local game5 = {
+    save = { options = options5, modData = modData5 },
+    mods = {
+      modOptions = allLive5,
+      events = { emit = function(_, name, payload)
+        events5[#events5 + 1] = { name = name, payload = payload }
+      end },
+    },
+    writeOptions = function()
+      attempts5 = attempts5 + 1
+      if failureMode == "throw" then error("migration storage failure") end
+      return false, "migration storage is read-only"
+    end,
+  }
+  local mod5 = {
+    id = mod.id, exports = {}, options = mod.options,
+    events = { on = function(_, name, callback)
+      listeners5[name] = callback
+      return function() end
+    end },
+    log = { warn = function(_, _, detail)
+      warnings5[#warnings5 + 1] = detail
+    end },
+  }
+  package.loaded["src.core.Game"] = game5
+  local settings5 = Settings.new(mod5, {})
+  local api5 = install(mod5, { settings = settings5 })
+  local label = "migration " .. failureMode .. " failure: "
+  eq(attempts5, 1, label .. "the batch attempts one write")
+  eq(api5.imported, false, label .. "API does not report an import")
+  eq(#api5.importedKeys, 0, label .. "API exposes no committed keys")
+  check(type(api5.lastError) == "string",
+    label .. "API retains a useful persistence error")
+  eq(#warnings5, 1, label .. "the persistence failure is logged")
+  eq(game5.save.options, options5, label .. "options root identity survives")
+  eq(options5.modOptions, allSaved5,
+    label .. "saved modOptions identity survives")
+  eq(allSaved5.voxel_run_bridge, saved5,
+    label .. "saved bucket identity survives")
+  eq(game5.mods.modOptions, allLive5,
+    label .. "live modOptions identity survives")
+  eq(allLive5.voxel_run_bridge, live5,
+    label .. "live bucket identity survives")
+  eq(saved5.experience_mode, "party", label .. "saved EXP import rolls back")
+  eq(live5.experience_mode, "lead", label .. "live EXP import rolls back")
+  eq(saved5.running_enabled, nil,
+    label .. "new saved running preference rolls back")
+  eq(live5.running_enabled, nil,
+    label .. "new live running preference rolls back")
+  eq(saved5.running_speed, 2,
+    label .. "existing saved preference survives")
+  eq(live5.running_speed, 1.5,
+    label .. "failure does not reconcile a divergent Loader preference")
+  eq(game5.save.modData, modData5, label .. "modData identity survives")
+  eq(modData5.voxel_run_bridge, own5, label .. "own namespace identity survives")
+  eq(own5.legacy_import_v2, completed5,
+    label .. "migration marker identity survives")
+  eq(completed5.trainer, true, label .. "previous completion survives")
+  eq(completed5.experience_modes_v3, nil,
+    label .. "EXP canonicalization remains pending")
+  eq(completed5.oak, nil, label .. "Oak claim import remains pending")
+  eq(completed5.running, nil, label .. "running import remains pending")
+  eq(own5.legacy_imported_keys, imported5,
+    label .. "imported-key list identity survives")
+  eq(#imported5, 1, label .. "new imported keys roll back")
+  eq(own5.oak_spare_starter_claimed, nil,
+    label .. "new claim data rolls back with the options")
+  eq(own5.preserved, "existing save data", label .. "unrelated own data survives")
+  eq(modData5.oak_spare_starter, oldOak5,
+    label .. "legacy Oak namespace is untouched")
+  eq(modData5.running_shoes, oldShoes5,
+    label .. "legacy running namespace is untouched")
+  eq(#events5, 0, label .. "no option-change event announces failed imports")
+
+  game5.writeOptions = function() attempts5 = attempts5 + 1 end
+  eq(listeners5["game.ready"]({ game = game5 }), true,
+    label .. "game.ready retries when storage recovers")
+  eq(attempts5, 2, label .. "the successful retry writes once")
+  eq(saved5.experience_mode, "all", label .. "retry canonicalizes saved EXP")
+  eq(live5.experience_mode, "all", label .. "retry canonicalizes live EXP")
+  eq(saved5.running_enabled, false, label .. "retry imports saved running choice")
+  eq(live5.running_enabled, false, label .. "retry imports live running choice")
+  eq(completed5.experience_modes_v3, true,
+    label .. "retry commits the EXP completion marker")
+  eq(completed5.oak, true, label .. "retry commits the Oak completion marker")
+  eq(completed5.running, true,
+    label .. "retry commits the running completion marker")
+  eq(own5.oak_spare_starter_claimed, true,
+    label .. "retry preserves the legitimate one-time claim")
+  eq(own5.legacy_import_v2, completed5,
+    label .. "successful retry also keeps marker identity")
+  eq(own5.legacy_imported_keys, imported5,
+    label .. "successful retry also keeps list identity")
+  eq(api5.lastError, nil, label .. "successful retry clears the failure detail")
+  eq(api5.imported, true, label .. "API reports the committed imports")
+  eq(api5.run(game5), false, label .. "successful retry stays idempotent")
+  eq(attempts5, 2, label .. "later lifecycle calls do not write again")
+end
+
+-- First-install failures must also undo tables that Settings/the migration
+-- created. Neither a placeholder namespace nor an empty live bucket should
+-- make a later boot look as if it already migrated.
+local listeners6 = {}
+local legacy6 = { gen1recomp_ds = { enabled = true } }
+local game6 = {
+  save = { modData = legacy6 }, mods = {},
+  writeOptions = function() return false end,
+}
+local mod6 = {
+  id = mod.id, exports = {}, options = mod.options, log = mod.log,
+  events = { on = function(_, name, callback)
+    listeners6[name] = callback
+    return function() end
+  end },
+}
+package.loaded["src.core.Game"] = game6
+local settings6 = Settings.new(mod6, {})
+local api6 = install(mod6, { settings = settings6 })
+eq(game6.save.options, nil, "first-install failure removes a newly created options root")
+eq(game6.mods.modOptions, nil, "first-install failure removes newly created live modOptions")
+eq(game6.save.modData, legacy6, "first-install failure preserves the legacy modData root")
+eq(legacy6.voxel_run_bridge, nil, "first-install failure removes a new migration namespace")
+check(api6.lastError:find("game.writeOptions returned false", 1, true) ~= nil,
+  "false-without-detail failure has a useful fallback message")
+game6.writeOptions = function() return true end
+eq(listeners6["game.ready"]({ game = game6 }), true,
+  "first-install failure retries successfully on game.ready")
+eq(game6.save.options.modOptions.voxel_run_bridge.dual_screen, true,
+  "first-install retry commits the saved legacy preference")
+eq(game6.mods.modOptions.voxel_run_bridge.dual_screen, true,
+  "first-install retry commits the live legacy preference")
+
 package.loaded["src.core.Game"] = nil
 package.preload["src.core.Game"] = nil
 if failures > 0 then error(tostring(failures) .. " migration checks failed") end

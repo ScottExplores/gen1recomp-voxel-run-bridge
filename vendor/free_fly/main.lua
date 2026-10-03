@@ -39,6 +39,7 @@ return function(mod)
   end
   local FlightInput = loadLib("FlightInput.lua")
   local VoxelProvider = loadLib("VoxelProvider.lua")
+  local EarlyFlight = loadLib("EarlyFlight.lua")
   if not (FlightInput and VoxelProvider) then
     mod.log:error("Free Fly compatibility helpers are missing; reinstall the mod")
     return
@@ -374,16 +375,34 @@ return function(mod)
   -- relaxed the field-move rules through the engine's own chain, where
   -- HM02 compatibility still gates as the machine-teach path would
   local function eligibleFlyer(game, ow, mon)
-    if mon and mon.freeFlyGift then return true end
+    if not mon then return false end
+    local classic = mod.options:get("scotts_classic") == true
+    local earlyMode = mod.options:get("scotts_early_fly") == true
+    if EarlyFlight and EarlyFlight.eligible(game, mon,
+        earlyMode, GEN2_BOOT and 2 or 1) then
+      return true
+    end
+    if classic then return knowsFly(mon) end
+    if mon.freeFlyGift and not earlyMode then return true end
     if knowsFly(mon) then return true end
     if not canLearnFly(game, mon) then return false end
     local Runtime = require("src.mods.Runtime")
     return Runtime.wantsHook("fieldmove.eligibility")
-      and fieldMoveUser(ow, "FLY") ~= nil
+      and fieldMoveUser(ow, "FLY") == mon
   end
 
   local function badgeOk(game, mon)
-    if not mod.options:get("badges") or mon.freeFlyGift then return true end
+    if not mon then return false end
+    local classic = mod.options:get("scotts_classic") == true
+    local earlyMode = mod.options:get("scotts_early_fly") == true
+    if EarlyFlight and EarlyFlight.eligible(game, mon,
+        earlyMode, GEN2_BOOT and 2 or 1) then
+      return true
+    end
+    if not classic and not earlyMode
+        and (not mod.options:get("badges") or mon.freeFlyGift) then
+      return true
+    end
     if GEN2_BOOT then
       -- Gold gates FLY on Chuck's STORMBADGE; read it the way its own
       -- field moves do
@@ -427,6 +446,10 @@ return function(mod)
       mod.log:warn("no overworld to take off from; FREEFLY skipped")
       return
     end
+    -- Revalidate a queued/stale menu choice before changing any world state.
+    if not (eligibleFlyer(game, ow, mon) and badgeOk(game, mon)) then return end
+    if ridingBike(ow) or not skyAbove(game, ow.map and ow.map.def,
+        ow.map and ow.map.id) then return end
     state.phase, state.alt, state.bob = "rising", 0, 0
     -- wild flyers climb on a diagonal; so does the mount
     state.riseGlide = 2
@@ -542,6 +565,9 @@ return function(mod)
       -- a stale entry (menu built before a battle started) must not
       -- unwind the battle screen below it
       if battleRunning(g) then return end
+      if not (eligibleFlyer(g, ow, m) and badgeOk(g, m)) then return end
+      if ridingBike(ow) or not skyAbove(g, ow.map and ow.map.def,
+          ow.map and ow.map.id) then return end
       -- unwind party menu / start menu back to the overworld, then lift off
       local stack = g.stack
       while stack:top() and not stack:top().isOverworld do stack:pop() end
@@ -610,6 +636,13 @@ return function(mod)
     end,
   })
 
+  mod.content.commands:register("free_fly:gift_enabled", {
+    foreground = true,
+    fn = function(ctx)
+      ctx.lastCheck = mod.options:get("quickstart") == true
+    end,
+  })
+
   -- the YES branch of the sea-crossing confirm; remembered per save so
   -- each map asks once
   mod.content.commands:register("free_fly:allow_crossing", {
@@ -625,11 +658,17 @@ return function(mod)
   if not GEN2_BOOT then mod.content.map_scripts:register("PALLET_TOWN", {
     talk = {
       [GIFT_TEXT] = {
+        { "free_fly:gift_enabled" },
+        { "jump_if_false", "end" },
         { "check_flag", GIFT_TAKEN },
         { "jump_if_true", "end" },
         { "show_text", "The tag on this\nPIDGEOT's neck\nsays it can fly\nanywhere without\na badge!\fUse only if\nyou dare" },
         { "choice", { "TAKE IT", "LEAVE IT" } },
         { "jump_if_false", "refused" },
+        -- Recheck after the asynchronous choice as well: an already-open
+        -- conversation is not permission to grant a now-disabled gift.
+        { "free_fly:gift_enabled" },
+        { "jump_if_false", "end" },
         { "set_flag", GIFT_TAKEN },
         { "give_pokemon", GIFT_SPECIES, GIFT_LEVEL },
         { "free_fly:teach_fly" },
@@ -804,6 +843,7 @@ return function(mod)
   end
 
   local function grantGoldGift(game)
+    if mod.options:get("quickstart") ~= true then return false, "Not now." end
     local save = game and game.save
     if not save then return false, "Not now." end
     save.party = save.party or {}
@@ -848,6 +888,7 @@ return function(mod)
   local function goldGiftCeremony(ow, npc)
     local def = npc and npc.def
     if not (def and def.name == GOLD_GIFT_NAME) then return false end
+    if mod.options:get("quickstart") ~= true then return true end
     if not (ow and ow.showText and ow.askYesNo) then return false end
     local game = require("src.core.Game")
     if goldGiftTaken() then
@@ -882,6 +923,19 @@ return function(mod)
       end)
     return true
   end
+
+  mod.events:on("mod.options_changed", function(payload)
+    if not payload then return end
+    local hosted = mod.options and mod.options.hosted
+    local ownChange = payload.mod == mod.id and payload.key == "quickstart"
+    local hostChange = hosted and payload.mod == hosted.hostId
+      and (payload.key == "early_flight"
+        or payload.key == (hosted.prefix .. "quickstart"))
+    if ownChange or hostChange then
+      spawnGift()
+      spawnGoldGift()
+    end
+  end)
 
   mod.events:on("map.entered", function(ev)
     state.giftNpcId = nil

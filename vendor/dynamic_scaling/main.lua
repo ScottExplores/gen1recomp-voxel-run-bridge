@@ -36,6 +36,10 @@ return function(mod)
   -- `difficulty = medium` save seed all three new controls, even though each
   -- new schema row quite correctly defaults to OFF for a new installation.
   local function storedOption(game, key)
+    if mod.options and type(mod.options.override) == "function" then
+      local effective = mod.options:override(key, nil)
+      if effective ~= nil then return effective, true end
+    end
     local hosted = mod.options and mod.options.hosted
     local holders = {}
     local function add(holder)
@@ -224,6 +228,13 @@ return function(mod)
 
   mod.events:on("mod.options_changed", function(p)
     if p and p.mod == mod.id then
+      if mod.options and type(mod.options.override) == "function" then
+        local effective = mod.options:override(p.key, nil)
+        if effective ~= nil then
+          refreshOptions(nil, false)
+          return
+        end
+      end
       if p.key == "randomize" then C.randomize = p.value end
       for kind, key in pairs(MODE_KEYS) do
         if p.key == key and modeValue(p.value) then

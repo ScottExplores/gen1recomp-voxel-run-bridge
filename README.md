@@ -1,6 +1,40 @@
 # Scott's Tweaks
 
-**0.13.1 is one Scott's Tweaks install for both generations.** The same updater
+### 0.14.0: optional classic rules + earned early flight
+
+Open **START > MOD MENUS > MOD SETTINGS** (or **START > MOD SETTINGS**).
+**Your existing custom setup stays available. CLASSIC RULES defaults OFF.**
+In **BATTLES**, TRAINERS and BOSSES independently select OFF,
+NORMAL +2, MEDIUM +5 or HARD +10, with the existing trainer-team modes.
+In **WILD & FOLLOWERS**, WILD POKEMON selects the same level tiers; encounter
+modes, spawn amount, followers, sprite choices and catching options remain.
+Switch BASIC to ALL for the advanced rows. No custom feature was removed.
+
+For a nostalgia-focused run, turn **CLASSIC RULES ON**, then completely close
+and reopen the game. Custom settings remain stored and return when you turn
+it off and restart; this does not remove rewards already earned/granted in an
+existing save. The profile keeps classic encounters, EXP, trainer teams and
+badge gates, and disables extra starter gifts, paid forfeits/rematches,
+Trade Stone use and the bundled catchable-151 content. Separately installed
+gameplay mods still control their own behavior; disable those for this run.
+
+First person and the existing graphics stay available. In **MOVEMENT**:
+
+- **LEDGE HOPS ON** keeps Space/Y two-way hops over the original low ledges,
+  with clear landings and live collision checks. OFF makes the button hop
+  cosmetic; native one-way ledges still work. This is not arbitrary wall jumping.
+- **EARLY FLY (BROCK) ON** is an optional travel exception, even with Classic
+  Rules: earn BOULDERBADGE, catch/bring a healthy HM02-compatible partner
+  (such as Pidgey), then choose **PARTY > that Pokemon > FREEFLY** outdoors.
+  It does not teach FLY or grant anything. Press **B** (keyboard **X**) to land.
+  Story-area and water badge checks remain on. The original FLY move and HM
+  actions are unchanged. Early flight is Gen 1 only; Gen 2 keeps native unlocks.
+
+Automated production-loader and regression checks pass. This update has not
+been controller/GPU play-tested; back up your save before testing movement.
+See [the review notes](docs/NOSTALGIA_REVIEW.md) for verification and limits.
+
+**0.14.0 retains one Scott's Tweaks install for both generations.** The same updater
 ZIP now auto-detects Red/Blue/Yellow or Gold/Silver/Crystal and loads only the
 matching implementation. Gold, Silver and Crystal gain original 2D sprite-card
 voxel terrain, Diorama/Third Person/First Person views, visible wild Pokémon and
@@ -20,7 +54,7 @@ is broader, but its internal mod ID remains `voxel_run_bridge`. Existing
 installations therefore update in place, keep their settings, and do not
 become a duplicate mod.
 
-Version 0.13.1 keeps the existing updater identity. Red/Blue/Yellow retain the
+Version 0.14.0 keeps the existing updater identity. Red/Blue/Yellow retain the
 categorized **START > MOD MENUS > MOD SETTINGS** home; Gold/Silver/Crystal keep
 their native OPTION screen and expose Scott's generation-appropriate controls
 through **MODS > Scott's Tweaks**. The Gen 1 features are:
@@ -639,17 +673,18 @@ After tests pass, build the updater ZIP from the committed tree. The repository
 attributes supply the exact release exclusions:
 
 ```powershell
-git archive --format=zip --output=dist/voxel_run_bridge-0.13.1.zip v0.13.1
+git archive --format=zip --output=dist/voxel_run_bridge-0.14.0.zip v0.14.0
+.\tools\check_release.ps1 -ArchivePath dist/voxel_run_bridge-0.14.0.zip -Version 0.14.0
 ```
 
 The archive keeps `manifest.json`, `main.lua`, `LICENSE`, notices, `modules/`,
 and the generation-specific `vendor/` source at its root. Gen1Recomp's importer mounts those paths
 unchanged; development tests and unrelated workspace files are excluded.
 
-Version 0.13.1 is configured for Gen1Recomp's built-in GitHub update checks via
+Version 0.14.0 is configured for Gen1Recomp's built-in GitHub update checks via
 `ScottExplores/gen1recomp-voxel-run-bridge`.
 
-The download is deliberately named `voxel_run_bridge-0.13.1.zip` so the
+The download is deliberately named `voxel_run_bridge-0.14.0.zip` so the
 launcher selects it first from the matching GitHub release. Its internal ID
 remains `voxel_run_bridge`, so existing installs and saved settings update in
 place rather than appearing as a second mod.

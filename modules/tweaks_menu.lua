@@ -70,10 +70,16 @@ return function(mod, context)
       value = function()
         local reason = unavailable and unavailable()
         if reason then return reason end
+        local rules = mod.exports.classicRules
+        if rules and rules:enabled() and rules:ownsOverride(key) then
+          return "CLASSIC"
+        end
         return settings:get(key) == true and "ON" or "OFF"
       end,
       step = function(game)
         if unavailable and unavailable() then return false end
+        local rules = mod.exports.classicRules
+        if rules and rules:enabled() and rules:ownsOverride(key) then return false end
         return set(game, key, settings:get(key) ~= true)
       end,
     }
@@ -85,6 +91,8 @@ return function(mod, context)
       value = function()
         local reason = unavailable and unavailable()
         if reason then return reason end
+        local rules = mod.exports.classicRules
+        if rules and rules:enabled() and rules:ownsOverride(key) then return "CLASSIC" end
         local current = settings:get(key)
         for _, row in ipairs(choices) do
           if row[2] == current then return row[1] end
@@ -93,6 +101,8 @@ return function(mod, context)
       end,
       step = function(game, direction)
         if unavailable and unavailable() then return false end
+        local rules = mod.exports.classicRules
+        if rules and rules:enabled() and rules:ownsOverride(key) then return false end
         local current, index = settings:get(key), 1
         for i, row in ipairs(choices) do
           if row[2] == current then index = i break end
@@ -121,6 +131,8 @@ return function(mod, context)
     row.value = function()
       local reason = unavailable and unavailable()
       if reason then return reason end
+      local rules = mod.exports.classicRules
+      if rules and rules:enabled() then return "CLASSIC" end
       local current = normalizedExpChoice(settings:get("experience_mode"))
       for _, entry in ipairs(expChoices) do
         if entry[2] == current then return entry[1] end
@@ -129,6 +141,8 @@ return function(mod, context)
     end
     row.step = function(game, direction)
       if unavailable and unavailable() then return false end
+      local rules = mod.exports.classicRules
+      if rules and rules:enabled() then return false end
       local current = normalizedExpChoice(settings:get("experience_mode"))
       local index = 1
       for i, entry in ipairs(expChoices) do
@@ -244,6 +258,12 @@ return function(mod, context)
       row.step = function() return false end
       return row
     end
+    local rules = mod.exports.classicRules
+    if rules and rules:enabled() and rules:vendorOverride(vendorId, key) then
+      row.value = function() return "CLASSIC" end
+      row.step = function() return false end
+      return row
+    end
     if schema.type == "toggle" then
       row.value = function()
         return host:readOption(vendorId, key) == true and "ON" or "OFF"
@@ -288,6 +308,18 @@ return function(mod, context)
       end
     else
       return nil
+    end
+    if vendorId == FREE_FLY
+        and (key == "quickstart" or key == "gates" or key == "badges") then
+      local value, step = row.value, row.step
+      row.value = function()
+        if settings:get("early_flight") == true then return "EARLY MODE" end
+        return value()
+      end
+      row.step = function(game, direction)
+        if settings:get("early_flight") == true then return false end
+        return step(game, direction)
+      end
     end
     return row
   end
@@ -386,6 +418,8 @@ return function(mod, context)
         return mode == "custom" and "CUSTOM" or (ENCOUNTER_LABEL[mode] or "?")
       end,
       step = function(game, direction)
+        local rules = mod.exports.classicRules
+        if rules and rules:enabled() then return false end
         direction = direction and direction < 0 and -1 or 1
         local current, index = encounterMode(), nil
         for i, mode in ipairs(ENCOUNTER_ORDER) do
@@ -655,14 +689,18 @@ return function(mod, context)
       runningUnavailable), true))
     add(rows, mark(toggle("hm_without_badges", "BADGE-FREE HMS"), false))
     local freeFlyNow = mark(
-      toggle("free_fly_without_badges", "FREE FLY NOW"), true)
+      toggle("free_fly_without_badges", "FREE FLY NOW", function()
+        if settings:get("early_flight") == true then return "EARLY MODE" end
+      end), true)
     if freeFlyNow then
       -- The host adapter mirrors this preference into Free Fly's inverse
       -- BADGE CHECKS key, so presenting both controls would make them fight.
       freeFlyNow.schemaKeys = { FREE_FLY .. ":badges" }
     end
     add(rows, freeFlyNow)
+    add(rows, mark(toggle("early_flight", "EARLY FLY (BROCK)"), true))
     add(rows, mark(toggle("free_fly_cockpit", "FLY COCKPIT"), false))
+    add(rows, mark(baRow("ledge_hops"), true))
     addAll(rows, baRows({ "jump", "jumpkey", "jumppad" }), false)
     add(rows, mark(baRow("headbob", "JUMP CAMERA BOB"), false))
     -- FREE FLY NOW is the single badge-bypass control; exposing Free Fly's
@@ -701,6 +739,16 @@ return function(mod, context)
 
   local function mainRows()
     local rows = {}
+    local rules = mod.exports.classicRules
+    if rules then
+      local classicRow = toggle("classic_rules", "CLASSIC RULES")
+      classicRow.value = function()
+        local status = rules:status()
+        if status.restartRequired then return "RESTART" end
+        return status.enabled and "ON" or "OFF"
+      end
+      add(rows, classicRow)
+    end
     -- A partial install must announce itself instead of failing quietly: the
     -- engine's installer can be interrupted mid-copy on a handheld and the
     -- half-written tree still loads. See modules/integrity.lua.

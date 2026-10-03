@@ -1,5 +1,19 @@
 # Free Fly
 
+## Scott's Tweaks integration notes
+
+This bundled copy adds `lib/EarlyFlight.lua` and a narrow Scott-owned option
+bridge, without changing the upstream mod's updater identity. `scotts_early_fly`
+allows a healthy, actual HM02-compatible party partner to FREEFLY in Gen 1
+after the earned BOULDERBADGE. It teaches/grants nothing and does not alter
+ordinary FLY. The host suppresses QUICK START and holds STORY GATES/BADGE
+CHECKS on while this exception is enabled, including water landings.
+`scotts_classic` restores badge/move checks for previously claimed gifts without
+removing those partners or markers. The selected party member must be the one
+nominated by relaxed field-move eligibility. Stale flight choices revalidate
+before closing menus and again before takeoff. Upstream defaults documented
+below describe standalone Free Fly, not the host's Classic Rules profile.
+
 Lets a party member that knows FLY carry you around the overworld. Take
 off anywhere outdoors, fly over trees, water, fences and rooftops, cross
 into neighbouring routes (the sea included), and press the B button (X on

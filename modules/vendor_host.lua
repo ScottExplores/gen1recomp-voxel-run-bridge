@@ -212,12 +212,11 @@ function VendorHost:handleFor(entry)
       return schema
     end,
     get = function(_, key)
-      local stored = mod.options:get(entry.id .. ":" .. tostring(key))
-      if stored ~= nil then return stored end
-      for _, row in ipairs(host.schemas[entry.id] or {}) do
-        if row.key == key then return row.default end
-      end
-      return nil
+      return host:readOption(entry.id, key)
+    end,
+    -- Raw-save readers need the same non-persistent rule overlay as get().
+    override = function(_, key, value)
+      return host:effectiveOption(entry.id, key, value)
     end,
     -- Non-Mod-Manager vendor UIs cannot call options:set in API 2. Route them
     -- through the host's canonical writer so save and live Loader cache remain
@@ -441,6 +440,10 @@ function VendorHost:installSelected(ids)
     -- and two copies of one mod must never both run.
     if not wanted then
       -- Deliberately skipped for this generation/profile.
+    elseif self.mod.exports.classicRules
+        and self.mod.exports.classicRules:skipVendor(entry.id) then
+      -- Encounter/evolution content cannot be removed mid-session. The
+      -- classic profile is a boot-time choice, never a save rewrite.
     elseif self:_standaloneWillRun(entry.id) then
       self.failures[entry.id] = "standalone copy is installed"
     elseif externalRenderer
@@ -601,13 +604,35 @@ function VendorHost:writeOption(game, vendorId, key, value, opts)
   }, opts)
 end
 
+function VendorHost:effectiveOption(vendorId, key, value)
+  local rules = self.mod.exports and self.mod.exports.classicRules
+  if rules and type(rules.vendor) == "function" then
+    value = rules:vendor(vendorId, key, value)
+  end
+  if vendorId == "free_fly" then
+    -- Options persist across games. Gen 2 deliberately has no EARLY FLY row,
+    -- so a saved Kanto preference must remain dormant rather than silently
+    -- change Johto's free-gift, badge or story-gate preferences.
+    local runtime = self.mod.exports and self.mod.exports.runtime
+    local early = not (runtime and runtime.generation == 2)
+      and self.mod.options:get("early_flight") == true
+    if key == "scotts_early_fly" then return early end
+    -- Early flight uses an earned badge + compatible partner, not the
+    -- upstream free gift. Keep the area and water badge checks intact.
+    if early and key == "quickstart" then return false end
+    if early and (key == "gates" or key == "badges") then return true end
+  end
+  return value
+end
+
 function VendorHost:readOption(vendorId, key)
   local stored = self.mod.options:get(vendorId .. ":" .. tostring(key))
-  if stored ~= nil then return stored end
-  for _, row in ipairs(self.schemas[vendorId] or {}) do
-    if row.key == key then return row.default end
+  if stored == nil then
+    for _, row in ipairs(self.schemas[vendorId] or {}) do
+      if row.key == key then stored = row.default break end
+    end
   end
-  return nil
+  return self:effectiveOption(vendorId, key, stored)
 end
 
 function VendorHost:status()

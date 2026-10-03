@@ -45,7 +45,7 @@ local CATEGORY_ORDER = {
 -- keys are appended to Advanced at install time instead of becoming orphaned.
 local CATEGORY_KEYS = {
   views = {
-    "grid", "curve", "dof", "jump", "jumpkey", "jumppad",
+    "grid", "curve", "dof", "jump", "ledge_hops", "jumpkey", "jumppad",
   },
   world = {
     "worldFill", "renderDistance", "ledgeDepth", "water", "shadowQuality",

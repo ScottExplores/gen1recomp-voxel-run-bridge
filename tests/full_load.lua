@@ -149,6 +149,7 @@ for _, relative in ipairs({
   "transform_birds.lua",
 
   "modules/settings.lua",
+  "modules/classic_rules.lua",
   "modules/migrations.lua",
   "modules/trainer_forfeit.lua",
   "modules/trainer_dialogue.lua",
@@ -175,8 +176,8 @@ T.eq(run.mod and run.mod.manifest.id, "voxel_run_bridge",
   "stable updater identity is retained")
 T.eq(run.mod and run.mod.manifest.name, "Scott's Tweaks",
   "new display name is loaded")
-T.eq(run.mod and run.mod.manifest.version, "0.13.1",
-  "loader selected version 0.13.1")
+T.eq(run.mod and run.mod.manifest.version, "0.14.0",
+  "loader selected version 0.14.0")
 -- The consolidated build bundles All Pokemon Catchable 151 and Dynamic Scaling, which repatch
 -- encounter tables and pokemon records. The loader warns when a mod writes to
 -- pokemon while claiming otherwise, and a link partner must know, so the flag
@@ -348,17 +349,19 @@ local function buildScreen(id, ...)
 end
 local menuApi = run.loader.exports.voxel_run_bridge.tweaksMenu
 local tweaksMain = buildScreen(menuApi.screenIds.main)
-T.eq(#(tweaksMain.rows or {}), 8,
-  "MOD SETTINGS opens as seven categories plus one visibility control")
+T.eq(#(tweaksMain.rows or {}), 9,
+  "MOD SETTINGS opens with Classic Rules, seven categories and visibility")
+T.eq(tweaksMain.rows[1] and tweaksMain.rows[1].label, "CLASSIC RULES",
+  "rules profile is directly reachable on the root")
 local expectedCategories = {
   "VIEW & CAMERA", "WORLD & WEATHER", "POKEMON ART", "BATTLES",
   "WILD & FOLLOWERS", "MOVEMENT", "MENUS & DEVICE",
 }
 for i, label in ipairs(expectedCategories) do
-  T.eq(tweaksMain.rows[i] and tweaksMain.rows[i].label, label,
+  T.eq(tweaksMain.rows[i + 1] and tweaksMain.rows[i + 1].label, label,
     "unified category " .. i .. " is concise and stable")
 end
-local optionsShown = tweaksMain.rows[8]
+local optionsShown = tweaksMain.rows[9]
 T.eq(optionsShown and optionsShown.label, "OPTIONS SHOWN",
   "the single visibility control is named plainly")
 T.eq(optionsShown and optionsShown.value(), "BASIC",
@@ -561,11 +564,28 @@ pressed = "a"
 shopScreen:update(0)
 pressed = nil
 local buyScreen = stack:top()
-T.eq(buyScreen and buyScreen.title, "BUY", "real ShopMenu opens BUY")
+local nativeDialogue = buyScreen and buyScreen.isTextBox
+  and buyScreen.stay and type(buyScreen.stay.onShown) == "function"
+if nativeDialogue then
+  -- Current Gen1Recomp presents the cartridge clerk text before the list.
+  -- Complete that real callback headlessly rather than assuming the old
+  -- immediate full-screen BUY layout.
+  buyScreen.stay.onShown(buyScreen)
+  buyScreen = stack:top()
+  T.eq(buyScreen and buyScreen.dialogue, true,
+    "current ShopMenu opens its native dialogue-mode list")
+else
+  T.eq(buyScreen and buyScreen.title, "BUY", "legacy ShopMenu opens BUY")
+end
 T.eq(buyScreen and buyScreen.items[1] and buyScreen.items[1].value,
   "SCOTTS_TRADE_STONE", "real ShopMenu appends one Trade Stone")
-T.eq(type(buyScreen and buyScreen._scottsTweaksOwnedCount), "table",
-  "real BUY list receives the live bag-count decorator")
+if nativeDialogue then
+  T.eq(buyScreen and buyScreen._scottsTweaksOwnedCount, nil,
+    "native titleless mart list stays authoritative (legacy count enhancement absent)")
+else
+  T.eq(type(buyScreen and buyScreen._scottsTweaksOwnedCount), "table",
+    "legacy BUY list receives the live bag-count decorator")
+end
 
 local hmOption
 for _, row in ipairs(schema) do
@@ -700,7 +720,7 @@ T.check(type(pokemonFinalExports) == "table",
   "Pokemon Final test-double exports are published")
 T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.owner, "voxel_run_bridge",
   "Pokemon Final FreeMove receives Scott's bridge marker")
-T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.13.1",
+T.eq(pokemonFinalExports.lib._voxelRunBridgeHook.version, "0.14.0",
   "Pokemon Final bridge marker carries the update version")
 T.eq(type(exported.hmWithoutBadges), "function",
   "live HM option accessor is published")

@@ -35,6 +35,8 @@ local ROWS = {
   { key = "peaks", label = "MOUNTAIN PEAKS", type = "toggle", default = true },
   { key = "fastchunks", label = "FAST CHUNKS", type = "toggle", default = true },
   { key = "headbob", label = "HEAD BOB", type = "toggle", default = false },
+  { key = "ledge_hops", label = "LEDGE HOPS", type = "toggle", default = true,
+    help = "Optional two-way hops over the original low ledges; never arbitrary walls. OFF keeps button jumps cosmetic and native one-way ledges unchanged." },
   { key = "jumpkey", label = "JUMP KEY", type = "choice", default = "space",
     choices = { { "SPACE", "space" }, { "J", "j" },
                 { "L-CTRL", "lctrl" }, { "OFF", "off" } } },

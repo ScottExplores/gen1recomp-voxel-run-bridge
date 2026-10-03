@@ -304,6 +304,7 @@ T.eq(schemaDuplicates, 0, "canonical schema has no duplicate keys")
 T.eq(#schema, #(exports.optionSchema or {}),
   "exported canonical schema matches the Loader schema")
 local ownKeys = {
+  "classic_rules", "early_flight",
   "simple_menu", "hm_without_badges", "free_fly_without_badges",
   "free_fly_cockpit", "gapped_land", "gen2_menus",
   "experience_mode", "trainer_forfeit_enabled", "trainer_rematches",
@@ -1035,6 +1036,7 @@ local function cover(key)
   if schemaByKey[key] then covered[key] = (covered[key] or 0) + 1 end
 end
 cover("simple_menu")
+cover("classic_rules") -- rules profile lives on the root menu
 for _, child in pairs(categoryScreens) do
   for _, row in ipairs(child.rows or {}) do
     if type(row.id) == "string" then

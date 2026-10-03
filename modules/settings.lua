@@ -60,12 +60,17 @@ end
 
 function Settings:get(key, fallback)
   if fallback == nil then fallback = self.defaults[key] end
+  local value = fallback
   local options = self.mod and self.mod.options
   if options and type(options.get) == "function" then
-    local ok, value = pcall(options.get, options, key)
-    if ok and value ~= nil then return value end
+    local ok, stored = pcall(options.get, options, key)
+    if ok and stored ~= nil then value = stored end
   end
-  return fallback
+  local rules = self.mod and self.mod.exports and self.mod.exports.classicRules
+  if rules and type(rules.own) == "function" then
+    return rules:own(key, value)
+  end
+  return value
 end
 
 function Settings:stored(game, key)

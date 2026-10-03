@@ -52,7 +52,7 @@ local GAPPED_LAND_CELL = 64
 -- Native terrain and Flora's detailed apron occupy roughly y=-2..-37.
 -- Keep the broad procedural ground below both so it only fills the void.
 local GAPPED_LAND_Y = -40
-local RELEASE_VERSION = "0.13.1"
+local RELEASE_VERSION = "0.14.0"
 
 -- One package, two runtime profiles. These bundled mods advertise and carry
 -- real Gen 2 code; every other vendor remains on the historical Gen 1 path.
@@ -67,6 +67,8 @@ local GEN2_VENDOR_IDS = {
 }
 
 local OPTION_DEFAULTS = {
+  classic_rules = false,
+  early_flight = false,
   hm_without_badges = true,
   free_fly_without_badges = true,
   free_fly_cockpit = false,
@@ -758,13 +760,26 @@ end
 
 local function optionEnabled(mod, key, fallback)
   local ok, value = pcall(mod.options.get, mod.options, key)
-  if not ok or value == nil then return fallback end
+  if not ok or value == nil then value = fallback end
+  local rules = mod.exports and mod.exports.classicRules
+  if rules then value = rules:own(key, value) end
+  local runtime = mod.exports and mod.exports.runtime
+  if key == FREE_FLY_OPTION and not (runtime and runtime.generation == 2) then
+    -- Earned early flight owns only its own takeoff gate. Do not let the
+    -- older global badge bypass accidentally relax SURF/water landings.
+    local earlyOk, early = pcall(mod.options.get, mod.options, "early_flight")
+    if earlyOk and early == true then
+      return false
+    end
+  end
   return value == true
 end
 
 local function optionValue(mod, key, fallback)
   local ok, value = pcall(mod.options.get, mod.options, key)
-  if not ok or value == nil then return fallback end
+  if not ok or value == nil then value = fallback end
+  local rules = mod.exports and mod.exports.classicRules
+  if rules then return rules:own(key, value) end
   return value
 end
 
@@ -774,6 +789,10 @@ end
 -- the schema wholesale). Bundled keys arrive prefixed "<vendorId>:<key>".
 local function defineOptions(mod, vendorHost)
   local schema = {
+    { key = "classic_rules", type = "toggle", label = "CLASSIC RULES",
+      default = false, help = "Original encounters, EXP, trainer teams and badge gates; no gift starters or Trade Stone. Restart after changing. Visuals, running and optional ledge hops remain. Does not undo earlier save rewards." },
+    { key = "early_flight", type = "toggle", label = "EARLY FLY (BROCK)",
+      default = false, help = "Optional Red/Blue/Yellow travel exception: after earning BOULDERBADGE, a healthy HM02-compatible party Pokemon can FREEFLY without teaching FLY. No moves, items, badges or Pokemon granted. Keeps story and water badge gates, also with Classic Rules." },
     {
       key = "simple_menu",
       type = "toggle",
@@ -962,6 +981,8 @@ end
 -- the Gen 1 menu wrapper therefore never appear as misleading choices.
 local function defineGen2Options(mod, vendorHost)
   local schema = {
+    { key = "classic_rules", type = "toggle", label = "CLASSIC RULES",
+      default = false, help = "Original encounter and EXP rules, no free flight gift, native badge gates. Restart after changing. Visuals and running remain; prior save rewards are not removed." },
     {
       key = "gen2_voxel_world",
       type = "toggle",
@@ -1394,6 +1415,10 @@ local function installInventoryFeatures(mod)
     battle = false,
     field = true,
     use = function(ctx)
+      local rules = mod.exports and mod.exports.classicRules
+      if rules and rules:enabled() then
+        return "failed", { "Trade evolutions use\nclassic rules." }
+      end
       local target = tradeEvolutionFor(ctx.data, ctx.target)
       if not target then
         return "failed", { "It won't have\nany effect." }
@@ -1855,7 +1880,10 @@ local function installInventoryFeatures(mod)
         copied[#copied + 1] = id
         if id == TRADE_STONE_ID then seen = true end
       end
-      if not seen then copied[#copied + 1] = TRADE_STONE_ID end
+      local rules = mod.exports and mod.exports.classicRules
+      if not seen and not (rules and rules:enabled()) then
+        copied[#copied + 1] = TRADE_STONE_ID
+      end
       return decorateShop(game,
         constructScreen(priorShop, builtinShop, game, copied, onQuit))
     end,
@@ -2670,8 +2698,10 @@ local function installFreeFlyImmediateFlight(mod)
     end)
     mod.events:on("mod.options_changed", function(payload)
       if not payload then return end
-      if payload.mod == mod.id and payload.key == FREE_FLY_OPTION then
-        if payload.value == true then
+      if payload.mod == mod.id and (payload.key == FREE_FLY_OPTION
+          or payload.key == "early_flight") then
+        if (payload.key ~= FREE_FLY_OPTION or payload.value == true)
+            and optionEnabled(mod, FREE_FLY_OPTION, true) then
           apply(activeLoader or (Game and Game.mods))
         else
           restore()
@@ -3002,6 +3032,11 @@ local function installGen2(mod)
 end
 
 return function(mod)
+  -- Snapshot the profile before any content vendor changes game tables.
+  -- A full restart is required to switch profiles; saved custom settings
+  -- stay untouched so leaving Classic Rules restores them.
+  local classic = loadOwn(mod, "modules/classic_rules.lua")
+  if type(classic) == "function" then classic(mod) end
   -- This is the only branch that decides which generation's source executes.
   -- It is deliberately the first action in the installer: a Gold/Silver/
   -- Crystal boot never touches Battle Art or any Kanto-only feature installer.

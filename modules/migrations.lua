@@ -21,6 +21,39 @@ local function optionBucket(save, id)
   return type(all) == "table" and all[id] or nil
 end
 
+local function snapshotFields(value)
+  if type(value) ~= "table" then return nil end
+  local fields = {}
+  for key, child in pairs(value) do fields[key] = child end
+  return fields
+end
+
+local function restoreFields(value, fields)
+  if not fields then return end
+  for key in pairs(value) do value[key] = nil end
+  for key, child in pairs(fields) do value[key] = child end
+end
+
+-- Settings:set(..., false) deliberately batches these imports into one
+-- options write. Keep both option mirrors and the one-time bookkeeping
+-- reversible until that write succeeds, including references held by other
+-- modules. Replacing a bucket with a copy would leave those references stale.
+local function snapshotOptions(root, id)
+  local all, own
+  if type(root) == "table" then all = rawget(root, "modOptions") end
+  if type(all) == "table" then own = rawget(all, id) end
+  return { root = root, all = all, own = own, fields = snapshotFields(own) }
+end
+
+local function restoreOptions(snapshot, id)
+  if type(snapshot.root) ~= "table" then return end
+  snapshot.root.modOptions = snapshot.all
+  if type(snapshot.all) == "table" then
+    restoreFields(snapshot.own, snapshot.fields)
+    snapshot.all[id] = snapshot.own
+  end
+end
+
 return function(mod, context)
   local api = { installed = true, version = 2, imported = false }
   mod.exports.migrations = api
@@ -28,7 +61,24 @@ return function(mod, context)
   local function migrate(game)
     local save = game and game.save
     if type(save) ~= "table" then return false end
-    save.modData = save.modData or {}
+    local originalOptions = save.options
+    local savedSnapshot = snapshotOptions(originalOptions, mod.id)
+    local liveSnapshot = snapshotOptions(game.mods, mod.id)
+    local originalModData = save.modData
+    local originalOwn, originalCompleted, originalImported
+    if type(originalModData) == "table" then
+      originalOwn = originalModData[mod.id]
+    end
+    local ownFields = snapshotFields(originalOwn)
+    if type(originalOwn) == "table" then
+      originalCompleted = originalOwn[MIGRATION_KEY]
+      originalImported = originalOwn.legacy_imported_keys
+    end
+    local completedFields = snapshotFields(originalCompleted)
+    local importedFields = snapshotFields(originalImported)
+    api.lastError = nil
+
+    if type(save.modData) ~= "table" then save.modData = {} end
     local own = save.modData[mod.id]
     if type(own) ~= "table" then
       own = {}
@@ -165,15 +215,33 @@ return function(mod, context)
       if not known[key] then allImported[#allImported + 1] = key end
     end
     own.legacy_imported_keys = allImported
-    api.imported = #imported > 0
-    api.importedKeys = copy(imported)
     if changedOptions and type(game.writeOptions) == "function" then
-      local ok, err = pcall(game.writeOptions, game)
-      if not ok and mod.log and mod.log.warn then
-        mod.log:warn("legacy option import could not be persisted: %s",
-          tostring(err))
+      local ok, result, detail = pcall(game.writeOptions, game)
+      if not ok or result == false then
+        local err = not ok and tostring(result)
+          or tostring(detail or "game.writeOptions returned false")
+        restoreOptions(liveSnapshot, mod.id)
+        restoreOptions(savedSnapshot, mod.id)
+        save.options = originalOptions
+        restoreFields(originalCompleted, completedFields)
+        restoreFields(originalImported, importedFields)
+        restoreFields(originalOwn, ownFields)
+        save.modData = originalModData
+        if type(originalModData) == "table" then
+          originalModData[mod.id] = originalOwn
+        end
+        api.imported = false
+        api.importedKeys = {}
+        api.lastError = err
+        if mod.log and mod.log.warn then
+          mod.log:warn("legacy option import could not be persisted: %s",
+            err)
+        end
+        return false, err
       end
     end
+    api.imported = #imported > 0
+    api.importedKeys = copy(imported)
     return didWork or #imported > 0
   end
 
@@ -184,12 +252,12 @@ return function(mod, context)
       local ok, Game = pcall(require, "src.core.Game")
       if ok then game = Game end
     end
-    local migrated = migrate(game)
-    if context and context.settings
+    local migrated, err = migrate(game)
+    if not err and context and context.settings
         and type(context.settings.sync) == "function" then
       context.settings:sync(game)
     end
-    return migrated
+    return migrated, err
   end
   if mod.events and type(mod.events.on) == "function" then
     mod.events:on("game.ready", lifecycle)
