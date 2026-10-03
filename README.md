@@ -582,7 +582,7 @@ Scott's Tweaks choice was already saved.
 ## Install or update
 
 If Voxel Run Bridge or any earlier Scott's Tweaks release is installed, open
-Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.13.1
+Gen1Recomp's puzzle-piece / **MODS** panel and install the offered 0.14.0
 update. It will appear as **Scott's Tweaks** afterward without creating a
 second entry. The same installed entry can then be enabled for Red, Blue,
 Yellow, Gold, Silver, and Crystal.
@@ -590,7 +590,7 @@ Yellow, Gold, Silver, and Crystal.
 For a first installation:
 
 1. Open **MODS -> Import mod .zip** and choose
-   `voxel_run_bridge-0.13.1.zip`.
+   `voxel_run_bridge-0.14.0.zip`.
 2. Enable **Scott's Tweaks**, then restart the game if the manager asks.
 3. In Red/Blue/Yellow, open **START > MOD MENUS > MOD SETTINGS**. In
    Gold/Silver/Crystal, open **MODS > Scott's Tweaks**. Gen 1 defaults the

@@ -71,10 +71,10 @@ or physical Thor behavior. See tests/README.md for focused commands.
 
 Selected checks passed on both the current official checkout and v0.1.96:
 full-load 198 each, fused-load 857 each, and the earned-flight integration.
-The final broader pass ran 26 suite/configuration combinations with 5,251
-reported checks, plus two passing ledge suites. The final cross-generation
-fix adds Gold/Silver/Crystal 60-check loader scenarios and a 126-check vendor
-facade pass. Custom-mode integration now
+The final combined pass covered 27 distinct suite/configuration combinations
+with 5,401 reported checks (the two passing ledge suites do not report counts).
+These include Gold/Silver/Crystal 60-check loader scenarios and a 126-check
+vendor facade pass after the cross-generation fix. Custom-mode integration now
 covers all trainer/boss/wild difficulty tiers, independent live updates,
 trainer-team randomizers, encounter modes and restored spawn preferences.
 These are assertions across fixtures/configurations, not playthroughs.
@@ -105,6 +105,14 @@ root-generated cache, nested archives and development material. Baseline
 0.13.1 was also checked for ROM header signatures and bank-sized binary blobs;
 none were found. This is an archive/provenance audit, not a legal opinion or
 a claim that every historic third-party image was independently authored.
+
+The built 0.14.0 updater passed that archive check (31,145 files; all 34
+runtime sentinels), full ZIP decompression/CRC, ROM-header and bank-blob scans.
+All 30,649 common runtime binary assets match 0.13.1 byte-for-byte; only the
+two unreferenced `unused.zip` authoring archives were excluded. No binary
+assets were added. The source's two new packaged paths are the Classic Rules
+module and earned-flight policy; their tests stay in the repository, not the
+updater download.
 
 ## Next recommendations
 
